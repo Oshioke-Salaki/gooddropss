@@ -17,6 +17,7 @@ const links = [
   { href: "/", label: "Map" },
   { href: "/my-drops", label: "My Drops" },
   { href: "/leaderboard", label: "Rankings" },
+  { href: "/sponsor", label: "Sponsor ⭐" },
 ];
 
 // ── Wallet button ─────────────────────────────────────────────────────────────

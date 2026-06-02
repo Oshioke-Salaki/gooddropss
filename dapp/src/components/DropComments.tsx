@@ -29,12 +29,14 @@ export function DropComments({ dropId }: Props) {
 
   const fetchComments = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const res  = await fetch(`/api/comments/${dropId}`);
       const json = await res.json();
+      if (!res.ok) { setError(json.error ?? "Failed to load comments"); return; }
       setComments(json.comments ?? []);
     } catch {
-      setComments([]);
+      setError("Network error loading comments");
     } finally {
       setLoading(false);
     }

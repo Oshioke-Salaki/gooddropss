@@ -13,13 +13,27 @@ import {
   RARITY,
   isFlashDrop,
   openGoogleMapsWalking,
+  parseDropHint,
 } from "@/lib/utils";
 import { DropComments } from "@/components/DropComments";
 import { UserHandle } from "@/components/UserHandle";
-import { DROP_STATUS, type Drop, type LatLng } from "@/types";
+import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { Crosshair } from "lucide-react";
 import clsx from "clsx";
+
+function useCampaign(campaignId: string | null) {
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [claims, setClaims]     = useState(0);
+  useEffect(() => {
+    if (!campaignId) { setCampaign(null); return; }
+    fetch(`/api/campaigns/${campaignId}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.campaign) { setCampaign(d.campaign); setClaims(d.claims ?? 0); } })
+      .catch(() => {});
+  }, [campaignId]);
+  return { campaign, claims };
+}
 
 type Status = "idle" | "claiming" | "done" | "error";
 
@@ -37,6 +51,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const { writeContractAsync } = useWriteContract();
   const [status, setStatus] = useState<Status>("idle");
   const [errMsg, setErrMsg] = useState("");
+
+  const parsed     = drop ? parseDropHint(drop.hint) : null;
+  const { campaign, claims } = useCampaign(parsed?.campaignId ?? null);
 
   const open = drop !== null;
 
@@ -94,6 +111,14 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      // Update hunting streak (fire-and-forget)
+      if (address) {
+        fetch("/api/engagement", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address }),
+        }).catch(() => {});
+      }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
@@ -192,11 +217,53 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
               </button>
             </div>
 
+            {/* Sponsor banner — shown for campaign drops */}
+            {campaign && (
+              <div
+                style={{ borderColor: campaign.color, background: `${campaign.color}18` }}
+                className="border-2 rounded-xl p-3 flex items-center gap-3"
+              >
+                <div
+                  style={{ background: campaign.color }}
+                  className="w-10 h-10 rounded-lg border-2 border-ink flex items-center justify-center font-black text-sm shrink-0"
+                >
+                  {campaign.logo
+                    ? <img src={campaign.logo} alt="" className="w-full h-full object-cover rounded" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    : campaign.name.charAt(0).toUpperCase()
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted">⭐ Sponsored Drop</p>
+                  <p className="font-black text-sm truncate">{campaign.name}</p>
+                  {campaign.description && (
+                    <p className="text-xs text-muted mt-0.5 line-clamp-2">{campaign.description}</p>
+                  )}
+                  {campaign.goodcollectivePool && (
+                    <a
+                      href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="text-xs font-bold text-lime bg-ink px-2 py-0.5 rounded-full inline-block mt-1"
+                      style={{ textDecoration: "none" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      🤝 GoodCollective Pool ↗
+                    </a>
+                  )}
+                </div>
+                {claims > 0 && (
+                  <div className="text-center shrink-0">
+                    <p className="font-black text-lg leading-none">{claims}</p>
+                    <p className="text-xs text-muted">claimed</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Hint card */}
-            {drop.hint && (
+            {parsed?.hint && (
               <div className="border-2 border-dashed border-ink rounded-xl p-4 space-y-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted">🔍 Clue</p>
-                <p className="text-sm font-semibold leading-relaxed">{drop.hint}</p>
+                <p className="text-sm font-semibold leading-relaxed">{parsed.hint}</p>
               </div>
             )}
 
@@ -212,35 +279,67 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
             )}
 
             {/* Success */}
-            {status === "done" && (
-              <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
-                <div className="text-5xl">🎯</div>
-                <p className="font-black text-xl">You found it!</p>
-                <p className="text-sm text-ink/70">
-                  {formatG$(drop.amount)} G$ is yours!
-                </p>
-                <button
-                  onClick={() => {
-                    const text = `I just found a hidden drop of ${formatG$(drop.amount)} G$ in the wild 🎯💰\n\nGoodDrops lets you hide and hunt real money IRL!\n\n#GoodDollar #GoodDrops #Web3`;
-                    window.open(
-                      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
-                      "_blank",
-                      "noopener,noreferrer"
-                    );
-                  }}
-                  className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
-                >
-                  <span>Post on 𝕏</span>
-                  <span>↗</span>
-                </button>
-                <button
-                  onClick={onSuccess}
-                  className="w-full py-2 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors"
-                >
-                  Done
-                </button>
-              </div>
-            )}
+            {status === "done" && (() => {
+              // Chain hunt completion states
+              if (parsed?.isChainLast) return (
+                <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
+                  <div className="text-5xl">🏆</div>
+                  <p className="font-black text-xl">Hunt Complete!</p>
+                  <p className="text-sm text-ink/70">
+                    You conquered the entire chain! {formatG$(drop.amount)} G$ earned!
+                  </p>
+                  <button
+                    onClick={() => {
+                      const text = `I just completed a GoodDrops Hunt Chain 🏆 and claimed ${formatG$(drop.amount)} G$!\n\nMulti-stop real-world treasure hunt on GoodDrops 💰\n\n#GoodDollar #GoodDrops`;
+                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                    }}
+                    className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
+                  >
+                    <span>Post on 𝕏</span><span>↗</span>
+                  </button>
+                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors">Done</button>
+                </div>
+              );
+
+              if (parsed?.chainNextId) return (
+                <div className="border-2 border-ink rounded-xl p-5 text-center space-y-3" style={{ background: "#111" }}>
+                  <div className="text-4xl">🔗</div>
+                  <p className="font-black text-xl text-lime">Next stop unlocked!</p>
+                  <p className="text-sm" style={{ color: "#aaa" }}>
+                    {formatG$(drop.amount)} G$ claimed. You&apos;re on a hunt chain — keep going!
+                  </p>
+                  <a
+                    href={`/drop/${parsed.chainNextId}`}
+                    className="btn-brutal w-full bg-lime text-ink font-black py-3 rounded-xl flex items-center justify-center gap-2"
+                    style={{ textDecoration: "none", display: "flex" }}
+                  >
+                    <span>Go to next stop →</span>
+                  </a>
+                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm" style={{ color: "#555" }}>
+                    Back to map
+                  </button>
+                </div>
+              );
+
+              // Regular drop success
+              return (
+                <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
+                  <div className="text-5xl">🎯</div>
+                  <p className="font-black text-xl">You found it!</p>
+                  <p className="text-sm text-ink/70">{formatG$(drop.amount)} G$ is yours!</p>
+                  <button
+                    onClick={() => {
+                      const text = `I just found a hidden drop of ${formatG$(drop.amount)} G$ in the wild 🎯💰\n\nGoodDrops lets you hide and hunt real money IRL!\n\n#GoodDollar #GoodDrops #Web3`;
+                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                    }}
+                    className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
+                  >
+                    <span>Post on 𝕏</span><span>↗</span>
+                  </button>
+                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors">Done</button>
+                </div>
+              );
+            })()}
 
             {status !== "done" && isActive && (
               <>

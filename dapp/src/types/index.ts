@@ -25,3 +25,28 @@ export interface LatLng {
   lat: number;
   lng: number;
 }
+
+export interface Campaign {
+  id:                  string;
+  name:                string;
+  description:         string;
+  color:               string;
+  logo?:               string;
+  ownerAddress:        string;
+  createdAt:           number;
+  goodcollectivePool?: string;
+}
+
+export interface HunterStreak {
+  current:  number;
+  best:     number;
+  lastDate: string; // "YYYY-MM-DD"
+}
+
+export interface ChainStop {
+  lat:    number | null;
+  lng:    number | null;
+  place:  string | null;
+  amount: string;
+  clue:   string;
+}

@@ -45,10 +45,12 @@ function makeDropIcon(drop: Drop): L.DivIcon {
     });
   }
 
-  const flash   = isFlashDrop(drop);
-  const rarity  = getDropRarity(drop.amount);
-  const r       = RARITY[rarity];
-  const label   = formatG$(drop.amount);
+  const flash      = isFlashDrop(drop);
+  const isCampaign = /^\[C:[^\]]+\]/.test(drop.hint);
+  const isChain    = /^\[CH:[^\]]+\]/.test(drop.hint);
+  const rarity     = getDropRarity(drop.amount);
+  const r          = RARITY[rarity];
+  const label      = formatG$(drop.amount);
 
   if (flash) {
     return L.divIcon({
@@ -66,6 +68,56 @@ function makeDropIcon(drop: Drop): L.DivIcon {
       "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>`,
       iconSize: [52, 52],
       iconAnchor: [26, 26],
+    });
+  }
+
+  // Chain drops: linked pin with 🔗 icon
+  if (isChain) {
+    return L.divIcon({
+      className: r.animClass,
+      html: `<div style="
+        position:relative;
+        width:54px;height:54px;
+        background:#111;
+        border:2.5px solid ${r.color};
+        border-radius:50%;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        font-weight:900;font-size:10px;color:${r.color};
+        cursor:pointer;
+        font-family:'Space Grotesk',sans-serif;
+        user-select:none;gap:1px;
+        box-shadow:0 0 0 3px rgba(255,255,255,0.4);
+      ">
+        <span style="font-size:13px;line-height:1;">🔗</span>
+        <span>${label}</span>
+      </div>`,
+      iconSize: [54, 54],
+      iconAnchor: [27, 27],
+    });
+  }
+
+  // Campaign drops get a star badge and double-ring border to stand out
+  if (isCampaign) {
+    return L.divIcon({
+      className: r.animClass,
+      html: `<div style="
+        position:relative;
+        width:54px;height:54px;
+        background:${r.color};
+        border:2.5px solid rgba(0,0,0,0.6);
+        border-radius:50%;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        font-weight:900;font-size:10px;color:${r.textColor};
+        cursor:pointer;
+        font-family:'Space Grotesk',sans-serif;
+        user-select:none;gap:1px;
+        box-shadow:0 0 0 3px rgba(255,255,255,0.6);
+      ">
+        <span style="font-size:11px;line-height:1;">⭐</span>
+        <span>${label}</span>
+      </div>`,
+      iconSize: [54, 54],
+      iconAnchor: [27, 27],
     });
   }
 

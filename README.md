@@ -98,7 +98,7 @@ GoodDrops has a **captive day-one user base of 500,000 people** who already hold
 
 ## Business model
 
-### Phase 1 — Sponsored Drops (now buildable)
+### Phase 1 — Sponsored Drops ✅ Live
 
 Businesses pay to place branded drops near their location. A café in Lagos drops 200 G$ near their entrance. A market in Nairobi drops 500 G$ on Friday afternoon. The protocol takes a 5% fee. Marketing spend becomes game content. Footfall becomes measurable. This is the first Web3 advertising product that requires physical presence to convert.
 
@@ -136,7 +136,8 @@ NGOs, governments, and impact organizations want to distribute aid to specific c
 | Mobile PWA (no app store required) | ✅ Live at gooddrops.xyz |
 | Real-time map with clustering | ✅ |
 | GPS proximity claiming | ✅ |
-| GoodDollar identity verification | ✅ On-chain |
+| GoodDollar identity verification | ✅ On-chain via Identity SDK |
+| Daily G$ UBI claim | ✅ In-app via Citizen SDK |
 | Physical QR drop stickers | ✅ |
 | Private / invitation drops | ✅ |
 | Drop rarity system (Common → Legendary) | ✅ |
@@ -147,13 +148,16 @@ NGOs, governments, and impact organizations want to distribute aid to specific c
 | My Drops dashboard with QR share | ✅ |
 | Subgraph indexing (Goldsky) | ✅ |
 | Reclaim expired drops | ✅ |
+| **Sponsored campaigns (business dashboard)** | ✅ |
+| **Branded drop pins + sponsor banner** | ✅ |
+| **Campaign analytics (drops, claims, G$ hidden)** | ✅ |
 
 ---
 
 ## Roadmap
 
-### Q3 2026 — Sponsored Drops
-Business-facing dashboard to create geo-targeted sponsored drops. Protocol fee collection. Analytics per drop (claim time, distance travelled, claimer demographics).
+### ✅ Shipped — Sponsored Drops
+Business-facing dashboard to create geo-targeted sponsored drops. Campaign management, branded drop pins, live analytics (claims, G$ distributed). Built on top of the existing contract via on-chain hint encoding — no new deployment required.
 
 ### Q3 2026 — Drop Chains
 A sequence of 3–5 connected drops where claiming #1 reveals the coordinates of #2. A clue, a story, a journey. The final drop pays the full reward. GoodDrops becomes a storytelling platform for physical-world treasure hunts.
@@ -200,7 +204,7 @@ Identity:  GoodDollar IIdentityV2 (0xC361A6E67822a0EDc17D899227dd9FC50BD62F42)
 | Blockchain | Celo (EVM, mobile-first, $0.001 tx fees) |
 | Smart contract | Solidity 0.8.24 · OpenZeppelin 5.x · Hardhat |
 | Frontend | Next.js 15 (App Router) · React 19 · TypeScript |
-| Wallet | Wagmi 2 · Viem 2 · RainbowKit |
+| Wallet | Wagmi 2 · Viem 2 · Privy |
 | Maps | Leaflet · react-leaflet · Stadia Maps |
 | Indexing | The Graph (Goldsky) |
 | Push notifications | Web Push · Upstash Redis |

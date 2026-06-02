@@ -126,16 +126,50 @@ export function formatDegrees(raw: number): string {
 //   [P:]user hint text             ← private, no specific target
 // Plain hint text means a public drop.
 
-const PRIVATE_RE = /^\[P:([^\]]*)\]([\s\S]*)/;
+// ── Hint encoding reference ───────────────────────────────────────────────────
+// [P:0xADDR]hint  — private, targeted at specific wallet
+// [P:]hint        — private, no specific target
+// [C:id]hint      — public sponsored campaign drop
+// [CH:nextId]hint — public chain drop (first stop, links to nextId)
+// [P:][CH:id]hint — private chain drop (middle stop, hidden from map)
+// [P:][CHL]hint   — private chain drop (last stop, hidden from map)
+
+const PRIVATE_RE  = /^\[P:([^\]]*)\]([\s\S]*)/;
+const CAMPAIGN_RE = /^\[C:([^\]]+)\]([\s\S]*)/;
+const CHAIN_RE    = /^\[CH:([^\]]+)\]([\s\S]*)/;
+const CHAIN_LAST  = /^\[CHL\]([\s\S]*)/;
 
 export function parseDropHint(raw: string): {
-  isPrivate: boolean;
-  target: string | null;
-  hint: string;
+  isPrivate:   boolean;
+  target:      string | null;
+  campaignId:  string | null;
+  chainNextId: string | null;
+  isChainLast: boolean;
+  hint:        string;
 } {
-  const m = raw.match(PRIVATE_RE);
-  if (!m) return { isPrivate: false, target: null, hint: raw };
-  return { isPrivate: true, target: m[1] || null, hint: m[2] };
+  let rest      = raw;
+  let isPrivate = false;
+  let target: string | null = null;
+
+  // Strip [P:...] prefix first
+  const priv = rest.match(PRIVATE_RE);
+  if (priv) { isPrivate = true; target = priv[1] || null; rest = priv[2]; }
+
+  // Check remaining for [CHL]
+  const chainLast = rest.match(CHAIN_LAST);
+  if (chainLast) return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: true, hint: chainLast[1] };
+
+  // Check remaining for [CH:id]
+  const chain = rest.match(CHAIN_RE);
+  if (chain) return { isPrivate, target, campaignId: null, chainNextId: chain[1], isChainLast: false, hint: chain[2] };
+
+  // Check remaining for [C:id] (campaigns are never private)
+  if (!isPrivate) {
+    const camp = rest.match(CAMPAIGN_RE);
+    if (camp) return { isPrivate: false, target: null, campaignId: camp[1], chainNextId: null, isChainLast: false, hint: camp[2] };
+  }
+
+  return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: false, hint: rest };
 }
 
 export function buildPrivateHint(hint: string, targetAddress: string): string {
@@ -144,4 +178,21 @@ export function buildPrivateHint(hint: string, targetAddress: string): string {
 
 export function buildPrivateHintNoTarget(hint: string): string {
   return `[P:]${hint}`;
+}
+
+export function buildCampaignHint(hint: string, campaignId: string): string {
+  return `[C:${campaignId}]${hint}`;
+}
+
+// Chain drop builders
+export function buildChainHint(hint: string, nextDropId: string): string {
+  return `[CH:${nextDropId}]${hint}`;
+}
+
+export function buildPrivateChainHint(hint: string, nextDropId: string): string {
+  return `[P:][CH:${nextDropId}]${hint}`;
+}
+
+export function buildChainLastHint(hint: string): string {
+  return `[P:][CHL]${hint}`;
 }

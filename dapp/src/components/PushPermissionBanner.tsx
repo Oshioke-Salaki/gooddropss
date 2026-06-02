@@ -12,6 +12,7 @@ export function PushPermissionBanner() {
   const { status, subscribe } = usePushSubscription();
   const [show, setShow]       = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
 
   useEffect(() => {
     if (!isConnected) return;
@@ -31,9 +32,14 @@ export function PushPermissionBanner() {
 
   async function handleAllow() {
     setLoading(true);
+    setError("");
     const ok = await subscribe();
     setLoading(false);
-    if (ok) setShow(false);
+    if (ok) {
+      setShow(false);
+    } else {
+      setError("Could not connect to push service. Try Chrome or check your network.");
+    }
   }
 
   return (
@@ -76,8 +82,8 @@ export function PushPermissionBanner() {
             <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#fff" }}>
               Get notified when drops appear
             </p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#666" }}>
-              Know when your drops are claimed too
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: error ? "#ff6b6b" : "#666" }}>
+              {error || "Know when your drops are claimed too"}
             </p>
           </div>
 

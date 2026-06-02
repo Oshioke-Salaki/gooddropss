@@ -10,6 +10,10 @@ export function getRedis(): Redis | null {
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
 export const keys = {
-  subscription: (address: string) => `sub:${address.toLowerCase()}`,
-  comments:     (dropId: string)   => `comments:${dropId}`,
+  subscription:     (address: string) => `sub:${address.toLowerCase()}`,
+  comments:         (dropId: string)  => `comments:${dropId}`,
+  campaign:         (id: string)      => `gd:campaign:${id}`,
+  campaignsByOwner: (addr: string)    => `gd:campaigns:owner:${addr.toLowerCase()}`,
+  campaignClaims:   (id: string)      => `gd:campaign:claims:${id}`,
+  streak:           (address: string) => `gd:streak:${address.toLowerCase()}`,
 };

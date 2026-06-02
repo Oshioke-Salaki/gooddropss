@@ -46,6 +46,11 @@ export function usePushSubscription() {
       }
 
       const sw  = await navigator.serviceWorker.ready;
+
+      // Clear any stale subscription before subscribing (VAPID key changes cause "push service error")
+      const existing = await sw.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+
       let sub: PushSubscription;
 
       if (vapidKey) {

@@ -16,7 +16,7 @@ import {
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS, type Drop } from "@/types";
 import { QRCodeSVG } from "qrcode.react";
-import { QrCode, Copy, Check, Share2, X } from "lucide-react";
+import { QrCode, Copy, Check, Share2, X, Printer } from "lucide-react";
 import clsx from "clsx";
 
 const STATUS_LABEL: Record<number, string> = {
@@ -41,7 +41,8 @@ function DropCard({
     drop.expiry < Math.floor(Date.now() / 1000);
   const isActive =
     drop.status === DROP_STATUS.Active && !isExpiredActive;
-  const { isPrivate } = parseDropHint(drop.hint);
+  const { isPrivate, hint: cleanHint, chainNextId, isChainLast } = parseDropHint(drop.hint);
+  const isChain = chainNextId !== null || isChainLast;
 
   return (
     <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm space-y-3">
@@ -49,9 +50,14 @@ function DropCard({
         <div>
           <span className="text-2xl font-black">{formatG$(drop.amount)}</span>
           <span className="text-lime font-black text-lg ml-1">G$</span>
-          {isPrivate && (
+          {isPrivate && !isChain && (
             <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full border border-ink bg-cream text-muted">
               📫 Private
+            </span>
+          )}
+          {isChain && (
+            <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full border border-ink bg-ink text-lime">
+              🔗 Chain
             </span>
           )}
         </div>
@@ -70,9 +76,9 @@ function DropCard({
         </span>
       </div>
 
-      {drop.hint && (
+      {cleanHint && (
         <p className="text-sm text-muted italic border-l-2 border-lime pl-3 leading-relaxed">
-          &quot;{drop.hint}&quot;
+          &quot;{cleanHint}&quot;
         </p>
       )}
 
@@ -107,19 +113,32 @@ function DropCard({
         </button>
       )}
 
-      {/* Share / QR button */}
-      <button
-        onClick={() => onShare(drop)}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-lime hover:text-ink hover:border-ink transition-colors"
-      >
-        <QrCode size={13} />
-        Share / QR
-      </button>
+      {/* Share / QR + Print sticker buttons */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => onShare(drop)}
+          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-lime hover:text-ink hover:border-ink transition-colors"
+        >
+          <QrCode size={13} />
+          Share / QR
+        </button>
+        <a
+          href={`/drop/${drop.id}/sticker`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-ink hover:text-lime hover:border-ink transition-colors"
+          style={{ textDecoration: "none" }}
+        >
+          <Printer size={13} />
+          Print Sticker
+        </a>
+      </div>
     </div>
   );
 }
 
 function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop) => void }) {
+  const { hint: cleanHint, isChainLast } = parseDropHint(drop.hint);
   return (
     <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm space-y-3">
       <div className="flex items-start justify-between">
@@ -128,13 +147,13 @@ function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop) => voi
           <span className="text-lime font-black text-lg ml-1">G$</span>
         </div>
         <span className="text-xs font-bold px-2.5 py-1 rounded-full border-2 bg-lime border-ink text-ink">
-          Claimed 🎯
+          {isChainLast ? "🏆 Hunt Complete" : "Claimed 🎯"}
         </span>
       </div>
 
-      {drop.hint && (
+      {cleanHint && (
         <p className="text-sm text-muted italic border-l-2 border-lime pl-3 leading-relaxed">
-          &quot;{drop.hint}&quot;
+          &quot;{cleanHint}&quot;
         </p>
       )}
 

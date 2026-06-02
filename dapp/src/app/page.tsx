@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback } from "react";
 import { Nav, BottomNav } from "@/components/Nav";
 import { CreateDropSheet } from "@/components/CreateDropSheet";
+import { ChainDropCreator } from "@/components/ChainDropCreator";
 import { ClaimSheet } from "@/components/ClaimSheet";
 import { HuntingMode } from "@/components/HuntingMode";
 import { ActivityTicker } from "@/components/ActivityTicker";
@@ -27,6 +28,7 @@ export default function HomePage() {
   useDropNotifications(drops); // fires browser notification when own drop is claimed
   const [selectedDrop, setSelectedDrop] = useState<Drop | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
+  const [showChain,  setShowChain]      = useState(false);
   const [huntingDrop, setHuntingDrop]   = useState<Drop | null>(null);
   const [userLoc, setUserLoc]           = useState<LatLng | null>(null);
 
@@ -85,41 +87,47 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* FAB — fixed so Leaflet's stacking context can't bury it */}
-      <button
-        onClick={() => setShowCreate(true)}
-        style={{
-          position: "fixed",
-          bottom: "96px",
-          right: "20px",
-          zIndex: 999,
-          background: "#bffd00",
-          color: "#111111",
-          border: "2.5px solid #111111",
-          boxShadow: "3px 3px 0 #111111",
-          fontWeight: 800,
-          fontSize: "15px",
-          padding: "12px 20px",
-          borderRadius: "16px",
-          cursor: "pointer",
-          fontFamily: "inherit",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          transition: "box-shadow 0.1s, transform 0.1s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.boxShadow = "1px 1px 0 #111111";
-          e.currentTarget.style.transform = "translate(2px, 2px)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.boxShadow = "3px 3px 0 #111111";
-          e.currentTarget.style.transform = "translate(0, 0)";
-        }}
-      >
-        <span>Drop G$</span>
-        <span>💰</span>
-      </button>
+      {/* FABs — fixed so Leaflet's stacking context can't bury them */}
+      <div style={{ position: "fixed", bottom: "96px", right: "20px", zIndex: 999, display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
+        {/* Hunt Chain FAB */}
+        <button
+          onClick={() => setShowChain(true)}
+          style={{
+            background: "#111111", color: "#BFFD00",
+            border: "2.5px solid #111111",
+            boxShadow: "3px 3px 0 #BFFD00",
+            fontWeight: 800, fontSize: "13px",
+            padding: "10px 16px", borderRadius: "14px",
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: "6px",
+            transition: "box-shadow 0.1s, transform 0.1s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #BFFD00"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #BFFD00"; e.currentTarget.style.transform = "translate(0,0)"; }}
+        >
+          <span>Hunt Chain</span>
+          <span>🔗</span>
+        </button>
+        {/* Drop G$ FAB */}
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            background: "#bffd00", color: "#111111",
+            border: "2.5px solid #111111",
+            boxShadow: "3px 3px 0 #111111",
+            fontWeight: 800, fontSize: "15px",
+            padding: "12px 20px", borderRadius: "16px",
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: "8px",
+            transition: "box-shadow 0.1s, transform 0.1s",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #111111"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #111111"; e.currentTarget.style.transform = "translate(0,0)"; }}
+        >
+          <span>Drop G$</span>
+          <span>💰</span>
+        </button>
+      </div>
 
       <BottomNav />
       <ActivityTicker />
@@ -140,10 +148,14 @@ export default function HomePage() {
         open={showCreate}
         userLocation={userLoc}
         onClose={() => setShowCreate(false)}
-        onSuccess={() => {
-          setShowCreate(false);
-          fetchDrops();
-        }}
+        onSuccess={() => { setShowCreate(false); fetchDrops(); }}
+      />
+
+      <ChainDropCreator
+        open={showChain}
+        userLocation={userLoc}
+        onClose={() => setShowChain(false)}
+        onSuccess={() => { setShowChain(false); fetchDrops(); }}
       />
 
       <ClaimSheet

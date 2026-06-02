@@ -12,7 +12,7 @@ import {
 } from "@/lib/contracts";
 import {
   degToGps, formatG$,
-  buildPrivateHint, buildPrivateHintNoTarget,
+  buildPrivateHint, buildPrivateHintNoTarget, buildCampaignHint,
 } from "@/lib/utils";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -36,9 +36,12 @@ interface Props {
   userLocation: { lat: number; lng: number } | null;
   onClose: () => void;
   onSuccess: () => void;
+  campaignId?: string;
+  campaignName?: string;
+  campaignColor?: string;
 }
 
-export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Props) {
+export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campaignId, campaignName, campaignColor }: Props) {
   const { address, isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
@@ -100,12 +103,14 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Prop
     }
     const expiry = Math.floor(Date.now() / 1000) + duration + 120;
 
-    // Build the stored hint: prepend private encoding if needed
-    const storedHint = isPrivate
-      ? (targetAddress.trim()
-          ? buildPrivateHint(hint, targetAddress.trim())
-          : buildPrivateHintNoTarget(hint))
-      : hint;
+    // Build stored hint: campaign drops take priority over private encoding
+    const storedHint = campaignId
+      ? buildCampaignHint(hint, campaignId)
+      : isPrivate
+        ? (targetAddress.trim()
+            ? buildPrivateHint(hint, targetAddress.trim())
+            : buildPrivateHintNoTarget(hint))
+        : hint;
 
     try {
       const allowance = await publicClient.readContract({
@@ -195,7 +200,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Prop
 
       {/* Sheet */}
       <motion.div
-        animate={{ y: open ? 0 : "100%" }}
+        animate={{ y: open && !pickerOpen ? 0 : "100%" }}
         initial={{ y: "100%" }}
         transition={{ type: "spring", damping: 32, stiffness: 420 }}
         style={{
@@ -217,7 +222,17 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Prop
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-2xl font-black tracking-tight">Drop G$</h2>
-              <p className="text-sm text-muted mt-0.5">Hide money anywhere in the world</p>
+              {campaignName ? (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span
+                    style={{ background: campaignColor || "#BFFD00" }}
+                    className="inline-block w-2.5 h-2.5 rounded-full border border-ink"
+                  />
+                  <p className="text-sm font-bold text-ink">{campaignName} campaign drop</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted mt-0.5">Hide money anywhere in the world</p>
+              )}
             </div>
             <button
               onClick={handleClose}
@@ -419,8 +434,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Prop
                 />
               </div>
 
-              {/* ── Private drop toggle ───────────────────────────────────── */}
-              <div className="border-2 border-ink rounded-xl overflow-hidden">
+              {/* ── Private drop toggle — hidden for campaign drops ───────── */}
+              {!campaignId && <div className="border-2 border-ink rounded-xl overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setIsPrivate((p) => !p)}
@@ -465,7 +480,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess }: Prop
                     </p>
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* ── Error ────────────────────────────────────────────────────── */}
               {(status === "error" || errMsg) && (

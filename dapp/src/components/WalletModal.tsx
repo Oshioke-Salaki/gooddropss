@@ -1,11 +1,13 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { useBalance, useSignMessage } from "wagmi";
+import { useBalance, useSignMessage, usePublicClient, useWalletClient } from "wagmi";
 import { formatUnits } from "viem";
-import { Copy, Check, LogOut, Pencil, X, Loader2 } from "lucide-react";
+import { Copy, Check, LogOut, Pencil, X, Loader2, Zap } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { formatG$ } from "@/lib/utils";
+import { ClaimSDK } from "@goodsdks/citizen-sdk";
+import { IdentitySDK, useIdentitySDK } from "@goodsdks/identity-sdk";
 
 interface Props {
   address: `0x${string}`;
@@ -26,10 +28,70 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
   const [saveError,   setSaveError]   = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { balance }            = useGoodDollarProfile();
+  const { balance }             = useGoodDollarProfile();
   const { data: nativeBalance } = useBalance({ address });
-  const profile                = useProfile(address);
-  const { signMessageAsync }   = useSignMessage();
+  const profile                 = useProfile(address);
+  const { signMessageAsync }    = useSignMessage();
+  const publicClient            = usePublicClient();
+  const { data: walletClient }  = useWalletClient();
+  const identitySDKHook         = useIdentitySDK("production");
+
+  // ── UBI claim state ───────────────────────────────────────────────────────
+  const [streak, setStreak] = useState<{ current: number; best: number } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/engagement?address=${address}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.streak) setStreak(d.streak); })
+      .catch(() => {});
+  }, [address]);
+
+  const [ubiEntitlement, setUbiEntitlement] = useState<bigint | null>(null);
+  const [ubiStatus,      setUbiStatus]      = useState<"can_claim"|"already_claimed"|"not_whitelisted"|"loading">("loading");
+  const [ubiClaiming,    setUbiClaiming]    = useState(false);
+  const [ubiClaimDone,   setUbiClaimDone]   = useState(false);
+  const [ubiErr,         setUbiErr]         = useState("");
+
+  useEffect(() => {
+    if (!address || !publicClient || !walletClient) return;
+    const identitySDK = identitySDKHook ?? new (IdentitySDK as any)(publicClient, walletClient, "production");
+    const sdk = new ClaimSDK({
+      account:     address,
+      publicClient: publicClient as any,
+      walletClient: walletClient as any,
+      identitySDK:  identitySDK as any,
+      env:          "production",
+    });
+    sdk.getWalletClaimStatus()
+      .then((s) => {
+        setUbiStatus(s.status as any);
+        setUbiEntitlement(s.entitlement);
+      })
+      .catch(() => setUbiStatus("already_claimed"));
+  }, [address, !!publicClient, !!walletClient]);
+
+  async function handleUbiClaim() {
+    if (!address || !publicClient || !walletClient) return;
+    setUbiClaiming(true);
+    setUbiErr("");
+    try {
+      const identitySDK = identitySDKHook ?? new (IdentitySDK as any)(publicClient, walletClient, "production");
+      const sdk = new ClaimSDK({
+        account:     address,
+        publicClient: publicClient as any,
+        walletClient: walletClient as any,
+        identitySDK:  identitySDK as any,
+        env:          "production",
+      });
+      await sdk.claim();
+      setUbiClaimDone(true);
+      setUbiStatus("already_claimed");
+    } catch (e: any) {
+      setUbiErr(e?.shortMessage ?? e?.message ?? "Claim failed");
+    } finally {
+      setUbiClaiming(false);
+    }
+  }
 
   const celoAmt = nativeBalance
     ? parseFloat(formatUnits(nativeBalance.value, nativeBalance.decimals)).toFixed(3)
@@ -289,6 +351,37 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
             )}
           </div>
 
+          {/* ── Hunting streak ───────────────────────────────────────────────── */}
+          {streak && streak.current > 0 && (
+            <div style={{ borderBottom: "1.5px solid #e8e6e0", padding: "10px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 34, height: 34, background: "#FF6400",
+                border: "2px solid #111", borderRadius: "50%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 16, flexShrink: 0,
+              }}>
+                🔥
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                  {streak.current}-day hunting streak
+                </p>
+                <p style={{ margin: 0, fontSize: 10, color: "#888" }}>
+                  Best: {streak.best} days · Keep hunting daily!
+                </p>
+              </div>
+              <div style={{
+                background: streak.current >= 7 ? "#FF6400" : "#f5f4f0",
+                color: streak.current >= 7 ? "#fff" : "#888",
+                border: "1.5px solid #111",
+                borderRadius: 8, padding: "3px 10px",
+                fontSize: 11, fontWeight: 900,
+              }}>
+                {streak.current >= 30 ? "🏆 Legend" : streak.current >= 7 ? "🔥 On Fire" : `Day ${streak.current}`}
+              </div>
+            </div>
+          )}
+
           {/* ── Balances ─────────────────────────────────────────────────────── */}
           <div>
             <div style={{
@@ -339,6 +432,65 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
               </span>
             </div>
           </div>
+
+          {/* ── UBI / Engagement Rewards ──────────────────────────────────────── */}
+          {isVerified && (
+            <div style={{ borderTop: "1.5px solid #e8e6e0" }}>
+              {ubiClaimDone ? (
+                <div style={{ padding: "12px 18px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>🎉</span>
+                  <div>
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                      G$ claimed!
+                    </p>
+                    <p style={{ margin: 0, fontSize: 10, color: "#888" }}>
+                      {ubiEntitlement ? `+${formatG$(ubiEntitlement)} G$ added to your wallet` : "UBI claimed successfully"}
+                    </p>
+                  </div>
+                </div>
+              ) : ubiStatus === "can_claim" ? (
+                <button
+                  onClick={handleUbiClaim}
+                  disabled={ubiClaiming}
+                  style={{
+                    width: "100%", padding: "11px 18px",
+                    background: ubiClaiming ? "#f0f0f0" : "#BFFD0022",
+                    border: "none", display: "flex", alignItems: "center", gap: 10,
+                    cursor: ubiClaiming ? "wait" : "pointer", fontFamily: "inherit", textAlign: "left",
+                  }}
+                >
+                  {ubiClaiming
+                    ? <Loader2 size={18} color="#888" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                    : <Zap size={18} color="#BFFD00" style={{ flexShrink: 0 }} />
+                  }
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#111" }}>
+                      {ubiClaiming ? "Claiming…" : `Claim ${ubiEntitlement ? formatG$(ubiEntitlement) : ""} G$ UBI`}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 10, color: "#888" }}>
+                      Your daily GoodDollar UBI is ready
+                    </p>
+                  </div>
+                  {!ubiClaiming && (
+                    <span style={{
+                      background: "#BFFD00", color: "#111", fontSize: 10, fontWeight: 900,
+                      padding: "2px 7px", borderRadius: 100, border: "1.5px solid #111",
+                    }}>Claim</span>
+                  )}
+                </button>
+              ) : ubiStatus === "already_claimed" ? (
+                <div style={{ padding: "11px 18px", display: "flex", alignItems: "center", gap: 10, opacity: 0.6 }}>
+                  <Check size={16} color="#888" />
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#888" }}>
+                    Daily G$ UBI already claimed
+                  </p>
+                </div>
+              ) : null}
+              {ubiErr && (
+                <p style={{ margin: "0 18px 8px", fontSize: 11, color: "#FF3B3B", fontWeight: 700 }}>{ubiErr}</p>
+              )}
+            </div>
+          )}
 
           {/* ── GD verification nudge ─────────────────────────────────────────── */}
           {!isVerified && (

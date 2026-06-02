@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     config.externals.push("pino-pretty", "lokijs", "encoding");
     // @metamask/sdk imports a React Native package that doesn't exist in web builds
     config.resolve.alias["@react-native-async-storage/async-storage"] = false;
+    config.resolve.alias["@farcaster/mini-app-solana"] = false;
     return config;
   },
 };

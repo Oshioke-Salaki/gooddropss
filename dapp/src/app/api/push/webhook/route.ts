@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRedis, keys } from "@/lib/redis";
+import { parseDropHint } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -47,6 +49,16 @@ export async function POST(req: NextRequest) {
       const dropper = data.dropper ?? data.fields?.dropper ?? "";
       const amount  = data.amount  ?? data.fields?.amount  ?? "0";
       const dropId  = data.dropId  ?? data.id ?? "";
+      const hint    = data.hint    ?? data.fields?.hint    ?? "";
+
+      // Track campaign claim count in Redis
+      if (hint) {
+        const { campaignId } = parseDropHint(hint);
+        if (campaignId) {
+          const redis = getRedis();
+          if (redis) await redis.incr(keys.campaignClaims(campaignId));
+        }
+      }
 
       if (dropper) {
         await sendPush(
