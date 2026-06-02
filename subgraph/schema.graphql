@@ -1,0 +1,17 @@
+type Drop @entity {
+  id: ID!           # string(dropId)
+  dropId: BigInt!
+
+  dropper:   Bytes!
+  amount:    BigInt!
+  claimer:   Bytes!   # address(0) until claimed
+  expiry:    BigInt!
+  claimedAt: BigInt!  # 0 until claimed
+  status:    Int!     # 0=Active 1=Claimed 2=Reclaimed
+  lat:       Int!     # degrees × 1e6
+  lng:       Int!     # degrees × 1e6
+  hint:      String!
+
+  createdAt: BigInt!
+  createdTx: Bytes!
+}

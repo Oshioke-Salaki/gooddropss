@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from "next/server";
+import { Redis } from "@upstash/redis";
+import { verifyMessage } from "viem";
+
+const redis = Redis.fromEnv();
+
+const USERNAME_RE  = /^[a-zA-Z0-9_-]{3,24}$/;
+const RESERVED     = new Set(["admin","gooddrops","gooddollar","celo","support","system"]);
+const SIG_WINDOW   = 5 * 60 * 1000; // 5 minutes
+
+// ── GET /api/profile?address=0x... ─────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  const address = req.nextUrl.searchParams.get("address")?.toLowerCase();
+  if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
+
+  const raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${address}`);
+  if (!raw) return NextResponse.json(null);
+  return NextResponse.json(raw);
+}
+
+// ── POST /api/profile ──────────────────────────────────────────────────────
+// Body: { address, username, signature, timestamp }
+export async function POST(req: NextRequest) {
+  let body: { address?: string; username?: string; signature?: string; timestamp?: number };
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "invalid body" }, { status: 400 }); }
+
+  const { address, username, signature, timestamp } = body;
+
+  if (!address || !username || !signature || !timestamp) {
+    return NextResponse.json({ error: "missing fields" }, { status: 400 });
+  }
+
+  // Validate username format
+  if (!USERNAME_RE.test(username)) {
+    return NextResponse.json({ error: "Username must be 3–24 characters: letters, numbers, _ or -" }, { status: 400 });
+  }
+  if (RESERVED.has(username.toLowerCase())) {
+    return NextResponse.json({ error: "That username is reserved" }, { status: 400 });
+  }
+
+  // Validate timestamp freshness
+  if (Math.abs(Date.now() - timestamp) > SIG_WINDOW) {
+    return NextResponse.json({ error: "Signature expired — try again" }, { status: 400 });
+  }
+
+  // Verify wallet signature
+  const message = `GoodDrops: claim username "${username}" at ${timestamp}`;
+  try {
+    const valid = await verifyMessage({
+      address: address as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`,
+    });
+    if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  } catch {
+    return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
+  }
+
+  const addrKey     = `gd:profile:${address.toLowerCase()}`;
+  const usernameLow = username.toLowerCase();
+  const nameKey     = `gd:username:${usernameLow}`;
+
+  // Check uniqueness — but allow re-claiming your own username
+  const existing = await redis.get<string>(nameKey);
+  if (existing && existing.toLowerCase() !== address.toLowerCase()) {
+    return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+  }
+
+  // Release old username if the user is changing it
+  const oldProfile = await redis.get<{ username: string }>( addrKey);
+  if (oldProfile?.username && oldProfile.username.toLowerCase() !== usernameLow) {
+    await redis.del(`gd:username:${oldProfile.username.toLowerCase()}`);
+  }
+
+  // Persist
+  await redis.set(nameKey, address.toLowerCase());
+  await redis.set(addrKey, { username, createdAt: Date.now() });
+
+  return NextResponse.json({ username });
+}

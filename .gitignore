@@ -1,0 +1,36 @@
+# ─── Environment / secrets ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# ─── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── Next.js ─────────────────────────────────────────────────────────────────
+dapp/.next/
+dapp/out/
+dapp/.vercel/
+dapp/next-env.d.ts
+dapp/tsconfig.tsbuildinfo
+
+# ─── Hardhat ─────────────────────────────────────────────────────────────────
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+contracts/ignition/deployments/
+
+# ─── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

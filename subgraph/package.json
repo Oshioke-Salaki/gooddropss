@@ -1,0 +1,15 @@
+{
+  "name": "gooddrops-subgraph",
+  "version": "1.0.0",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build":   "graph build",
+    "deploy":  "goldsky subgraph deploy gooddrops/1.0.1 --path ."
+  },
+  "dependencies": {
+    "@graphprotocol/graph-ts": "^0.35.1"
+  },
+  "devDependencies": {
+    "@graphprotocol/graph-cli": "^0.81.0"
+  }
+}

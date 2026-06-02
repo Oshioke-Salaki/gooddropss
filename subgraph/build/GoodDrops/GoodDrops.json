@@ -1,0 +1,113 @@
+[
+  {
+    "name": "DropCreated",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "dropId",
+        "type": "uint256",
+        "internalType": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "dropper",
+        "type": "address",
+        "internalType": "address",
+        "indexed": true
+      },
+      {
+        "name": "lat",
+        "type": "int32",
+        "internalType": "int32",
+        "indexed": false
+      },
+      {
+        "name": "lng",
+        "type": "int32",
+        "internalType": "int32",
+        "indexed": false
+      },
+      {
+        "name": "amount",
+        "type": "uint96",
+        "internalType": "uint96",
+        "indexed": false
+      },
+      {
+        "name": "expiry",
+        "type": "uint40",
+        "internalType": "uint40",
+        "indexed": false
+      },
+      {
+        "name": "hint",
+        "type": "string",
+        "internalType": "string",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "name": "DropClaimed",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "dropId",
+        "type": "uint256",
+        "internalType": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "claimer",
+        "type": "address",
+        "internalType": "address",
+        "indexed": true
+      },
+      {
+        "name": "dropper",
+        "type": "address",
+        "internalType": "address",
+        "indexed": true
+      },
+      {
+        "name": "amount",
+        "type": "uint96",
+        "internalType": "uint96",
+        "indexed": false
+      },
+      {
+        "name": "claimedAt",
+        "type": "uint40",
+        "internalType": "uint40",
+        "indexed": false
+      }
+    ]
+  },
+  {
+    "name": "DropReclaimed",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      {
+        "name": "dropId",
+        "type": "uint256",
+        "internalType": "uint256",
+        "indexed": true
+      },
+      {
+        "name": "dropper",
+        "type": "address",
+        "internalType": "address",
+        "indexed": true
+      },
+      {
+        "name": "amount",
+        "type": "uint96",
+        "internalType": "uint96",
+        "indexed": false
+      }
+    ]
+  }
+]
