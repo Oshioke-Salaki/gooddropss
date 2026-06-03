@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useSwitchChain } from "wagmi";
+import { useAccount, useSwitchChain, useDisconnect } from "wagmi";
 import { celo } from "viem/chains";
 import { Map, Package, Trophy } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
@@ -29,8 +29,29 @@ interface WalletButtonProps {
 
 function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
   const { login, logout, ready, authenticated } = usePrivy();
-  const { address, chainId } = useAccount();
+  const { wallets } = useWallets();
+  const { address: wagmiAddress, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
+  const { disconnect } = useDisconnect();
+
+  // Must call wagmi disconnect FIRST, then Privy logout.
+  // Privy-only logout leaves the wagmi connector in localStorage so wagmi's
+  // reconnect() picks it back up on the next login — causing the stale-address bug.
+  async function handleDisconnect() {
+    disconnect();   // removes connector from localStorage, clears wagmi state
+    await logout(); // clears Privy session
+  }
+
+  // Privy is the source of truth. Wagmi persists connector state in localStorage
+  // and can return a stale address from a previous session after logout + re-login
+  // with a different method. Cross-validate: only use wagmiAddress if it belongs
+  // to one of the wallets in the current Privy session; otherwise fall back to
+  // the first Privy-managed wallet.
+  const sessionAddresses = new Set(wallets.map((w) => w.address.toLowerCase()));
+  const address: `0x${string}` | undefined =
+    wagmiAddress && sessionAddresses.has(wagmiAddress.toLowerCase())
+      ? wagmiAddress
+      : (wallets[0]?.address as `0x${string}` | undefined);
   const { balance } = useGoodDollarProfile();
   const [isNarrow, setIsNarrow] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -45,7 +66,7 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
 
   if (!ready) return null;
 
-  if (!authenticated || !address) {
+  if (!authenticated) {
     return (
       <button
         onClick={login}
@@ -58,6 +79,22 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
       >
         Connect
       </button>
+    );
+  }
+
+  // Authenticated but wallet not yet synced (embedded wallet being created, or
+  // wagmi/Privy still negotiating after login). Show a neutral loading state —
+  // never show an address that doesn't belong to this session.
+  if (!address) {
+    return (
+      <div style={{
+        background: "#f5f4f0", border: "2px solid #111111",
+        borderRadius: "10px", padding: "7px 16px",
+        fontSize: "13px", fontWeight: 700, color: "#888",
+        animation: "pulse 1.5s ease-in-out infinite",
+      }}>
+        Loading…
+      </div>
     );
   }
 
@@ -143,7 +180,7 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
         <WalletModal
           address={address as `0x${string}`}
           isVerified={isVerified}
-          onDisconnect={logout}
+          onDisconnect={handleDisconnect}
           onClose={() => setShowModal(false)}
           onOpenVerify={onOpenVerify}
         />
