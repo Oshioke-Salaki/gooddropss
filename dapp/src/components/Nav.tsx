@@ -29,7 +29,11 @@ interface WalletButtonProps {
   onOpenVerify: () => void;
 }
 
-function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: WalletButtonProps) {
+function WalletButton({
+  isVerified,
+  isVerificationLoading,
+  onOpenVerify,
+}: WalletButtonProps) {
   const { login, logout, ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const { address: wagmiAddress, chainId } = useAccount();
@@ -40,7 +44,7 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
   // Privy-only logout leaves the wagmi connector in localStorage so wagmi's
   // reconnect() picks it back up on the next login — causing the stale-address bug.
   async function handleDisconnect() {
-    disconnect();   // removes connector from localStorage, clears wagmi state
+    disconnect(); // removes connector from localStorage, clears wagmi state
     await logout(); // clears Privy session
   }
 
@@ -80,10 +84,17 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
       <button
         onClick={login}
         style={{
-          background: "#111111", color: "#bffd00",
-          border: "2px solid #111111", boxShadow: "2px 2px 0 #bffd00",
-          fontWeight: 800, fontSize: "13px", padding: "7px 16px",
-          borderRadius: "10px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+          background: "#111111",
+          color: "#bffd00",
+          border: "2px solid #111111",
+          boxShadow: "2px 2px 0 #bffd00",
+          fontWeight: 800,
+          fontSize: "13px",
+          padding: "7px 16px",
+          borderRadius: "10px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
         }}
       >
         Connect
@@ -96,12 +107,18 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
   // never show an address that doesn't belong to this session.
   if (!address) {
     return (
-      <div style={{
-        background: "#f5f4f0", border: "2px solid #111111",
-        borderRadius: "10px", padding: "7px 16px",
-        fontSize: "13px", fontWeight: 700, color: "#888",
-        animation: "pulse 1.5s ease-in-out infinite",
-      }}>
+      <div
+        style={{
+          background: "#f5f4f0",
+          border: "2px solid #111111",
+          borderRadius: "10px",
+          padding: "7px 16px",
+          fontSize: "13px",
+          fontWeight: 700,
+          color: "#888",
+          animation: "pulse 1.5s ease-in-out infinite",
+        }}
+      >
         Loading…
       </div>
     );
@@ -112,9 +129,15 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
       <button
         onClick={() => switchChain({ chainId: celo.id })}
         style={{
-          background: "#ff3b3b", color: "#fff",
-          border: "2px solid #111111", fontWeight: 700, fontSize: "13px",
-          padding: "7px 16px", borderRadius: "10px", cursor: "pointer", fontFamily: "inherit",
+          background: "#ff3b3b",
+          color: "#fff",
+          border: "2px solid #111111",
+          fontWeight: 700,
+          fontSize: "13px",
+          padding: "7px 16px",
+          borderRadius: "10px",
+          cursor: "pointer",
+          fontFamily: "inherit",
         }}
       >
         Switch network
@@ -128,10 +151,17 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
     <span
       title="Checking verification…"
       style={{
-        background: "#e5e5e5", color: "#888", border: "1.5px solid #bbb",
-        borderRadius: "5px", fontSize: "10px", fontWeight: 900,
-        padding: "1px 5px", letterSpacing: "0.02em", lineHeight: 1.4,
-        whiteSpace: "nowrap", flexShrink: 0,
+        background: "#e5e5e5",
+        color: "#888",
+        border: "1.5px solid #bbb",
+        borderRadius: "5px",
+        fontSize: "10px",
+        fontWeight: 900,
+        padding: "1px 5px",
+        letterSpacing: "0.02em",
+        lineHeight: 1.4,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
         animation: "pulse 1.5s ease-in-out infinite",
       }}
     >
@@ -141,10 +171,17 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
     <span
       title="Verified"
       style={{
-        background: "#bffd00", color: "#111111", border: "1.5px solid #111111",
-        borderRadius: "5px", fontSize: "10px", fontWeight: 900,
-        padding: "1px 5px", letterSpacing: "0.02em", lineHeight: 1.4,
-        whiteSpace: "nowrap", flexShrink: 0,
+        background: "#bffd00",
+        color: "#111111",
+        border: "1.5px solid #111111",
+        borderRadius: "5px",
+        fontSize: "10px",
+        fontWeight: 900,
+        padding: "1px 5px",
+        letterSpacing: "0.02em",
+        lineHeight: 1.4,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
       }}
     >
       ✓
@@ -154,13 +191,30 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
       role="button"
       tabIndex={0}
       title="Not verified — click to verify"
-      onClick={(e) => { e.stopPropagation(); onOpenVerify(); }}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onOpenVerify(); } }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpenVerify();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.stopPropagation();
+          onOpenVerify();
+        }
+      }}
       style={{
-        background: "#FF3B3B", color: "#fff", border: "1.5px solid #111111",
-        borderRadius: "5px", fontSize: "10px", fontWeight: 900,
-        padding: "1px 5px", letterSpacing: "0.02em", lineHeight: 1.4,
-        whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer", fontFamily: "inherit",
+        background: "#FF3B3B",
+        color: "#fff",
+        border: "1.5px solid #111111",
+        borderRadius: "5px",
+        fontSize: "10px",
+        fontWeight: 900,
+        padding: "1px 5px",
+        letterSpacing: "0.02em",
+        lineHeight: 1.4,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+        cursor: "pointer",
+        fontFamily: "inherit",
       }}
     >
       !
@@ -172,25 +226,44 @@ function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: Walle
       <button
         onClick={() => setShowModal((v) => !v)}
         style={{
-          background: "#f5f4f0", color: "#111111",
-          border: "2px solid #111111", boxShadow: "2px 2px 0 #111111",
-          fontWeight: 700, fontSize: "13px", padding: "5px 12px",
-          borderRadius: "10px", cursor: "pointer", fontFamily: "inherit",
-          display: "flex", alignItems: "center", gap: "7px",
+          background: "#f5f4f0",
+          color: "#111111",
+          border: "2px solid #111111",
+          boxShadow: "2px 2px 0 #111111",
+          fontWeight: 700,
+          fontSize: "13px",
+          padding: "5px 12px",
+          borderRadius: "10px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "7px",
           maxWidth: isNarrow ? "160px" : "240px",
         }}
       >
         {gdBadge}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
           {shortAddress}
         </span>
         {!isNarrow && (
           <span
             style={{
-              marginLeft: "2px", padding: "2px 7px",
-              background: "#111111", color: "#bffd00",
-              borderRadius: "6px", fontSize: "11px", fontWeight: 800,
-              whiteSpace: "nowrap", flexShrink: 0,
+              marginLeft: "2px",
+              padding: "2px 7px",
+              background: "#111111",
+              color: "#bffd00",
+              borderRadius: "6px",
+              fontSize: "11px",
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
             {formatG$(balance)} G$
@@ -222,21 +295,47 @@ interface VerifyBannerProps {
   onGetVerified: () => void;
 }
 
-export function VerifyBanner({ isVerified, isFetching, isVerificationLoading, inGrace, isConnected, onGetVerified }: VerifyBannerProps) {
+export function VerifyBanner({
+  isVerified,
+  isFetching,
+  isVerificationLoading,
+  inGrace,
+  isConnected,
+  onGetVerified,
+}: VerifyBannerProps) {
   const [dismissed, setDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  if (!mounted || !isConnected || isFetching || isVerificationLoading || isVerified || inGrace || dismissed) return null;
+  if (
+    !mounted ||
+    !isConnected ||
+    isFetching ||
+    isVerificationLoading ||
+    isVerified ||
+    inGrace ||
+    dismissed
+  )
+    return null;
 
   return (
     <div
       style={{
-        position: "fixed", top: "56px", left: 0, right: 0, zIndex: 997,
-        background: "#111111", borderBottom: "2px solid #bffd00",
+        position: "fixed",
+        top: "56px",
+        left: 0,
+        right: 0,
+        zIndex: 997,
+        background: "#111111",
+        borderBottom: "2px solid #bffd00",
         padding: "8px 16px",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        gap: "10px", fontSize: "13px", fontFamily: "inherit", flexWrap: "wrap",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        fontSize: "13px",
+        fontFamily: "inherit",
+        flexWrap: "wrap",
       }}
     >
       <span style={{ color: "#fff", fontWeight: 600 }}>
@@ -245,10 +344,16 @@ export function VerifyBanner({ isVerified, isFetching, isVerificationLoading, in
       <button
         onClick={onGetVerified}
         style={{
-          background: "#bffd00", color: "#111111",
-          border: "1.5px solid #bffd00", borderRadius: "6px",
-          padding: "3px 10px", fontWeight: 800, fontSize: "12px",
-          cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+          background: "#bffd00",
+          color: "#111111",
+          border: "1.5px solid #bffd00",
+          borderRadius: "6px",
+          padding: "3px 10px",
+          fontWeight: 800,
+          fontSize: "12px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
         }}
       >
         Get Verified →
@@ -256,10 +361,15 @@ export function VerifyBanner({ isVerified, isFetching, isVerificationLoading, in
       <button
         onClick={() => setDismissed(true)}
         style={{
-          position: "absolute", right: "12px",
-          background: "transparent", border: "none",
-          color: "#888", cursor: "pointer",
-          fontSize: "16px", lineHeight: 1, fontFamily: "inherit",
+          position: "absolute",
+          right: "12px",
+          background: "transparent",
+          border: "none",
+          color: "#888",
+          cursor: "pointer",
+          fontSize: "16px",
+          lineHeight: 1,
+          fontFamily: "inherit",
         }}
       >
         ✕
@@ -274,14 +384,8 @@ export function Nav() {
   const path = usePathname();
   const { isConnected } = useAccount();
   const { isFetching } = useGoodDollarProfile();
-  const {
-    status,
-    isVerified,
-    fvLink,
-    isVerifying,
-    setIsVerifying,
-    refresh,
-  } = useVerification();
+  const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh } =
+    useVerification();
   const { inGrace } = useGracePeriod();
   const isVerificationLoading = status === "loading";
 
@@ -306,22 +410,29 @@ export function Nav() {
   return (
     <>
       <nav className="fixed top-0 left-0 right-0 z-[1100] bg-cream border-b-2 border-ink h-14">
-        <div className="max-w-screen-lg mx-auto px-4 h-full flex items-center justify-between gap-3">
+        <div className="lg:px-[100px] mx-auto px-4 h-full flex items-center justify-between gap-3">
           {/* Logo */}
-          <Link href="/" className="shrink-0 flex items-center gap-1.5 font-black text-lg tracking-tight">
+          <Link
+            href="/"
+            className="shrink-0 flex items-center gap-1.5 font-black text-lg tracking-tight"
+          >
             <span>good</span>
-            <span className="bg-ink text-lime px-1.5 py-0.5 text-sm">drops.</span>
+            <span className="bg-ink text-lime px-1.5 py-0.5 text-sm">
+              drops.
+            </span>
           </Link>
 
           {/* Desktop nav links */}
-          <div className="hidden sm:flex items-center gap-1 flex-1 justify-center">
+          <div className="hidden sm:flex items-center gap-0.5 flex-1 justify-center overflow-hidden">
             {links.map((l) => (
               <Link
                 key={l.href}
                 href={l.href}
                 className={clsx(
-                  "px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap",
-                  path === l.href ? "bg-lime text-ink" : "text-muted hover:text-ink hover:bg-border"
+                  "px-2.5 py-1.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap",
+                  path === l.href
+                    ? "bg-lime text-ink"
+                    : "text-muted hover:text-ink hover:bg-border",
                 )}
               >
                 {l.label}
@@ -331,7 +442,11 @@ export function Nav() {
 
           {/* Wallet */}
           <div className="shrink-0">
-            <WalletButton isVerified={isVerified} isVerificationLoading={isVerificationLoading} onOpenVerify={() => setIsVerifying(true)} />
+            <WalletButton
+              isVerified={isVerified}
+              isVerificationLoading={isVerificationLoading}
+              onOpenVerify={() => setIsVerifying(true)}
+            />
           </div>
         </div>
       </nav>
@@ -362,13 +477,16 @@ export function BottomNav() {
   const path = usePathname();
 
   const items = [
-    { href: "/", label: "Map",      Icon: Map     },
-    { href: "/my-drops", label: "My Drops", Icon: Package  },
-    { href: "/leaderboard", label: "Rankings", Icon: Trophy   },
+    { href: "/", label: "Map", Icon: Map },
+    { href: "/my-drops", label: "My Drops", Icon: Package },
+    { href: "/leaderboard", label: "Rankings", Icon: Trophy },
   ];
 
   return (
-    <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-cream border-t-2 border-ink" style={{ zIndex: 1000 }}>
+    <nav
+      className="sm:hidden fixed bottom-0 left-0 right-0 bg-cream border-t-2 border-ink"
+      style={{ zIndex: 1000 }}
+    >
       <div className="grid grid-cols-3 h-16">
         {items.map(({ href, label, Icon }) => {
           const active = path === href;
@@ -378,7 +496,7 @@ export function BottomNav() {
               href={href}
               className={clsx(
                 "flex flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors",
-                active ? "text-ink bg-lime" : "text-muted"
+                active ? "text-ink bg-lime" : "text-muted",
               )}
             >
               <Icon size={20} strokeWidth={active ? 2.5 : 2} />
