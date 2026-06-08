@@ -217,7 +217,7 @@ export function LocationPickerSheet({
         animate={{ opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none" }}
         transition={{ duration: 0.2 }}
         style={{
-          position: "fixed", inset: 0, zIndex: 1001,
+          position: "fixed", inset: 0, zIndex: 1010,
           backgroundColor: "rgba(17,17,17,0.6)",
           backdropFilter: "blur(2px)",
           opacity: 0, pointerEvents: "none",
@@ -230,7 +230,7 @@ export function LocationPickerSheet({
         initial={{ y: "100%" }}
         transition={{ type: "spring", damping: 34, stiffness: 420 }}
         style={{
-          position: "fixed", inset: 0, zIndex: 1002,
+          position: "fixed", inset: 0, zIndex: 1011,
           background: "#f5f4f0",
           display: "flex", flexDirection: "column",
           overflow: "hidden",
