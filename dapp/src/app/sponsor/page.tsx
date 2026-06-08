@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
-import { Loader2, Plus, BarChart2, Sparkles, ChevronRight, ArrowLeft } from "lucide-react";
+import { Loader2, Plus, ArrowLeft, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Nav } from "@/components/Nav";
 
@@ -25,84 +25,162 @@ const ACCENT_COLORS = [
 
 // ── Campaign card ─────────────────────────────────────────────────────────────
 
-function CampaignCard({
-  campaign, drops, claims, onSelect,
-}: {
-  campaign: Campaign;
-  drops: Drop[];
-  claims: number;
-  onSelect: () => void;
+function CampaignCard({ campaign, drops, claims, onSelect }: {
+  campaign: Campaign; drops: Drop[]; claims: number; onSelect: () => void;
 }) {
-  const active  = drops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > Math.floor(Date.now() / 1000)).length;
-  const totalG$ = drops.reduce((s, d) => s + d.amount, 0n);
+  const now    = Math.floor(Date.now() / 1000);
+  const active = drops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > now).length;
+  const totalG = drops.reduce((s, d) => s + d.amount, 0n);
 
   return (
     <button
       onClick={onSelect}
-      style={{ borderLeft: `4px solid ${campaign.color}` }}
-      className="w-full text-left bg-card border-2 border-ink rounded-xl p-4 shadow-brutal-sm hover:shadow-brutal transition-all flex items-center gap-4"
+      style={{
+        width: "100%", textAlign: "left",
+        background: "#fff",
+        border: "2px solid #111",
+        borderLeft: `5px solid ${campaign.color}`,
+        borderRadius: 16,
+        boxShadow: "3px 3px 0 #111",
+        padding: "16px 18px",
+        cursor: "pointer", fontFamily: "inherit",
+        transition: "box-shadow 0.1s, transform 0.1s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #111"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #111"; e.currentTarget.style.transform = "translate(0,0)"; }}
     >
-      {campaign.logo ? (
-        <img src={campaign.logo} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-ink shrink-0" />
-      ) : (
-        <div
-          style={{ background: campaign.color }}
-          className="w-12 h-12 rounded-lg border-2 border-ink flex items-center justify-center text-ink font-black text-xl shrink-0"
-        >
-          {campaign.name.charAt(0).toUpperCase()}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+        {/* Logo / avatar */}
+        <div style={{
+          width: 48, height: 48, borderRadius: 12,
+          background: campaign.color, border: "2px solid #111",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 900, fontSize: 20, color: "#111", flexShrink: 0,
+          overflow: "hidden",
+        }}>
+          {campaign.logo
+            ? <img src={campaign.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            : campaign.name.charAt(0).toUpperCase()
+          }
         </div>
-      )}
-      <div className="flex-1 min-w-0">
-        <p className="font-black text-base truncate">{campaign.name}</p>
-        {campaign.description && (
-          <p className="text-xs text-muted truncate mt-0.5">{campaign.description}</p>
-        )}
-        <div className="flex items-center gap-3 mt-2 text-xs font-bold text-muted flex-wrap">
-          <span className="text-lime bg-ink px-2 py-0.5 rounded-full">{active} active</span>
-          <span>{drops.length} drops total</span>
-          <span>{claims} claimed</span>
-          <span>{formatG$(totalG$)} G$ hidden</span>
-          {campaign.goodcollectivePool && (
-            <span className="text-ink bg-lime px-2 py-0.5 rounded-full">🤝 GoodCollective</span>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p style={{ margin: 0, fontWeight: 900, fontSize: 16, color: "#111", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {campaign.name}
+            </p>
+            <span style={{ color: "#aaa", fontSize: 18, flexShrink: 0 }}>→</span>
+          </div>
+          {campaign.description && (
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {campaign.description}
+            </p>
           )}
         </div>
       </div>
-      <ChevronRight size={18} className="shrink-0 text-muted" />
+
+      {/* Stats row */}
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        {[
+          { label: "Active",   value: String(active),           highlight: active > 0 },
+          { label: "Drops",    value: String(drops.length),     highlight: false },
+          { label: "Claimed",  value: String(claims),           highlight: false },
+          { label: "Hidden",   value: formatG$(totalG) + " G$", highlight: false },
+        ].map(({ label, value, highlight }) => (
+          <div key={label} style={{
+            background: highlight ? campaign.color : "#f5f4f0",
+            border: `1.5px solid ${highlight ? "#111" : "#e0ddd8"}`,
+            borderRadius: 8, padding: "4px 10px",
+            display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <span style={{ fontWeight: 900, fontSize: 13, color: "#111" }}>{value}</span>
+            <span style={{ fontWeight: 600, fontSize: 11, color: "#888" }}>{label}</span>
+          </div>
+        ))}
+        {campaign.goodcollectivePool && (
+          <div style={{ background: "#111", border: "1.5px solid #111", borderRadius: 8, padding: "4px 10px" }}>
+            <span style={{ fontWeight: 800, fontSize: 11, color: "#BFFD00" }}>🤝 GoodCollective</span>
+          </div>
+        )}
+      </div>
     </button>
   );
 }
 
 // ── Campaign drop list ────────────────────────────────────────────────────────
 
-function CampaignDropList({ drops }: { drops: Drop[] }) {
+function CampaignDropList({ drops, color }: { drops: Drop[]; color: string }) {
   const now = Math.floor(Date.now() / 1000);
   if (!drops.length) return (
-    <p className="text-sm text-muted text-center py-6">No drops yet — add your first one above!</p>
+    <div style={{
+      background: "#fff", border: "2px dashed #ddd",
+      borderRadius: 16, padding: "40px 20px", textAlign: "center",
+    }}>
+      <div style={{ fontSize: 40, marginBottom: 10 }}>📍</div>
+      <p style={{ fontWeight: 800, fontSize: 15, color: "#111", margin: "0 0 4px" }}>No drops yet</p>
+      <p style={{ fontSize: 13, color: "#888", margin: 0 }}>Tap "Add Drops" to place your first drop on the map.</p>
+    </div>
   );
 
   return (
-    <div className="space-y-2">
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {drops.map((d) => {
         const isActive  = d.status === DROP_STATUS.Active && d.expiry > now;
         const isClaimed = d.status === DROP_STATUS.Claimed;
         const { hint }  = parseDropHint(d.hint);
+
+        const statusColor = isActive ? color : isClaimed ? "#888" : "#FF3B3B";
+        const statusLabel = isActive ? "Active" : isClaimed ? "Claimed" : "Expired";
+
         return (
-          <div key={String(d.id)} className="bg-cream border-2 border-ink rounded-xl px-4 py-3 flex items-center gap-3">
-            <div className={clsx(
-              "w-2.5 h-2.5 rounded-full shrink-0",
-              isActive ? "bg-lime" : isClaimed ? "bg-muted" : "bg-danger"
-            )} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold truncate">{hint || "No clue"}</p>
-              <p className="text-xs text-muted">{formatG$(d.amount)} G$</p>
+          <div key={String(d.id)} style={{
+            background: "#fff",
+            border: "2px solid #111",
+            borderLeft: `5px solid ${statusColor}`,
+            borderRadius: 14,
+            padding: "13px 16px",
+            display: "flex", alignItems: "center", gap: 14,
+            boxShadow: isActive ? "2px 2px 0 #111" : "none",
+          }}>
+            {/* Amount bubble */}
+            <div style={{
+              width: 46, height: 46, borderRadius: 12, flexShrink: 0,
+              background: isActive ? color : "#f0f0f0",
+              border: `2px solid ${isActive ? "#111" : "#ddd"}`,
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              gap: 0,
+            }}>
+              <span style={{ fontWeight: 900, fontSize: 13, color: isActive ? "#111" : "#aaa", lineHeight: 1.1 }}>
+                {formatG$(d.amount)}
+              </span>
+              <span style={{ fontWeight: 700, fontSize: 9, color: isActive ? "#111" : "#aaa", opacity: 0.7 }}>G$</span>
             </div>
-            <span className={clsx(
-              "text-xs font-bold px-2 py-0.5 rounded-full border",
-              isActive  ? "bg-lime text-ink border-ink" :
-              isClaimed ? "bg-border text-muted border-muted" :
-                          "bg-danger/10 text-danger border-danger"
-            )}>
-              {isActive ? "Active" : isClaimed ? "Claimed" : "Expired"}
+
+            {/* Hint + meta */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{
+                margin: "0 0 3px", fontSize: 14, fontWeight: 700, color: "#111",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {hint || <span style={{ color: "#bbb", fontStyle: "italic", fontWeight: 500 }}>No clue left</span>}
+              </p>
+              <p style={{ margin: 0, fontSize: 11, color: "#aaa", fontWeight: 600 }}>
+                Drop #{String(d.id)} · expires {new Date(d.expiry * 1000).toLocaleDateString()}
+              </p>
+            </div>
+
+            {/* Status badge */}
+            <span style={{
+              fontSize: 10, fontWeight: 900,
+              padding: "4px 10px", borderRadius: 100,
+              background: isActive ? color : isClaimed ? "#f5f5f5" : "#FFE5E5",
+              color: isActive ? "#111" : isClaimed ? "#888" : "#FF3B3B",
+              border: `1.5px solid ${isActive ? "#111" : isClaimed ? "#ddd" : "#FF3B3B"}`,
+              textTransform: "uppercase", letterSpacing: "0.08em",
+              whiteSpace: "nowrap", flexShrink: 0,
+            }}>
+              {statusLabel}
             </span>
           </div>
         );
@@ -117,15 +195,14 @@ export default function SponsorPage() {
   const { address, isConnected } = useAccount();
   const { login, ready, authenticated } = usePrivy();
 
-  const [campaigns, setCampaigns]       = useState<Campaign[]>([]);
+  const [campaigns,      setCampaigns]      = useState<Campaign[]>([]);
   const [campaignClaims, setCampaignClaims] = useState<Record<string, number>>({});
-  const [allDrops, setAllDrops]         = useState<Drop[]>([]);
-  const [loadingData, setLoadingData]   = useState(false);
-  const [selected, setSelected]         = useState<Campaign | null>(null);
-  const [view, setView]                 = useState<"list" | "create">("list");
+  const [allDrops,       setAllDrops]       = useState<Drop[]>([]);
+  const [loadingData,    setLoadingData]    = useState(false);
+  const [selected,       setSelected]       = useState<Campaign | null>(null);
+  const [view,           setView]           = useState<"list" | "create">("list");
   const [createDropOpen, setCreateDropOpen] = useState(false);
 
-  // ── Campaign creation form state ──────────────────────────────────────────
   const [formName,  setFormName]  = useState("");
   const [formDesc,  setFormDesc]  = useState("");
   const [formColor, setFormColor] = useState(ACCENT_COLORS[0].value);
@@ -142,51 +219,34 @@ export default function SponsorPage() {
         fetch(`/api/campaigns?owner=${address}`).then((r) => r.json()),
         fetchAllDrops(),
       ]);
-      const fetchedCampaigns: Campaign[] = campRes.campaigns ?? [];
-      setCampaigns(fetchedCampaigns);
+      const fetched: Campaign[] = campRes.campaigns ?? [];
+      setCampaigns(fetched);
       setAllDrops(drops);
-
-      // Fetch claim counts for each campaign
-      if (fetchedCampaigns.length > 0) {
-        const claimResults = await Promise.all(
-          fetchedCampaigns.map((c) =>
-            fetch(`/api/campaigns/${c.id}`)
-              .then((r) => r.json())
+      if (fetched.length > 0) {
+        const results = await Promise.all(
+          fetched.map((c) =>
+            fetch(`/api/campaigns/${c.id}`).then((r) => r.json())
               .then((d) => ({ id: c.id, claims: d.claims ?? 0 }))
               .catch(() => ({ id: c.id, claims: 0 }))
           )
         );
         const map: Record<string, number> = {};
-        claimResults.forEach(({ id, claims }) => { map[id] = claims; });
+        results.forEach(({ id, claims }) => { map[id] = claims; });
         setCampaignClaims(map);
       }
-    } catch (e) {
-      console.error("[sponsor] fetchData failed", e);
-    } finally {
-      setLoadingData(false);
-    }
+    } catch (e) { console.error("[sponsor] fetchData failed", e); }
+    finally { setLoadingData(false); }
   }, [address]);
 
-  useEffect(() => {
-    if (isConnected && address) fetchData();
-  }, [isConnected, address, fetchData]);
+  useEffect(() => { if (isConnected && address) fetchData(); }, [isConnected, address, fetchData]);
 
   async function handleCreateCampaign() {
     if (!address || !formName.trim()) return;
-    setCreating(true);
-    setCreateErr("");
+    setCreating(true); setCreateErr("");
     try {
       const res  = await fetch("/api/campaigns", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name:               formName.trim(),
-          description:        formDesc.trim(),
-          color:              formColor,
-          logo:               formLogo.trim() || undefined,
-          ownerAddress:       address,
-          goodcollectivePool: formPool.trim() || undefined,
-        }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: formName.trim(), description: formDesc.trim(), color: formColor, logo: formLogo.trim() || undefined, ownerAddress: address, goodcollectivePool: formPool.trim() || undefined }),
       });
       const json = await res.json();
       if (!res.ok) { setCreateErr(json.error ?? "Failed to create campaign"); return; }
@@ -195,304 +255,423 @@ export default function SponsorPage() {
       setView("list");
       setFormName(""); setFormDesc(""); setFormLogo(""); setFormPool("");
       setFormColor(ACCENT_COLORS[0].value);
-    } catch {
-      setCreateErr("Network error — try again");
-    } finally {
-      setCreating(false);
-    }
+    } catch { setCreateErr("Network error — try again"); }
+    finally { setCreating(false); }
   }
 
   const dropsForCampaign = (c: Campaign) =>
-    allDrops.filter((d) => {
-      const { campaignId } = parseDropHint(d.hint);
-      return campaignId === c.id;
-    });
+    allDrops.filter((d) => parseDropHint(d.hint).campaignId === c.id);
 
-  // ── Not connected ─────────────────────────────────────────────────────────
   if (!ready) return null;
 
+  // ── Not connected ──────────────────────────────────────────────────────────
   if (!authenticated || !address) {
     return (
-      <div className="min-h-screen bg-cream flex flex-col items-center justify-center px-6 text-center gap-6 pt-14">
+      <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif", paddingTop: 56 }}>
         <Nav />
-        <div>
-          <h1 className="text-4xl font-black tracking-tight">GoodDrops for Business</h1>
-          <p className="text-muted mt-2 text-base max-w-xs mx-auto">
-            Drop G$ at your location. Bring verified humans through your door.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 max-w-xs w-full text-left text-sm">
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "80px 24px 40px", textAlign: "center" }}>
+          {/* Hero */}
+          <div style={{
+            background: "#111", border: "2px solid #111",
+            borderRadius: 20, boxShadow: "4px 4px 0 #BFFD00",
+            padding: "36px 24px", marginBottom: 28,
+          }}>
+            <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 800, color: "#555", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+              For Businesses
+            </p>
+            <h1 style={{ margin: "0 0 12px", fontSize: 32, fontWeight: 900, color: "#BFFD00", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              GoodDrops<br />for Business
+            </h1>
+            <p style={{ margin: "0 0 24px", fontSize: 14, color: "#888", lineHeight: 1.6 }}>
+              Drop G$ at your location. Bring verified humans through your door.
+            </p>
+            <button
+              onClick={login}
+              style={{
+                width: "100%", padding: "15px",
+                background: "#BFFD00", color: "#111",
+                border: "2px solid #BFFD00", borderRadius: 14,
+                boxShadow: "3px 3px 0 rgba(191,253,0,0.4)",
+                fontWeight: 900, fontSize: 16,
+                cursor: "pointer", fontFamily: "inherit",
+              }}
+            >
+              Connect Wallet to Start
+            </button>
+          </div>
+
+          {/* Value props */}
           {[
-            { icon: "📍", text: "Place G$ drops anywhere on the map" },
-            { icon: "🎯", text: "Verified GoodDollar users hunt them" },
-            { icon: "📊", text: "Track claims and foot traffic in real time" },
-          ].map(({ icon, text }) => (
-            <div key={text} className="flex items-center gap-3 bg-card border-2 border-ink rounded-xl px-4 py-3">
-              <span className="text-xl">{icon}</span>
-              <span className="font-semibold">{text}</span>
+            { icon: "📍", title: "Place drops anywhere", desc: "Pin G$ to exact GPS coordinates on the map — your entrance, your table, your event." },
+            { icon: "🎯", title: "Verified humans hunt them", desc: "GoodDollar-verified users see your drops and walk to claim them in real life." },
+            { icon: "📊", title: "Track in real time", desc: "See exactly who claimed, when, and how much G$ was distributed." },
+          ].map(({ icon, title, desc }) => (
+            <div key={title} style={{
+              background: "#fff", border: "2px solid #111",
+              borderRadius: 14, padding: "16px 18px",
+              marginBottom: 10, textAlign: "left",
+              display: "flex", gap: 14, alignItems: "flex-start",
+            }}>
+              <span style={{ fontSize: 24, flexShrink: 0, marginTop: 2 }}>{icon}</span>
+              <div>
+                <p style={{ margin: "0 0 3px", fontWeight: 800, fontSize: 14, color: "#111" }}>{title}</p>
+                <p style={{ margin: 0, fontSize: 12, color: "#888", lineHeight: 1.5 }}>{desc}</p>
+              </div>
             </div>
           ))}
         </div>
-        <button
-          onClick={login}
-          className="btn-brutal bg-ink text-lime font-black px-8 py-4 rounded-2xl text-base"
-        >
-          Connect Wallet to Start
-        </button>
       </div>
     );
   }
 
-  // ── Campaign detail view ──────────────────────────────────────────────────
+  // ── Campaign detail ────────────────────────────────────────────────────────
   if (selected) {
+    const now      = Math.floor(Date.now() / 1000);
     const campDrops = dropsForCampaign(selected);
-    const active    = campDrops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > Math.floor(Date.now() / 1000)).length;
-    const claimed   = campDrops.filter((d) => d.status === DROP_STATUS.Claimed).length;
-    const totalG$   = campDrops.reduce((s, d) => s + d.amount, 0n);
+    const active   = campDrops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > now).length;
+    const claimed  = campDrops.filter((d) => d.status === DROP_STATUS.Claimed).length;
+    const totalG   = campDrops.reduce((s, d) => s + d.amount, 0n);
 
     return (
-      <div className="min-h-screen bg-cream pt-14">
+      <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif", paddingTop: 56 }}>
         <Nav />
+
         {/* Campaign header */}
-        <div className="sticky top-14 z-10 bg-cream border-b-2 border-ink px-4 py-3 flex items-center gap-3">
+        <div style={{
+          position: "sticky", top: 56, zIndex: 10,
+          background: "#111",
+          borderBottom: "2px solid #111",
+          borderTop: `4px solid ${selected.color}`,
+          padding: "12px 20px",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
           <button
             onClick={() => setSelected(null)}
-            className="w-9 h-9 rounded-full border-2 border-ink flex items-center justify-center hover:bg-ink hover:text-lime transition-colors"
+            style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: "rgba(255,255,255,0.08)", border: "1.5px solid #333",
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#888",
+            }}
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={15} color="#888" />
           </button>
-          <div
-            style={{ background: selected.color }}
-            className="w-8 h-8 rounded-lg border-2 border-ink flex items-center justify-center font-black text-sm shrink-0"
-          >
+          <div style={{
+            width: 34, height: 34, borderRadius: 10,
+            background: selected.color, border: "2px solid rgba(255,255,255,0.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 900, fontSize: 14, color: "#111", flexShrink: 0, overflow: "hidden",
+          }}>
             {selected.logo
-              ? <img src={selected.logo} alt="" className="w-full h-full object-cover rounded" />
+              ? <img src={selected.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               : selected.name.charAt(0).toUpperCase()
             }
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-black text-base truncate">{selected.name}</p>
-            <p className="text-xs text-muted truncate">{selected.description}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontWeight: 900, fontSize: 15, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {selected.name}
+            </p>
+            {selected.description && (
+              <p style={{ margin: 0, fontSize: 11, color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {selected.description}
+              </p>
+            )}
           </div>
           <button
             onClick={() => setCreateDropOpen(true)}
-            style={{ background: selected.color }}
-            className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-black text-ink border-2 border-ink shrink-0"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: selected.color, color: "#111",
+              border: "2px solid rgba(255,255,255,0.15)", borderRadius: 10,
+              padding: "8px 14px", fontWeight: 900, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+              boxShadow: `2px 2px 0 ${selected.color}50`,
+            }}
           >
             <Plus size={14} />
-            Add Drop
+            Add Drops
           </button>
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-3 p-4">
-          {[
-            { label: "Active Drops", value: active,          color: "#BFFD00" },
-            { label: "Claimed",      value: claimed,         color: "#00CFFF" },
-            { label: "G$ Hidden",    value: formatG$(totalG$) + " G$", color: selected.color },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="bg-card border-2 border-ink rounded-xl p-3 text-center shadow-brutal-sm">
-              <p className="text-2xl font-black" style={{ color }}>{value}</p>
-              <p className="text-xs text-muted font-semibold mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Drops list */}
-        <div className="px-4 pb-24">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-black text-sm uppercase tracking-wider text-muted">Campaign Drops</h3>
-            {loadingData && <Loader2 size={14} className="animate-spin text-muted" />}
+        <div style={{ maxWidth: 560, margin: "0 auto", padding: "20px 16px 80px" }}>
+          {/* Stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 24 }}>
+            {[
+              { label: "Active Drops", value: active,                   color: selected.color },
+              { label: "Claimed",      value: claimed,                  color: "#00CFFF" },
+              { label: "G$ Hidden",    value: formatG$(totalG) + " G$", color: "#fff" },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{
+                background: "#111", border: "2px solid #222",
+                borderRadius: 14, padding: "14px 12px", textAlign: "center",
+              }}>
+                <p style={{ margin: "0 0 3px", fontWeight: 900, fontSize: 22, color, letterSpacing: "-0.02em" }}>{value}</p>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
+              </div>
+            ))}
           </div>
-          <CampaignDropList drops={campDrops} />
+
+          {/* Drops */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              Campaign Drops
+            </p>
+            {loadingData && <Loader2 size={13} style={{ animation: "spin 1s linear infinite", color: "#aaa" }} />}
+          </div>
+          <CampaignDropList drops={campDrops} color={selected.color} />
         </div>
 
-        {/* Batch drop creator — full-screen, click-to-place */}
         <BatchDropCreator
           open={createDropOpen}
           campaign={selected}
           onClose={() => setCreateDropOpen(false)}
           onSuccess={() => { setCreateDropOpen(false); fetchData(); }}
         />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  // ── Main list / create view ───────────────────────────────────────────────
+  // ── Main dashboard ─────────────────────────────────────────────────────────
+
+  // Aggregate stats across all campaigns
+  const now         = Math.floor(Date.now() / 1000);
+  const allCampDrops = campaigns.flatMap(dropsForCampaign);
+  const totalActive  = allCampDrops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > now).length;
+  const totalHidden  = allCampDrops.reduce((s, d) => s + d.amount, 0n);
+  const totalClaims  = Object.values(campaignClaims).reduce((s, n) => s + n, 0);
+
   return (
-    <div className="min-h-screen bg-cream pt-14">
+    <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif", paddingTop: 56 }}>
       <Nav />
-      {/* Sponsor header */}
-      <div className="sticky top-14 z-10 bg-cream border-b-2 border-ink px-4 py-4">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black tracking-tight">Sponsor Dashboard</h1>
-            <p className="text-xs text-muted mt-0.5">Drop G$ · Drive foot traffic · Build loyalty</p>
+
+      {/* ── Dashboard header ──────────────────────────────────────────────── */}
+      <div style={{
+        background: "#111",
+        borderBottom: "2px solid #111",
+        borderTop: "4px solid #BFFD00",
+        padding: "20px 24px 20px",
+      }}>
+        <div style={{ maxWidth: 640, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: campaigns.length > 0 ? 20 : 0 }}>
+            <div>
+              <p style={{ margin: "0 0 2px", fontSize: 10, fontWeight: 800, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Sponsor Dashboard
+              </p>
+              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em" }}>
+                Drop G$ · Drive traffic
+              </h1>
+            </div>
+            <button
+              onClick={() => setView(view === "create" ? "list" : "create")}
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                background: view === "create" ? "transparent" : "#BFFD00",
+                color: view === "create" ? "#555" : "#111",
+                border: "2px solid",
+                borderColor: view === "create" ? "#333" : "#BFFD00",
+                borderRadius: 12, padding: "10px 16px",
+                fontWeight: 900, fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+                boxShadow: view === "create" ? "none" : "3px 3px 0 rgba(191,253,0,0.3)",
+              }}
+            >
+              {view === "create" ? "Cancel" : <><Plus size={14} /> New Campaign</>}
+            </button>
           </div>
-          <button
-            onClick={() => setView(view === "create" ? "list" : "create")}
-            className={clsx(
-              "btn-brutal flex items-center gap-2 px-4 py-2 rounded-xl font-black text-sm border-2 border-ink",
-              view === "create" ? "bg-cream text-ink" : "bg-ink text-lime"
-            )}
-          >
-            {view === "create" ? "Cancel" : <><Plus size={14} /> New Campaign</>}
-          </button>
+
+          {/* Aggregate stats — only when there are campaigns */}
+          {campaigns.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {[
+                { label: "Active Drops", value: totalActive,                    accent: "#BFFD00" },
+                { label: "Total Claimed", value: totalClaims,                   accent: "#00CFFF" },
+                { label: "G$ Distributed", value: formatG$(totalHidden) + " G$", accent: "#fff" },
+              ].map(({ label, value, accent }) => (
+                <div key={label} style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1.5px solid #222",
+                  borderRadius: 12, padding: "12px 14px",
+                }}>
+                  <p style={{ margin: "0 0 2px", fontWeight: 900, fontSize: 20, color: accent, letterSpacing: "-0.02em" }}>{value}</p>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#555", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-6">
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "24px 16px 80px" }}>
 
-        {/* ── Create campaign form ────────────────────────────────────────── */}
+        {/* ── Create campaign form ─────────────────────────────────────────── */}
         {view === "create" && (
-          <div className="bg-card border-2 border-ink rounded-2xl p-5 shadow-brutal space-y-5">
-            <div className="flex items-center gap-2">
-              <Sparkles size={18} className="text-lime" />
-              <h2 className="font-black text-lg">New Campaign</h2>
+          <div style={{
+            background: "#fff", border: "2px solid #111",
+            borderRadius: 20, boxShadow: "4px 4px 0 #111",
+            padding: "22px 20px", marginBottom: 24,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <Sparkles size={18} color="#BFFD00" />
+              <h2 style={{ margin: 0, fontWeight: 900, fontSize: 18 }}>New Campaign</h2>
             </div>
 
-            {/* Name */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted">Campaign Name *</label>
-              <input
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value.slice(0, 60))}
-                placeholder="e.g. Lagos Coffee Run · Grand Opening"
-                className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm font-semibold bg-cream outline-none placeholder:text-muted placeholder:font-normal"
-              />
-            </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted">Description</label>
-              <textarea
-                value={formDesc}
-                onChange={(e) => setFormDesc(e.target.value.slice(0, 280))}
-                placeholder="What is this campaign about? Hunters will see this when they find your drop."
-                rows={3}
-                className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm bg-cream outline-none resize-none placeholder:text-muted"
-              />
-              <p className="text-xs text-muted text-right">{formDesc.length}/280</p>
-            </div>
-
-            {/* Accent color */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted">Brand Color</label>
-              <div className="flex gap-2 flex-wrap">
-                {ACCENT_COLORS.map(({ label, value }) => (
-                  <button
-                    key={value}
-                    onClick={() => setFormColor(value)}
-                    title={label}
-                    className={clsx(
-                      "w-10 h-10 rounded-xl border-2 transition-all",
-                      formColor === value ? "border-ink shadow-brutal-sm scale-110" : "border-transparent"
-                    )}
-                    style={{ background: value }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Logo URL */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted">Logo URL (optional)</label>
-              <input
-                type="url"
-                value={formLogo}
-                onChange={(e) => setFormLogo(e.target.value)}
-                placeholder="https://yourbrand.com/logo.png"
-                className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm bg-cream outline-none font-mono placeholder:font-sans placeholder:text-muted"
-              />
-            </div>
-
-            {/* GoodCollective Pool */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-muted flex items-center gap-1.5">
-                🤝 GoodCollective Pool Address
-                <span className="font-normal text-muted normal-case tracking-normal">(optional)</span>
-              </label>
-              <input
-                type="text"
-                value={formPool}
-                onChange={(e) => setFormPool(e.target.value.trim())}
-                placeholder="0x… your GoodCollective pool"
-                className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm bg-cream outline-none font-mono placeholder:font-sans placeholder:text-muted"
-              />
-              {formPool && !/^0x[0-9a-fA-F]{40}$/.test(formPool) && (
-                <p className="text-xs text-danger font-semibold">Must be a valid 0x address</p>
-              )}
-              <p className="text-xs text-muted">
-                Link your GoodCollective community pool to display a 🤝 badge on your drops.{" "}
-                <a href="https://goodcollective.xyz" target="_blank" rel="noopener noreferrer" className="underline">Learn more ↗</a>
-              </p>
-            </div>
-
-            {/* Preview */}
-            <div className="bg-cream border-2 border-dashed border-ink rounded-xl p-4 flex items-center gap-3">
-              <div
-                style={{ background: formColor }}
-                className="w-12 h-12 rounded-lg border-2 border-ink flex items-center justify-center font-black text-xl shrink-0"
-              >
-                {formLogo
-                  ? <img src={formLogo} alt="" className="w-full h-full object-cover rounded" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  : (formName.charAt(0).toUpperCase() || "?")
-                }
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Name */}
               <div>
-                <p className="font-black text-sm">{formName || "Campaign name"}</p>
-                <p className="text-xs text-muted mt-0.5 line-clamp-2">{formDesc || "Your description"}</p>
+                <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>Campaign Name *</p>
+                <input
+                  type="text" value={formName}
+                  onChange={(e) => setFormName(e.target.value.slice(0, 60))}
+                  placeholder="e.g. Grand Opening · Lagos Coffee Run"
+                  style={{ width: "100%", padding: "11px 14px", border: "2px solid #111", borderRadius: 12, fontSize: 14, fontWeight: 600, background: "#f5f4f0", outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                />
               </div>
+
+              {/* Description */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>Description</p>
+                <textarea
+                  value={formDesc}
+                  onChange={(e) => setFormDesc(e.target.value.slice(0, 280))}
+                  placeholder="What is this campaign about? Hunters will see this when they find your drop."
+                  rows={3}
+                  style={{ width: "100%", padding: "11px 14px", border: "2px solid #111", borderRadius: 12, fontSize: 13, background: "#f5f4f0", outline: "none", resize: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                />
+                <p style={{ margin: "4px 0 0", fontSize: 11, color: "#aaa", textAlign: "right" }}>{formDesc.length}/280</p>
+              </div>
+
+              {/* Brand color */}
+              <div>
+                <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>Brand Color</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {ACCENT_COLORS.map(({ label, value }) => (
+                    <button
+                      key={value}
+                      onClick={() => setFormColor(value)}
+                      title={label}
+                      style={{
+                        width: 40, height: 40, borderRadius: 12, background: value,
+                        border: `2.5px solid ${formColor === value ? "#111" : "transparent"}`,
+                        boxShadow: formColor === value ? "2px 2px 0 #111" : "none",
+                        cursor: "pointer", transform: formColor === value ? "scale(1.1)" : "scale(1)",
+                        transition: "all 0.1s",
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Logo URL */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>Logo URL (optional)</p>
+                <input
+                  type="url" value={formLogo}
+                  onChange={(e) => setFormLogo(e.target.value)}
+                  placeholder="https://yourbrand.com/logo.png"
+                  style={{ width: "100%", padding: "11px 14px", border: "2px solid #111", borderRadius: 12, fontSize: 13, background: "#f5f4f0", outline: "none", fontFamily: "monospace", boxSizing: "border-box" }}
+                />
+              </div>
+
+              {/* GoodCollective */}
+              <div>
+                <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  🤝 GoodCollective Pool <span style={{ fontWeight: 600, textTransform: "none", letterSpacing: "normal" }}>(optional)</span>
+                </p>
+                <input
+                  type="text" value={formPool}
+                  onChange={(e) => setFormPool(e.target.value.trim())}
+                  placeholder="0x… your GoodCollective pool"
+                  style={{ width: "100%", padding: "11px 14px", border: "2px solid #111", borderRadius: 12, fontSize: 13, background: "#f5f4f0", outline: "none", fontFamily: "monospace", boxSizing: "border-box" }}
+                />
+                {formPool && !/^0x[0-9a-fA-F]{40}$/.test(formPool) && (
+                  <p style={{ margin: "4px 0 0", fontSize: 11, color: "#FF3B3B", fontWeight: 700 }}>Must be a valid 0x address</p>
+                )}
+              </div>
+
+              {/* Preview */}
+              <div style={{ background: "#f5f4f0", border: "2px dashed #111", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 10,
+                  background: formColor, border: "2px solid #111",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 900, fontSize: 20, flexShrink: 0, overflow: "hidden",
+                }}>
+                  {formLogo
+                    ? <img src={formLogo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    : (formName.charAt(0).toUpperCase() || "?")
+                  }
+                </div>
+                <div>
+                  <p style={{ margin: "0 0 2px", fontWeight: 900, fontSize: 14, color: "#111" }}>{formName || "Campaign name"}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#888" }}>{formDesc || "Your description"}</p>
+                </div>
+              </div>
+
+              {createErr && <p style={{ margin: 0, fontSize: 13, color: "#FF3B3B", fontWeight: 700 }}>{createErr}</p>}
+
+              <button
+                onClick={handleCreateCampaign}
+                disabled={creating || !formName.trim()}
+                style={{
+                  width: "100%", padding: "15px",
+                  background: !creating && formName.trim() ? "#BFFD00" : "#e8e6e0",
+                  color: !creating && formName.trim() ? "#111" : "#aaa",
+                  border: "2px solid",
+                  borderColor: !creating && formName.trim() ? "#111" : "#ddd",
+                  borderRadius: 14,
+                  boxShadow: !creating && formName.trim() ? "3px 3px 0 #111" : "none",
+                  fontWeight: 900, fontSize: 15,
+                  cursor: creating || !formName.trim() ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}
+              >
+                {creating ? <><Loader2 size={16} style={{ animation: "spin 1s linear infinite" }} /> Creating…</> : "Create Campaign →"}
+              </button>
             </div>
-
-            {createErr && (
-              <p className="text-sm text-danger font-semibold">{createErr}</p>
-            )}
-
-            <button
-              onClick={handleCreateCampaign}
-              disabled={creating || !formName.trim()}
-              className={clsx(
-                "btn-brutal w-full py-4 rounded-xl font-black text-base flex items-center justify-center gap-2",
-                !creating && formName.trim() ? "bg-lime text-ink" : "bg-border text-muted cursor-not-allowed shadow-none"
-              )}
-              style={!formName.trim() ? { boxShadow: "none", transform: "none" } : {}}
-            >
-              {creating ? <><Loader2 size={16} className="animate-spin" /> Creating…</> : "Create Campaign →"}
-            </button>
           </div>
         )}
 
-        {/* ── Campaign list ───────────────────────────────────────────────── */}
+        {/* ── Campaign list ────────────────────────────────────────────────── */}
         {view === "list" && (
-          <div className="space-y-4">
+          <>
             {loadingData ? (
-              <div className="flex items-center justify-center py-12 gap-3 text-muted">
-                <Loader2 size={20} className="animate-spin" />
-                <span className="font-semibold">Loading campaigns…</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: 10, color: "#888" }}>
+                <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
+                <span style={{ fontWeight: 600, fontSize: 14 }}>Loading campaigns…</span>
               </div>
             ) : campaigns.length === 0 ? (
-              <div className="text-center py-16 space-y-4">
-                <div className="text-6xl">🎯</div>
-                <div>
-                  <p className="font-black text-xl">No campaigns yet</p>
-                  <p className="text-muted text-sm mt-1">Create your first campaign to start placing sponsored drops on the map.</p>
-                </div>
+              <div style={{
+                background: "#111", border: "2px solid #111",
+                borderRadius: 20, boxShadow: "4px 4px 0 #BFFD00",
+                padding: "48px 24px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 52, marginBottom: 14 }}>🎯</div>
+                <p style={{ margin: "0 0 6px", fontWeight: 900, fontSize: 22, color: "#fff" }}>No campaigns yet</p>
+                <p style={{ margin: "0 0 24px", fontSize: 13, color: "#666", lineHeight: 1.6 }}>
+                  Create your first campaign to start placing sponsored G$ drops on the map.
+                </p>
                 <button
                   onClick={() => setView("create")}
-                  className="btn-brutal bg-ink text-lime font-black px-6 py-3 rounded-xl inline-flex items-center gap-2"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "#BFFD00", color: "#111",
+                    border: "2px solid #BFFD00", borderRadius: 12,
+                    padding: "12px 24px", fontWeight: 900, fontSize: 14,
+                    cursor: "pointer", fontFamily: "inherit",
+                    boxShadow: "3px 3px 0 rgba(191,253,0,0.3)",
+                  }}
                 >
-                  <Plus size={16} />
-                  Create First Campaign
+                  <Plus size={16} /> Create First Campaign
                 </button>
               </div>
             ) : (
-              <>
-                <div className="flex items-center gap-2 text-sm text-muted font-semibold">
-                  <BarChart2 size={14} />
-                  <span>{campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}</span>
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  {campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}
+                </p>
                 {campaigns.map((c) => (
                   <CampaignCard
                     key={c.id}
@@ -502,11 +681,12 @@ export default function SponsorPage() {
                     onSelect={() => setSelected(c)}
                   />
                 ))}
-              </>
+              </div>
             )}
-          </div>
+          </>
         )}
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

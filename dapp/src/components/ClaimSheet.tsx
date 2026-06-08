@@ -444,8 +444,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                 {/* ── ACTIVE STATE ─────────────────────────────────────────── */}
                 {status !== "done" && isActive && (
                   <>
-                    {/* Proximity */}
-                    {isClose ? (
+                    {/* Proximity — hidden for own drops */}
+                    {!isSelfDrop && isClose ? (
                       <div style={{
                         background: "#BFFD00", border: "2px solid #111",
                         borderRadius: 14, padding: "14px 16px",
@@ -460,7 +460,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                           </p>
                         </div>
                       </div>
-                    ) : (
+                    ) : !isSelfDrop ? (
                       <div style={{
                         background: "#fff", border: "2px solid #111",
                         borderRadius: 14, padding: "14px 16px",
@@ -489,10 +489,10 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                           Must be within {CLAIM_RADIUS_M}m to claim
                         </p>
                       </div>
-                    )}
+                    ) : null}
 
                     {/* Walk there */}
-                    {!isClose && (
+                    {!isSelfDrop && !isClose && (
                       <button
                         onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
                         style={{
@@ -511,7 +511,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     )}
 
                     {/* Hunt mode */}
-                    {onHunt && !isClose && (
+                    {onHunt && !isSelfDrop && !isClose && (
                       <button
                         onClick={() => { onClose(); onHunt(drop); }}
                         style={{
@@ -528,16 +528,6 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       </button>
                     )}
 
-                    {/* Self-drop warning */}
-                    {isSelfDrop && (
-                      <div style={{
-                        background: "#fff8e6", border: "2px solid #FF6400",
-                        borderRadius: 12, padding: "11px 14px",
-                        fontSize: 13, color: "#FF6400", fontWeight: 700, textAlign: "center",
-                      }}>
-                        This is your own drop — you can't claim it.
-                      </div>
-                    )}
 
                     {/* Error */}
                     {status === "error" && errMsg && (
@@ -673,7 +663,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                 )}
 
                 {/* Comments */}
-                <DropComments dropId={String(drop.id)} />
+                <DropComments dropId={String(drop.id)} dropper={drop.dropper} />
               </div>
             </>
           );

@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Send, Loader2 } from "lucide-react";
 import { useAccount } from "wagmi";
-import { shortAddr } from "@/lib/utils";
+import { UserHandle } from "@/components/UserHandle";
 import type { Comment } from "@/app/api/comments/[dropId]/route";
 
 function timeAgo(ts: number): string {
@@ -15,10 +15,11 @@ function timeAgo(ts: number): string {
 }
 
 interface Props {
-  dropId: string;
+  dropId:  string;
+  dropper?: string; // address of the drop creator — gets a distinct badge
 }
 
-export function DropComments({ dropId }: Props) {
+export function DropComments({ dropId, dropper }: Props) {
   const { address, isConnected } = useAccount();
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText]         = useState("");
@@ -154,35 +155,64 @@ export function DropComments({ dropId }: Props) {
                 </p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 240, overflowY: "auto" }}>
-                  {comments.map((c) => (
-                    <div key={c.id} style={{
-                      background: "#f5f4f0",
-                      border: "1.5px solid #e8e6e0",
-                      borderRadius: 10,
-                      padding: "8px 12px",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{
-                          fontSize: 10, fontWeight: 800, color: "#888",
-                          fontFamily: "monospace",
-                        }}>
-                          {shortAddr(c.author)}
-                        </span>
-                        {address?.toLowerCase() === c.author && (
-                          <span style={{
-                            fontSize: 9, fontWeight: 900, color: "#111",
-                            background: "#BFFD00", borderRadius: 4, padding: "1px 5px",
-                          }}>you</span>
-                        )}
-                        <span style={{ marginLeft: "auto", fontSize: 10, color: "#bbb" }}>
-                          {timeAgo(c.timestamp)}
-                        </span>
+                  {comments.map((c) => {
+                    const isDropper = !!dropper && c.author.toLowerCase() === dropper.toLowerCase();
+                    const isMe      = address?.toLowerCase() === c.author.toLowerCase();
+                    return (
+                      <div key={c.id} style={{
+                        background: isDropper ? "#111" : "#f5f4f0",
+                        border: isDropper ? "1.5px solid #333" : "1.5px solid #e8e6e0",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+                          <UserHandle
+                            address={c.author}
+                            style={{
+                              fontSize: 11, fontWeight: 800,
+                              color: isDropper ? "#888" : "#888",
+                            }}
+                          />
+
+                          {/* Dropper badge — shown for drop creator */}
+                          {isDropper && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 900,
+                              background: "#BFFD00", color: "#111",
+                              borderRadius: 4, padding: "1px 6px",
+                              letterSpacing: "0.04em",
+                            }}>
+                              📍 Dropper
+                            </span>
+                          )}
+
+                          {/* You badge — shown for the connected user (non-dropper) */}
+                          {isMe && !isDropper && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 900, color: "#111",
+                              background: "#BFFD00", borderRadius: 4, padding: "1px 5px",
+                            }}>you</span>
+                          )}
+
+                          {/* You + dropper combined */}
+                          {isMe && isDropper && (
+                            <span style={{
+                              fontSize: 9, fontWeight: 900, color: "#BFFD00",
+                              background: "transparent", borderRadius: 4, padding: "1px 5px",
+                              border: "1px solid #333",
+                            }}>you</span>
+                          )}
+
+                          <span style={{ marginLeft: "auto", fontSize: 10, color: isDropper ? "#555" : "#bbb" }}>
+                            {timeAgo(c.timestamp)}
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: 13, color: isDropper ? "#ccc" : "#333", lineHeight: 1.4 }}>
+                          {c.text}
+                        </p>
                       </div>
-                      <p style={{ margin: 0, fontSize: 13, color: "#333", lineHeight: 1.4 }}>
-                        {c.text}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
