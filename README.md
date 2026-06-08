@@ -11,7 +11,7 @@ No casino. No house edge. No bots. Just real people, real places, real money.
 
 ## The problem nobody talks about with UBI
 
-GoodDollar has distributed over **$20 million** in Universal Basic Income to more than **500,000 verified humans** across 181 countries — predominantly in Africa, Latin America, and Southeast Asia. The infrastructure works. The wallets are funded.
+GoodDollar has distributed Universal Basic Income to more than **700,000 verified humans** across 181 countries — predominantly in Africa, Latin America, and Southeast Asia. The infrastructure works. The wallets are funded.
 
 But UBI money sits still.
 
@@ -43,7 +43,7 @@ That's it. That's the whole game.
 
 When a dropper hides money in their neighbourhood and a hunter walks three blocks to claim it, that G$ has moved. It has created economic activity, physical movement, and a social interaction — all things that sitting in a wallet does not do.
 
-Every drop is a micro-stimulus injected into a specific real-world location. Multiply by 500,000 users and you have a system that makes UBI behave like a local currency rather than a savings account.
+Every drop is a micro-stimulus injected into a specific real-world location. Multiply by 700,000 users and you have a system that makes UBI behave like a local currency rather than a savings account.
 
 ### 2. It is the first crypto product that requires you to show up
 
@@ -84,7 +84,7 @@ Create a drop and toggle **Private**. It disappears from the public map. You get
 
 | Signal | Figure |
 |---|---|
-| GoodDollar verified users | 500,000+ |
+| GoodDollar verified users | 700,000+ |
 | Countries represented | 181 |
 | Location-based gaming revenue (2023) | $1.2 billion (Pokémon GO alone) |
 | Global unbanked population | 1.4 billion |
@@ -92,7 +92,7 @@ Create a drop and toggle **Private**. It disappears from the public map. You get
 | Celo transactions per day | ~200,000 |
 | G$ daily UBI distribution | ~50,000 G$ |
 
-GoodDrops has a **captive day-one user base of 500,000 people** who already hold G$, already have wallets, and already understand the token. There is no cold-start problem. The distribution channel exists. The product just needed to be built.
+GoodDrops has a **captive day-one user base of 700,000 people** who already hold G$, already have wallets, and already understand the token. There is no cold-start problem. The distribution channel exists. The product just needed to be built.
 
 ---
 
