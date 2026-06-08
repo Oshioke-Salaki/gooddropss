@@ -4,7 +4,7 @@ import { useAccount, useReadContract } from "wagmi";
 import { fetchHunterProfile } from "@/lib/subgraph";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 
-export const GRACE_CLAIM_LIMIT = 10;
+export const GRACE_CLAIM_LIMIT = 20;
 
 export function useGracePeriod() {
   const { address } = useAccount();
