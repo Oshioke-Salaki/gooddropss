@@ -10,12 +10,28 @@ import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   formatG$, gpsToDeg, getDropRarity, RARITY,
-  haversineDistance, timeLeft, shortAddr as rawShortAddr, isFlashDrop,
+  haversineDistance, timeLeft, isFlashDrop,
   parseDropHint, openGoogleMapsWalking,
 } from "@/lib/utils";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
+import { useVerification } from "@/hooks/useVerification";
+import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
+import { VerificationModal } from "@/components/VerificationModal";
 import { UserHandle } from "@/components/UserHandle";
-import { DROP_STATUS, type Drop } from "@/types";
+import { DROP_STATUS, type Drop, type Campaign } from "@/types";
+
+// ── Fetch campaign for sponsored drops ────────────────────────────────────────
+function useCampaign(campaignId: string | null) {
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
+  useEffect(() => {
+    if (!campaignId) { setCampaign(null); return; }
+    fetch(`/api/campaigns/${campaignId}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.campaign) setCampaign(d.campaign); })
+      .catch(() => {});
+  }, [campaignId]);
+  return campaign;
+}
 
 type ClaimStatus = "idle" | "claiming" | "done" | "error";
 
@@ -26,11 +42,31 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const [errMsg,  setErrMsg]  = useState("");
   const [copied,  setCopied]  = useState(false);
 
-  const { login, authenticated, ready } = usePrivy();
+  const { login, authenticated } = usePrivy();
   const { address }              = useAccount();
   const isConnected              = authenticated && !!address;
   const { isVerified }           = useGoodDollarProfile();
+  const { inGrace, left, used }  = useGracePeriod();
+  const verificationOk           = isVerified || inGrace;
   const { writeContractAsync }   = useWriteContract();
+  const {
+    status: verifyStatus, fvLink, isVerifying,
+    setIsVerifying, refresh: refreshVerify,
+  } = useVerification();
+
+  // Parse hint + fetch campaign BEFORE early returns so hooks are always called
+  // in the same order (React rules of hooks).
+  const parsedHint = drop ? parseDropHint(drop.hint) : null;
+  const campaign   = useCampaign(parsedHint?.campaignId ?? null);
+
+  // Shared Shell props for verification modal
+  const shellVerifyProps = {
+    isVerifying,
+    setIsVerifying,
+    fvLink,
+    verifyStatus,
+    onVerifyRefresh: refreshVerify,
+  } as const;
 
   // ── Fetch drop ─────────────────────────────────────────────────────────────
   // Tries subgraph first; falls back to direct contract read so freshly-created
@@ -92,12 +128,20 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      // Track hunting streak (fire-and-forget)
+      if (address) {
+        fetch("/api/engagement", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address }),
+        }).catch(() => {});
+      }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
       setStatus("error");
     }
-  }, [drop, writeContractAsync]);
+  }, [drop, address, writeContractAsync]);
 
   // ── Share helpers ──────────────────────────────────────────────────────────
   const pageUrl = typeof window !== "undefined"
@@ -113,7 +157,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
   // ── Loading / not found ────────────────────────────────────────────────────
   if (drop === undefined) return (
-    <Shell>
+    <Shell {...shellVerifyProps}>
       <div style={{ textAlign: "center", paddingTop: 80 }}>
         <div style={{ fontSize: 52, marginBottom: 12 }} className="animate-bounce">📍</div>
         <p style={{ fontWeight: 700, color: "#888", fontSize: 16 }}>Loading drop…</p>
@@ -122,7 +166,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   );
 
   if (!drop) return (
-    <Shell>
+    <Shell {...shellVerifyProps}>
       <div style={{ textAlign: "center", padding: "80px 20px" }}>
         <div style={{ fontSize: 56, marginBottom: 12 }}>🗺️</div>
         <p style={{ fontWeight: 900, fontSize: 22, margin: "0 0 8px" }}>Drop not found</p>
@@ -135,7 +179,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   );
 
   // ── Derived state ──────────────────────────────────────────────────────────
-  const { isPrivate, target, hint } = parseDropHint(drop.hint);
+  // parsedHint and campaign are computed above (before early returns) to satisfy hooks rules.
+  const { isPrivate, target, hint, chainNextId, isChainLast } = parsedHint!;
+  const isChain = chainNextId !== null || isChainLast;
   const dropLat   = gpsToDeg(drop.lat);
   const dropLng   = gpsToDeg(drop.lng);
   const now       = Math.floor(Date.now() / 1000);
@@ -149,7 +195,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const isClose      = distance !== null && distance <= CLAIM_RADIUS_M;
   const proximityPct = distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
 
-  const canClaim = isConnected && isVerified && isActive && !isSelf && isClose && status === "idle";
+  const canClaim = isConnected && verificationOk && isActive && !isSelf && isClose && status === "idle";
 
   const rarity = getDropRarity(drop.amount);
   const r      = RARITY[rarity];
@@ -159,7 +205,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     if (status === "claiming") return "Claiming…";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
-    if (!isVerified)           return "Verification required";
+    if (!verificationOk)       return "Verification required";
     if (isSelf)                return "This is your own drop";
     if (!userLoc)              return "Enable GPS to claim";
     if (!isClose)              return `Get closer — ${Math.round(distance ?? 0)}m away`;
@@ -167,9 +213,38 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   }
 
   return (
-    <Shell>
+    <Shell isVerifying={isVerifying} setIsVerifying={setIsVerifying} fvLink={fvLink} verifyStatus={verifyStatus} onVerifyRefresh={refreshVerify}>
+      {/* Sponsor banner */}
+      {campaign && (
+        <div style={{
+          background: campaign.color, color: "#111",
+          border: "2px solid #111", borderRadius: 14,
+          boxShadow: "3px 3px 0 #111",
+          padding: "12px 16px", marginBottom: 16,
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          {campaign.logo && (
+            <img src={campaign.logo} alt="" style={{ width: 36, height: 36, borderRadius: 8, border: "1.5px solid #111", objectFit: "cover", flexShrink: 0 }} />
+          )}
+          {!campaign.logo && (
+            <div style={{ width: 36, height: 36, borderRadius: 8, border: "1.5px solid #111", background: "#111", color: campaign.color, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 16, flexShrink: 0 }}>
+              {campaign.name.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontWeight: 900, fontSize: 13 }}>Sponsored by {campaign.name}</p>
+            {campaign.description && <p style={{ margin: "2px 0 0", fontSize: 11, opacity: 0.75 }}>{campaign.description}</p>}
+          </div>
+          {campaign.goodcollectivePool && (
+            <a href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", fontSize: 10, fontWeight: 900, background: "#111", color: campaign.color, padding: "3px 8px", borderRadius: 6, flexShrink: 0 }}>
+              🤝 Pool ↗
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Private banner */}
-      {isPrivate && (
+      {isPrivate && !campaign && (
         <div style={{
           background: "#111", color: "#BFFD00",
           border: "2px solid #111", borderRadius: 14,
@@ -195,6 +270,21 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         </div>
       )}
 
+      {/* Chain banner */}
+      {isChain && (
+        <div style={{
+          background: "#111", color: "#BFFD00",
+          border: "2px solid #BFFD00", borderRadius: 14,
+          padding: "10px 16px", marginBottom: 16,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <span style={{ fontSize: 20 }}>{isChainLast ? "🏆" : "🔗"}</span>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 13 }}>
+            {isChainLast ? "Final stop — claim to complete the hunt!" : "Hunt Chain drop — claim to reveal the next stop"}
+          </p>
+        </div>
+      )}
+
       {/* Drop card */}
       <div style={card}>
         {/* Badges */}
@@ -203,6 +293,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             {r.label}
           </span>
           {flash && <span style={{ background: "#FF6400", color: "#fff", ...badge }}>⚡ Flash</span>}
+          {isChain && <span style={{ background: "#111", color: "#BFFD00", ...badge }}>{isChainLast ? "🏆 Final" : "🔗 Chain"}</span>}
           {isActive && <span style={{ background: "#BFFD0033", color: "#111", ...badge }}>⏰ {timeLeft(drop.expiry)}</span>}
           {isClaimed && <span style={{ background: "#eee", color: "#666", ...badge }}>Claimed ✓</span>}
           {isExpired && !isClaimed && <span style={{ background: "#FFE5E5", color: "#FF3B3B", ...badge }}>Expired</span>}
@@ -239,16 +330,55 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
       {/* Claim / inactive section */}
       {status === "done" ? (
-        <div style={{ ...card, background: "#BFFD00", textAlign: "center" }}>
-          <div style={{ fontSize: 60, marginBottom: 12 }}>🎯</div>
-          <p style={{ fontWeight: 900, fontSize: 24, margin: "0 0 8px" }}>You found it!</p>
-          <p style={{ fontSize: 15, margin: "0 0 24px", color: "#111" }}>
-            {formatG$(drop.amount)} G$ is yours!
-          </p>
-          <Link href="/" style={{ ...brutLink, display: "block", textAlign: "center" }}>
-            Hunt more drops →
-          </Link>
-        </div>
+        <>
+          {/* Chain middle stop — dark, sends to next drop */}
+          {chainNextId ? (
+            <div style={{ ...card, background: "#111", textAlign: "center" }}>
+              <div style={{ fontSize: 52, marginBottom: 10 }}>🔗</div>
+              <p style={{ fontWeight: 900, fontSize: 22, margin: "0 0 8px", color: "#BFFD00" }}>Next stop unlocked!</p>
+              <p style={{ fontSize: 14, margin: "0 0 20px", color: "#aaa" }}>
+                {formatG$(drop.amount)} G$ claimed. Keep going — the chain continues!
+              </p>
+              <a href={`/drop/${chainNextId}`} style={{ ...brutLink, display: "block", textAlign: "center", background: "#BFFD00", color: "#111", textDecoration: "none" }}>
+                Go to next stop →
+              </a>
+              <Link href="/" style={{ display: "block", marginTop: 12, fontSize: 13, color: "#555", textDecoration: "none" }}>
+                Back to map
+              </Link>
+            </div>
+          ) : (
+            /* Regular or chain-last success */
+            <div style={{ ...card, background: "#BFFD00", textAlign: "center" }}>
+              <div style={{ fontSize: 60, marginBottom: 12 }}>{isChainLast ? "🏆" : "🎯"}</div>
+              <p style={{ fontWeight: 900, fontSize: 24, margin: "0 0 8px" }}>
+                {isChainLast ? "Hunt Complete!" : "You found it!"}
+              </p>
+              <p style={{ fontSize: 15, margin: "0 0 20px", color: "#111" }}>
+                {formatG$(drop.amount)} G$ is yours!
+              </p>
+              <Link href="/" style={{ ...brutLink, display: "block", textAlign: "center", marginBottom: 12 }}>
+                Hunt more drops →
+              </Link>
+              {/* UBI prompt only for verified users — unverified users cannot claim UBI */}
+              {isVerified && (
+                <div style={{
+                  background: "rgba(0,0,0,0.1)", borderRadius: 12,
+                  padding: "12px 14px", marginTop: 4, cursor: "pointer",
+                  border: "1.5px solid rgba(0,0,0,0.2)",
+                }}
+                  onClick={() => window.dispatchEvent(new CustomEvent("gd:openWallet"))}
+                >
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                    💰 Also claim your daily G$ UBI
+                  </p>
+                  <p style={{ margin: "3px 0 0", fontSize: 11, color: "#333" }}>
+                    Tap to open wallet → claim GoodDollar UBI
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
 
       ) : isActive ? (
         <div style={card}>
@@ -314,10 +444,66 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </button>
           )}
 
-          {isConnected && !isVerified && (
-            <p style={{ textAlign: "center", fontSize: 12, color: "#888", margin: "10px 0 0" }}>
-              Verification required to claim
-            </p>
+          {/* Grace period counter — free claims remaining */}
+          {isConnected && !isVerified && inGrace && (
+            <div style={{
+              marginTop: 12, background: "#f0fff4",
+              border: "2px solid #111", borderRadius: 14,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 20, flexShrink: 0 }}>🎯</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                  {left} free claim{left !== 1 ? "s" : ""} remaining
+                </p>
+                <p style={{ margin: "3px 0 0", fontSize: 11, color: "#888" }}>
+                  Verify anytime to unlock unlimited hunting
+                </p>
+              </div>
+              <button
+                onClick={() => setIsVerifying(true)}
+                style={{
+                  background: "transparent", color: "#111",
+                  border: "2px solid #111", borderRadius: 10,
+                  padding: "6px 12px", fontWeight: 800, fontSize: 12,
+                  cursor: "pointer", fontFamily: "inherit",
+                  flexShrink: 0, whiteSpace: "nowrap",
+                }}
+              >
+                Verify
+              </button>
+            </div>
+          )}
+
+          {/* Grace exhausted — verification now required */}
+          {isConnected && !isVerified && !inGrace && (
+            <div style={{
+              marginTop: 12, background: "#fff8e6",
+              border: "2px solid #111", borderRadius: 14,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                  Verification required
+                </p>
+                <p style={{ margin: "3px 0 0", fontSize: 11, color: "#888" }}>
+                  You&apos;ve used all {GRACE_CLAIM_LIMIT} free claims — verify to keep hunting
+                </p>
+              </div>
+              <button
+                onClick={() => setIsVerifying(true)}
+                style={{
+                  background: "#111", color: "#BFFD00",
+                  border: "none", borderRadius: 10,
+                  padding: "8px 14px", fontWeight: 900, fontSize: 12,
+                  cursor: "pointer", fontFamily: "inherit",
+                  flexShrink: 0, whiteSpace: "nowrap",
+                }}
+              >
+                Verify →
+              </button>
+            </div>
           )}
         </div>
 
@@ -344,7 +530,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           background: "#fff", border: "2px solid #111",
           borderRadius: 12, padding: 14, marginBottom: 14,
         }}>
-          <QRCodeSVG value={pageUrl} size={150} level="M" includeMargin={false} />
+          <QRCodeSVG value={pageUrl} size={150} level="M" />
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
           <button onClick={copyLink} style={{
@@ -406,7 +592,16 @@ function ShellWalletButton() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+interface ShellProps {
+  children:        React.ReactNode;
+  isVerifying:     boolean;
+  setIsVerifying:  (v: boolean) => void;
+  fvLink:          string | null;
+  verifyStatus:    import("@/hooks/useVerification").VerificationStatus;
+  onVerifyRefresh: () => void;
+}
+
+function Shell({ children, isVerifying, setIsVerifying, fvLink, verifyStatus, onVerifyRefresh }: ShellProps) {
   return (
     <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif" }}>
       <header style={{
@@ -429,6 +624,13 @@ function Shell({ children }: { children: React.ReactNode }) {
       <main style={{ maxWidth: 480, margin: "0 auto", padding: "20px 16px 60px", display: "flex", flexDirection: "column", gap: 14 }}>
         {children}
       </main>
+      <VerificationModal
+        isOpen={isVerifying}
+        onClose={() => setIsVerifying(false)}
+        fvLink={fvLink}
+        status={verifyStatus}
+        onRefresh={onVerifyRefresh}
+      />
     </div>
   );
 }

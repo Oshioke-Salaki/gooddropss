@@ -18,7 +18,7 @@ function FlyController({
   useEffect(() => {
     if (!target || target.seq === lastSeq.current) return;
     lastSeq.current = target.seq;
-    map.flyTo([target.lat, target.lng], 16, { animate: true, duration: 0.7 });
+    map.flyTo([target.lat, target.lng], 17, { animate: true, duration: 0.7 });
   }, [target, map]);
   return null;
 }
@@ -76,7 +76,7 @@ export default function LocationPickerMap({
       <MapContainer
         key={mapKey}
         center={[initialCenter.lat, initialCenter.lng]}
-        zoom={14}
+        zoom={17}
         style={{ width: "100%", height: "100%" }}
         zoomControl={false}
       >

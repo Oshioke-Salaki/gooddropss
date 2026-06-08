@@ -465,6 +465,7 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
               ? { lat: stops[pickingIdx].lat!, lng: stops[pickingIdx].lng! }
               : userLocation
           }
+          currentLocation={userLocation}
           onConfirm={(lat, lng, place) => handleLocationConfirm(pickingIdx, lat, lng, place)}
           onClose={() => setPickingIdx(null)}
         />

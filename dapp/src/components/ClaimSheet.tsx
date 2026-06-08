@@ -19,8 +19,7 @@ import { DropComments } from "@/components/DropComments";
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
-import { Crosshair } from "lucide-react";
-import clsx from "clsx";
+import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -48,16 +47,18 @@ interface Props {
 export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: Props) {
   const { address, isConnected } = useAccount();
   const { isVerified } = useGoodDollarProfile();
+  const { inGrace, left, contractEnforces } = useGracePeriod();
   const { writeContractAsync } = useWriteContract();
+
+  const verificationOk = isVerified || inGrace;
   const [status, setStatus] = useState<Status>("idle");
   const [errMsg, setErrMsg] = useState("");
 
-  const parsed     = drop ? parseDropHint(drop.hint) : null;
+  const parsed = drop ? parseDropHint(drop.hint) : null;
   const { campaign, claims } = useCampaign(parsed?.campaignId ?? null);
 
   const open = drop !== null;
 
-  // Reset when a new drop is selected
   useEffect(() => {
     setStatus("idle");
     setErrMsg("");
@@ -71,30 +72,14 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       ? haversineDistance(userLocation.lat, userLocation.lng, dropLat, dropLng)
       : null;
 
-  const isExpired = drop ? drop.expiry < Math.floor(Date.now() / 1000) : false;
-  const isActive = drop ? drop.status === DROP_STATUS.Active && !isExpired : false;
+  const isExpired  = drop ? drop.expiry < Math.floor(Date.now() / 1000) : false;
+  const isActive   = drop ? drop.status === DROP_STATUS.Active && !isExpired : false;
   const isSelfDrop = drop ? address?.toLowerCase() === drop.dropper.toLowerCase() : false;
-  const isClose = distance !== null && distance <= CLAIM_RADIUS_M;
+  const isClose    = distance !== null && distance <= CLAIM_RADIUS_M;
 
   const canClaim =
-    isConnected &&
-    isVerified &&
-    isActive &&
-    !isSelfDrop &&
-    isClose &&
-    status === "idle";
+    isConnected && verificationOk && isActive && !isSelfDrop && isClose && status === "idle";
 
-  function proximityLabel() {
-    if (!userLocation) return { text: "Enable GPS to claim", color: "text-muted" };
-    if (distance === null) return { text: "Calculating distance…", color: "text-muted" };
-    if (distance <= CLAIM_RADIUS_M)
-      return { text: `You're here! ${Math.round(distance)}m away`, color: "text-lime bg-ink px-2 py-0.5 rounded" };
-    if (distance <= 500)
-      return { text: `Getting closer… ${Math.round(distance)}m away`, color: "text-ink font-bold" };
-    return { text: `${Math.round(distance)}m away — move closer`, color: "text-muted" };
-  }
-
-  const prox = proximityLabel();
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
 
@@ -111,7 +96,6 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
-      // Update hunting streak (fire-and-forget)
       if (address) {
         fetch("/api/engagement", {
           method: "POST",
@@ -126,6 +110,17 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     }
   }
 
+  function claimLabel() {
+    if (status === "claiming") return "⏳ Claiming…";
+    if (status === "error")    return "Try again";
+    if (!isConnected)          return "Sign in to claim";
+    if (!verificationOk)       return "🪪 Verification required";
+    if (isSelfDrop)            return "Can't claim own drop";
+    if (!userLocation)         return "Enable GPS to claim";
+    if (!isClose)              return `${Math.round(distance ?? 0)}m away — get closer`;
+    return `Claim ${formatG$(drop!.amount)} G$ →`;
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -135,10 +130,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
         onClick={onClose}
         style={{
           position: "fixed", inset: 0, zIndex: 1002,
-          backgroundColor: "rgba(17,17,17,0.55)",
-          backdropFilter: "blur(2px)",
-          opacity: 0,
-          pointerEvents: "none",
+          backgroundColor: "rgba(17,17,17,0.6)",
+          backdropFilter: "blur(3px)",
+          opacity: 0, pointerEvents: "none",
         }}
       />
 
@@ -151,314 +145,539 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
           position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1003,
           borderRadius: "24px 24px 0 0",
           background: "#f5f4f0",
-          borderTop: "2px solid #111111",
-          maxHeight: "80dvh",
+          maxHeight: "88dvh",
           overflowY: "auto",
+          overflowX: "hidden",
         }}
       >
-        {/* Handle */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
-          <div style={{ width: 40, height: 4, borderRadius: 2, background: "#888" }} />
-        </div>
+        {drop && (() => {
+          const rarity  = getDropRarity(drop.amount);
+          const r       = RARITY[rarity];
+          const flash   = isFlashDrop(drop);
+          const isChain = parsed?.chainNextId !== null || parsed?.isChainLast;
 
-        {drop && (
-          <div className="px-5 pb-10 pt-2 space-y-5">
-            {/* Amount header */}
-            <div className="flex items-start justify-between">
-              <div>
-                {/* Rarity + flash badges */}
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
-                  {(() => {
-                    const r = RARITY[getDropRarity(drop.amount)];
-                    return (
-                      <span style={{
-                        background: r.color, color: r.textColor,
-                        fontSize: 10, fontWeight: 900,
-                        padding: "2px 8px", borderRadius: 100,
-                        letterSpacing: "0.08em", textTransform: "uppercase",
-                      }}>
-                        {r.label}
-                      </span>
-                    );
-                  })()}
-                  {isFlashDrop(drop) && (
+          // UBI prompt — verified only
+          const ubiPrompt = isVerified ? (
+            <button
+              onClick={() => { onSuccess(); setTimeout(() => window.dispatchEvent(new CustomEvent("gd:openWallet")), 300); }}
+              style={{
+                width: "100%", padding: "13px 16px",
+                background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)",
+                borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", gap: 12, textAlign: "left",
+              }}
+            >
+              <span style={{ fontSize: 22, flexShrink: 0 }}>💰</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#fff", lineHeight: 1.3 }}>
+                  Claim your daily G$ UBI
+                </p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
+                  Tap to open wallet → claim GoodDollar UBI
+                </p>
+              </div>
+              <span style={{ color: "#555", fontSize: 16 }}>→</span>
+            </button>
+          ) : null;
+
+          return (
+            <>
+              {/* ── DARK HERO HEADER ─────────────────────────────────────────── */}
+              <div style={{
+                background: "#111",
+                borderTop: `4px solid ${flash ? "#FF6400" : r.color}`,
+                borderRadius: "24px 24px 0 0",
+                padding: "14px 20px 24px",
+                position: "relative",
+              }}>
+                {/* Drag handle */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+                  <div style={{ width: 36, height: 4, borderRadius: 2, background: "#333" }} />
+                </div>
+
+                {/* Close */}
+                <button
+                  onClick={onClose}
+                  style={{
+                    position: "absolute", top: 14, right: 16,
+                    width: 30, height: 30, borderRadius: "50%",
+                    background: "rgba(255,255,255,0.07)", border: "none",
+                    color: "#666", cursor: "pointer", fontFamily: "inherit",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 14, fontWeight: 700,
+                  }}
+                >✕</button>
+
+                {/* Badges */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+                  <span style={{
+                    background: flash ? "#FF6400" : r.color,
+                    color: flash ? "#fff" : r.textColor,
+                    fontSize: 9, fontWeight: 900,
+                    padding: "3px 10px", borderRadius: 100,
+                    letterSpacing: "0.12em", textTransform: "uppercase",
+                    animation: flash ? "pin-flash 0.8s ease-in-out infinite" : "none",
+                  }}>
+                    {flash ? "⚡ Flash Drop" : r.label}
+                  </span>
+                  {isChain && (
                     <span style={{
-                      background: "#FF6400", color: "#fff",
-                      fontSize: 10, fontWeight: 900,
-                      padding: "2px 8px", borderRadius: 100,
-                      letterSpacing: "0.08em", textTransform: "uppercase",
-                      animation: "pin-flash 0.8s ease-in-out infinite",
+                      background: "#BFFD00", color: "#111",
+                      fontSize: 9, fontWeight: 900,
+                      padding: "3px 10px", borderRadius: 100,
+                      letterSpacing: "0.12em", textTransform: "uppercase",
+                    }}>🔗 {parsed?.isChainLast ? "Final Stop" : "Chain Drop"}</span>
+                  )}
+                  {campaign && (
+                    <span style={{
+                      background: campaign.color, color: "#111",
+                      fontSize: 9, fontWeight: 900,
+                      padding: "3px 10px", borderRadius: 100,
+                      letterSpacing: "0.12em", textTransform: "uppercase",
+                    }}>⭐ {campaign.name}</span>
+                  )}
+                </div>
+
+                {/* Amount — the star */}
+                <div style={{ lineHeight: 1, marginBottom: 14 }}>
+                  <span style={{
+                    fontSize: 72, fontWeight: 900, color: "#fff",
+                    letterSpacing: "-0.03em",
+                  }}>
+                    {formatG$(drop.amount)}
+                  </span>
+                  <span style={{
+                    fontSize: 40, fontWeight: 900,
+                    color: flash ? "#FF6400" : "#BFFD00",
+                    marginLeft: 8,
+                  }}>G$</span>
+                </div>
+
+                {/* Meta row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  {isActive && (
+                    <span style={{
+                      background: flash ? "#FF640025" : "rgba(255,255,255,0.06)",
+                      color: flash ? "#FF6400" : "#888",
+                      fontSize: 11, fontWeight: 700,
+                      padding: "3px 9px", borderRadius: 6,
                     }}>
-                      ⚡ Flash Drop
+                      ⏰ {timeLeft(drop.expiry)}
                     </span>
                   )}
-                </div>
-                <div className="text-4xl font-black tracking-tight">
-                  <span className="text-ink">{formatG$(drop.amount)}</span>
-                  <span className="text-lime"> G$</span>
-                </div>
-                <div className="mt-1 text-sm text-muted font-medium">
-                  {isActive ? (
-                    <span className="text-ink">⏰ {timeLeft(drop.expiry)}</span>
-                  ) : drop.status === DROP_STATUS.Claimed ? (
-                    <span className="text-muted">Claimed ✓</span>
-                  ) : (
-                    <span className="text-danger">Expired</span>
+                  {!isActive && (
+                    <span style={{
+                      background: drop.status === DROP_STATUS.Claimed ? "#BFFD0020" : "#FF3B3B20",
+                      color: drop.status === DROP_STATUS.Claimed ? "#BFFD00" : "#FF3B3B",
+                      fontSize: 11, fontWeight: 700,
+                      padding: "3px 9px", borderRadius: 6,
+                    }}>
+                      {drop.status === DROP_STATUS.Claimed ? "✓ Claimed" : "Expired"}
+                    </span>
                   )}
-                  <span className="mx-2 text-border">·</span>
-                  <span>by <UserHandle address={drop.dropper} /></span>
+                  <span style={{ fontSize: 11, color: "#555" }}>
+                    by <UserHandle address={drop.dropper} />
+                  </span>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 rounded-full border-2 border-ink flex items-center justify-center font-bold text-sm hover:bg-ink hover:text-lime transition-colors"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Sponsor banner — shown for campaign drops */}
-            {campaign && (
-              <div
-                style={{ borderColor: campaign.color, background: `${campaign.color}18` }}
-                className="border-2 rounded-xl p-3 flex items-center gap-3"
-              >
-                <div
-                  style={{ background: campaign.color }}
-                  className="w-10 h-10 rounded-lg border-2 border-ink flex items-center justify-center font-black text-sm shrink-0"
-                >
-                  {campaign.logo
-                    ? <img src={campaign.logo} alt="" className="w-full h-full object-cover rounded" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    : campaign.name.charAt(0).toUpperCase()
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted">⭐ Sponsored Drop</p>
-                  <p className="font-black text-sm truncate">{campaign.name}</p>
-                  {campaign.description && (
-                    <p className="text-xs text-muted mt-0.5 line-clamp-2">{campaign.description}</p>
-                  )}
-                  {campaign.goodcollectivePool && (
-                    <a
-                      href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`}
-                      target="_blank" rel="noopener noreferrer"
-                      className="text-xs font-bold text-lime bg-ink px-2 py-0.5 rounded-full inline-block mt-1"
-                      style={{ textDecoration: "none" }}
-                      onClick={(e) => e.stopPropagation()}
+              {/* ── BODY ──────────────────────────────────────────────────────── */}
+              <div style={{ padding: "18px 18px 40px", display: "flex", flexDirection: "column", gap: 12 }}>
+
+                {/* Campaign banner */}
+                {campaign && (
+                  <div style={{
+                    background: `${campaign.color}12`,
+                    border: `2px solid ${campaign.color}`,
+                    borderRadius: 14, padding: "12px 14px",
+                    display: "flex", alignItems: "center", gap: 12,
+                  }}>
+                    <div style={{
+                      width: 38, height: 38, background: campaign.color,
+                      borderRadius: 10, border: "2px solid rgba(0,0,0,0.12)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 16, fontWeight: 900, color: "#111", flexShrink: 0,
+                      overflow: "hidden",
+                    }}>
+                      {campaign.logo
+                        ? <img src={campaign.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        : campaign.name.charAt(0).toUpperCase()
+                      }
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 1px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>⭐ Sponsored Drop</p>
+                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaign.name}</p>
+                      {campaign.description && (
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                          {campaign.description}
+                        </p>
+                      )}
+                      {campaign.goodcollectivePool && (
+                        <a
+                          href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ textDecoration: "none", display: "inline-block", marginTop: 4, fontSize: 10, fontWeight: 800, background: "#111", color: "#BFFD00", padding: "2px 8px", borderRadius: 100 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >🤝 GoodCollective Pool ↗</a>
+                      )}
+                    </div>
+                    {claims > 0 && (
+                      <div style={{ textAlign: "center", flexShrink: 0 }}>
+                        <p style={{ margin: 0, fontWeight: 900, fontSize: 20, lineHeight: 1 }}>{claims}</p>
+                        <p style={{ margin: 0, fontSize: 10, color: "#888" }}>claimed</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Hint card */}
+                {parsed?.hint && (
+                  <div style={{
+                    background: "#fff", border: "2px dashed #111",
+                    borderRadius: 14, padding: "14px 16px",
+                  }}>
+                    <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>🔍 Clue</p>
+                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111", lineHeight: 1.6 }}>{parsed.hint}</p>
+                  </div>
+                )}
+
+                {/* ── SUCCESS ──────────────────────────────────────────────── */}
+                {status === "done" && (() => {
+                  // Chain middle
+                  if (parsed?.chainNextId) return (
+                    <div style={{
+                      background: "#111", border: "2px solid #111",
+                      borderRadius: 18, boxShadow: "4px 4px 0 #BFFD00",
+                      padding: "28px 20px", textAlign: "center",
+                    }}>
+                      <div style={{ fontSize: 52, marginBottom: 12 }}>🔗</div>
+                      <p style={{ margin: "0 0 6px", fontWeight: 900, fontSize: 22, color: "#BFFD00" }}>Next stop unlocked!</p>
+                      <p style={{ margin: "0 0 20px", fontSize: 13, color: "#666" }}>
+                        {formatG$(drop.amount)} G$ claimed. Keep going — the chain continues!
+                      </p>
+                      <a
+                        href={`/drop/${parsed.chainNextId}`}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          width: "100%", padding: "15px",
+                          background: "#BFFD00", color: "#111",
+                          border: "2px solid #BFFD00", borderRadius: 14,
+                          fontWeight: 900, fontSize: 16, textDecoration: "none",
+                          boxShadow: "3px 3px 0 rgba(191,253,0,0.3)",
+                        }}
+                      >
+                        Go to next stop →
+                      </a>
+                      <button onClick={onSuccess} style={{
+                        marginTop: 12, width: "100%", padding: "10px",
+                        background: "transparent", border: "none",
+                        color: "#555", fontWeight: 700, fontSize: 13,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>
+                        Back to map
+                      </button>
+                    </div>
+                  );
+
+                  // Chain last / regular success
+                  const isChainWin = parsed?.isChainLast;
+                  return (
+                    <div style={{
+                      background: "#111", border: "2px solid #111",
+                      borderRadius: 18,
+                      boxShadow: `4px 4px 0 ${isChainWin ? "#FFD700" : "#BFFD00"}`,
+                      padding: "28px 20px 22px", textAlign: "center",
+                    }}>
+                      <div style={{ fontSize: 60, marginBottom: 8, lineHeight: 1 }}>
+                        {isChainWin ? "🏆" : "🎯"}
+                      </div>
+                      <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 24, color: "#BFFD00", letterSpacing: "-0.02em" }}>
+                        {isChainWin ? "Hunt Complete!" : "You found it!"}
+                      </p>
+                      <div style={{ margin: "12px 0 20px" }}>
+                        <span style={{ fontSize: 48, fontWeight: 900, color: "#fff", letterSpacing: "-0.03em" }}>
+                          {formatG$(drop.amount)}
+                        </span>
+                        <span style={{ fontSize: 28, fontWeight: 900, color: "#BFFD00", marginLeft: 6 }}>G$</span>
+                      </div>
+                      <p style={{ margin: "0 0 20px", fontSize: 13, color: "#666" }}>
+                        {isChainWin ? "You conquered the entire chain!" : "Transferred to your wallet."}
+                      </p>
+
+                      {/* Share */}
+                      <button
+                        onClick={() => {
+                          const text = isChainWin
+                            ? `I just completed a GoodDrops Hunt Chain 🏆 and claimed ${formatG$(drop.amount)} G$!\n\nMulti-stop real-world treasure hunt on GoodDrops 💰\n\n#GoodDollar #GoodDrops`
+                            : `I just found a hidden drop of ${formatG$(drop.amount)} G$ in the wild 🎯💰\n\nGoodDrops lets you hide and hunt real money IRL!\n\n#GoodDollar #GoodDrops #Web3`;
+                          window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+                        }}
+                        style={{
+                          width: "100%", padding: "13px",
+                          background: "transparent", color: "#fff",
+                          border: "1.5px solid rgba(255,255,255,0.2)", borderRadius: 12,
+                          fontWeight: 800, fontSize: 14,
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          marginBottom: 10,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.5)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; }}
+                      >
+                        Post on 𝕏 ↗
+                      </button>
+
+                      {ubiPrompt}
+
+                      <button onClick={onSuccess} style={{
+                        marginTop: 10, width: "100%", padding: "10px",
+                        background: "transparent", border: "none",
+                        color: "#555", fontWeight: 700, fontSize: 13,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}>
+                        Done — back to map
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* ── ACTIVE STATE ─────────────────────────────────────────── */}
+                {status !== "done" && isActive && (
+                  <>
+                    {/* Proximity */}
+                    {isClose ? (
+                      <div style={{
+                        background: "#BFFD00", border: "2px solid #111",
+                        borderRadius: 14, padding: "14px 16px",
+                        display: "flex", alignItems: "center", gap: 12,
+                        boxShadow: "2px 2px 0 #111",
+                      }}>
+                        <span style={{ fontSize: 28, flexShrink: 0 }}>📍</span>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 900, fontSize: 15, color: "#111" }}>You're in range!</p>
+                          <p style={{ margin: 0, fontSize: 12, color: "#333" }}>
+                            {Math.round(distance!)}m — close enough to claim
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        background: "#fff", border: "2px solid #111",
+                        borderRadius: 14, padding: "14px 16px",
+                        boxShadow: "2px 2px 0 #111",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                            Distance
+                          </span>
+                          <span style={{ fontSize: 28, fontWeight: 900, color: "#111", letterSpacing: "-0.02em" }}>
+                            {distance !== null ? `${Math.round(distance)}m` : "—"}
+                          </span>
+                        </div>
+                        <div style={{ height: 10, background: "#eee", borderRadius: 100, overflow: "hidden", border: "1.5px solid #ddd" }}>
+                          <motion.div
+                            animate={{ width: `${proximityPct}%` }}
+                            transition={{ duration: 0.5 }}
+                            style={{
+                              height: "100%", borderRadius: 100,
+                              background: proximityPct > 65 ? "#FF6400" : "#ccc",
+                              transition: "background 0.5s",
+                            }}
+                          />
+                        </div>
+                        <p style={{ margin: "8px 0 0", fontSize: 11, color: "#aaa", textAlign: "center" }}>
+                          Must be within {CLAIM_RADIUS_M}m to claim
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Walk there */}
+                    {!isClose && (
+                      <button
+                        onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
+                        style={{
+                          width: "100%", padding: "12px",
+                          background: "#fff", border: "2px solid #111",
+                          borderRadius: 12, fontWeight: 700, fontSize: 13,
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          boxShadow: "2px 2px 0 #111",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+                      >
+                        🧭 Walk there
+                      </button>
+                    )}
+
+                    {/* Hunt mode */}
+                    {onHunt && !isClose && (
+                      <button
+                        onClick={() => { onClose(); onHunt(drop); }}
+                        style={{
+                          width: "100%", padding: "12px",
+                          background: "#111", color: "#BFFD00",
+                          border: "2px solid #111", borderRadius: 12,
+                          fontWeight: 800, fontSize: 13,
+                          cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          boxShadow: "2px 2px 0 #BFFD00",
+                        }}
+                      >
+                        🎯 Hunt this drop
+                      </button>
+                    )}
+
+                    {/* Self-drop warning */}
+                    {isSelfDrop && (
+                      <div style={{
+                        background: "#fff8e6", border: "2px solid #FF6400",
+                        borderRadius: 12, padding: "11px 14px",
+                        fontSize: 13, color: "#FF6400", fontWeight: 700, textAlign: "center",
+                      }}>
+                        This is your own drop — you can't claim it.
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {status === "error" && errMsg && (
+                      <div style={{
+                        background: "#FFE5E5", border: "2px solid #FF3B3B",
+                        borderRadius: 12, padding: "12px 14px",
+                        fontSize: 13, color: "#FF3B3B", fontWeight: 600,
+                      }}>
+                        {errMsg}
+                      </div>
+                    )}
+
+                    {/* ── CLAIM BUTTON ── */}
+                    <button
+                      onClick={status === "error" ? () => setStatus("idle") : handleClaim}
+                      disabled={status === "claiming" || (status !== "error" && !canClaim)}
+                      style={{
+                        width: "100%", padding: "20px",
+                        background: (canClaim || status === "error") ? "#BFFD00" : "#eee",
+                        color: (canClaim || status === "error") ? "#111" : "#aaa",
+                        border: "2.5px solid",
+                        borderColor: (canClaim || status === "error") ? "#111" : "#ddd",
+                        borderRadius: 16,
+                        boxShadow: (canClaim || status === "error") ? "4px 4px 0 #111" : "none",
+                        fontWeight: 900, fontSize: 18,
+                        cursor: (canClaim || status === "error") ? "pointer" : "not-allowed",
+                        fontFamily: "inherit",
+                        letterSpacing: "-0.01em",
+                        animation: canClaim ? "pulse 2s ease-in-out infinite" : "none",
+                        transition: "background 0.15s, box-shadow 0.15s, transform 0.1s",
+                      }}
+                      onMouseEnter={(e) => { if (canClaim) { e.currentTarget.style.boxShadow = "2px 2px 0 #111"; e.currentTarget.style.transform = "translate(2px,2px)"; } }}
+                      onMouseLeave={(e) => { if (canClaim) { e.currentTarget.style.boxShadow = "4px 4px 0 #111"; e.currentTarget.style.transform = "translate(0,0)"; } }}
                     >
-                      🤝 GoodCollective Pool ↗
-                    </a>
-                  )}
-                </div>
-                {claims > 0 && (
-                  <div className="text-center shrink-0">
-                    <p className="font-black text-lg leading-none">{claims}</p>
-                    <p className="text-xs text-muted">claimed</p>
-                  </div>
+                      {claimLabel()}
+                    </button>
+
+                    {/* Grace period counter */}
+                    {isConnected && !isVerified && inGrace && (
+                      <div style={{
+                        background: "#f0fff4", border: "2px solid #111",
+                        borderRadius: 12, padding: "12px 14px",
+                        display: "flex", alignItems: "center", gap: 12,
+                      }}>
+                        <span style={{ fontSize: 20, flexShrink: 0 }}>🎯</span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                            {left} free claim{left !== 1 ? "s" : ""} remaining
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
+                            Verify anytime to unlock unlimited hunting
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                          style={{
+                            background: "transparent", color: "#111",
+                            border: "2px solid #111", borderRadius: 8,
+                            padding: "5px 12px", fontWeight: 800, fontSize: 11,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}
+                        >
+                          Verify
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Grace exhausted */}
+                    {isConnected && !isVerified && !inGrace && (
+                      <div style={{
+                        background: "#fff8e6", border: "2px solid #111",
+                        borderRadius: 12, padding: "12px 14px",
+                        display: "flex", alignItems: "center", gap: 12,
+                      }}>
+                        <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>Verification required</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
+                            You've used all {GRACE_CLAIM_LIMIT} free claims — verify to keep hunting
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                          style={{
+                            background: "#111", color: "#BFFD00",
+                            border: "none", borderRadius: 8,
+                            padding: "8px 12px", fontWeight: 900, fontSize: 11,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}
+                        >
+                          Verify →
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
-              </div>
-            )}
 
-            {/* Hint card */}
-            {parsed?.hint && (
-              <div className="border-2 border-dashed border-ink rounded-xl p-4 space-y-1">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted">🔍 Clue</p>
-                <p className="text-sm font-semibold leading-relaxed">{parsed.hint}</p>
-              </div>
-            )}
-
-            {/* Walking directions button */}
-            {isActive && (
-              <button
-                onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
-                className="btn-brutal flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-ink text-sm font-bold bg-cream hover:bg-border transition-colors"
-              >
-                <Crosshair size={14} />
-                Open in Google Maps
-              </button>
-            )}
-
-            {/* Success */}
-            {status === "done" && (() => {
-              // Chain hunt completion states
-              if (parsed?.isChainLast) return (
-                <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
-                  <div className="text-5xl">🏆</div>
-                  <p className="font-black text-xl">Hunt Complete!</p>
-                  <p className="text-sm text-ink/70">
-                    You conquered the entire chain! {formatG$(drop.amount)} G$ earned!
-                  </p>
-                  <button
-                    onClick={() => {
-                      const text = `I just completed a GoodDrops Hunt Chain 🏆 and claimed ${formatG$(drop.amount)} G$!\n\nMulti-stop real-world treasure hunt on GoodDrops 💰\n\n#GoodDollar #GoodDrops`;
-                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-                    }}
-                    className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
-                  >
-                    <span>Post on 𝕏</span><span>↗</span>
-                  </button>
-                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors">Done</button>
-                </div>
-              );
-
-              if (parsed?.chainNextId) return (
-                <div className="border-2 border-ink rounded-xl p-5 text-center space-y-3" style={{ background: "#111" }}>
-                  <div className="text-4xl">🔗</div>
-                  <p className="font-black text-xl text-lime">Next stop unlocked!</p>
-                  <p className="text-sm" style={{ color: "#aaa" }}>
-                    {formatG$(drop.amount)} G$ claimed. You&apos;re on a hunt chain — keep going!
-                  </p>
-                  <a
-                    href={`/drop/${parsed.chainNextId}`}
-                    className="btn-brutal w-full bg-lime text-ink font-black py-3 rounded-xl flex items-center justify-center gap-2"
-                    style={{ textDecoration: "none", display: "flex" }}
-                  >
-                    <span>Go to next stop →</span>
-                  </a>
-                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm" style={{ color: "#555" }}>
-                    Back to map
-                  </button>
-                </div>
-              );
-
-              // Regular drop success
-              return (
-                <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
-                  <div className="text-5xl">🎯</div>
-                  <p className="font-black text-xl">You found it!</p>
-                  <p className="text-sm text-ink/70">{formatG$(drop.amount)} G$ is yours!</p>
-                  <button
-                    onClick={() => {
-                      const text = `I just found a hidden drop of ${formatG$(drop.amount)} G$ in the wild 🎯💰\n\nGoodDrops lets you hide and hunt real money IRL!\n\n#GoodDollar #GoodDrops #Web3`;
-                      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-                    }}
-                    className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
-                  >
-                    <span>Post on 𝕏</span><span>↗</span>
-                  </button>
-                  <button onClick={onSuccess} className="w-full py-2 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors">Done</button>
-                </div>
-              );
-            })()}
-
-            {status !== "done" && isActive && (
-              <>
-                {/* Proximity */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-bold">📍 Proximity</span>
-                    <span className={clsx("font-semibold", prox.color)}>{prox.text}</span>
-                  </div>
-                  <div className="h-2 bg-border rounded-full overflow-hidden border border-ink">
-                    <motion.div
-                      className={clsx("h-full rounded-full", isClose ? "bg-lime" : "bg-muted")}
-                      animate={{ width: `${proximityPct}%` }}
-                      transition={{ duration: 0.5 }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs text-muted">
-                    <span>Far</span>
-                    <span className="font-bold text-ink">← need to be within {CLAIM_RADIUS_M}m</span>
-                    <span>Here!</span>
-                  </div>
-                </div>
-
-                {/* Self-drop warning */}
-                {isSelfDrop && (
-                  <div className="text-sm text-muted font-semibold text-center">
-                    This is your own drop — you can&apos;t claim it.
+                {/* Flash urgency notice */}
+                {isActive && flash && status !== "done" && (
+                  <div style={{
+                    background: "#FF640010", border: "1.5px solid #FF640050",
+                    borderRadius: 10, padding: "10px 14px",
+                    display: "flex", alignItems: "center", gap: 10,
+                  }}>
+                    <span style={{ fontSize: 18 }}>⚡</span>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#FF6400" }}>
+                        Flash Drop — {timeLeft(drop.expiry)} left!
+                      </p>
+                      <p style={{ margin: 0, fontSize: 11, color: "#aaa" }}>
+                        Expires very soon — hurry!
+                      </p>
+                    </div>
                   </div>
                 )}
 
-                {/* Error */}
-                {status === "error" && errMsg && (
-                  <div className="bg-danger/10 border-2 border-danger rounded-xl px-4 py-3 text-sm text-danger font-semibold">
-                    {errMsg}
+                {/* Inactive state */}
+                {!isActive && status !== "done" && (
+                  <div style={{
+                    background: "#fff", border: "2px solid #ddd",
+                    borderRadius: 14, padding: "24px 20px", textAlign: "center",
+                  }}>
+                    <div style={{ fontSize: 40, marginBottom: 8 }}>
+                      {drop.status === DROP_STATUS.Claimed ? "🎯" : "⌛"}
+                    </div>
+                    <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 16, color: "#111" }}>
+                      {drop.status === DROP_STATUS.Claimed ? "Already claimed" : "Drop has expired"}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 13, color: "#888" }}>
+                      {drop.status === DROP_STATUS.Claimed ? "Someone beat you to it!" : "This drop is no longer active."}
+                    </p>
                   </div>
                 )}
 
-                {/* Claim button */}
-                <button
-                  onClick={status === "error" ? () => setStatus("idle") : handleClaim}
-                  disabled={status !== "error" && !canClaim}
-                  className={clsx(
-                    "btn-brutal w-full py-4 rounded-xl font-black text-base transition-all",
-                    canClaim || status === "error"
-                      ? "bg-lime text-ink cursor-pointer"
-                      : "bg-border text-muted cursor-not-allowed shadow-none border-muted"
-                  )}
-                  style={!(canClaim || status === "error") ? { boxShadow: "none", transform: "none" } : {}}
-                >
-                  {status === "claiming"
-                    ? "Claiming…"
-                    : status === "error"
-                    ? "Try again"
-                    : !isConnected
-                    ? "Sign in to claim"
-                    : !isVerified
-                    ? "Verification required"
-                    : isSelfDrop
-                    ? "Can't claim own drop"
-                    : !userLocation
-                    ? "Enable GPS to claim"
-                    : !isClose
-                    ? `Get closer (${Math.round(distance ?? 0)}m away)`
-                    : `Claim ${formatG$(drop.amount)} G$`}
-                </button>
-
-                <p className="text-center text-xs text-muted">
-                  Verification required to claim
-                </p>
-
-                {/* Hunt button — shown when active but too far to claim */}
-                {onHunt && isActive && !isClose && (
-                  <button
-                    onClick={() => { onClose(); onHunt(drop); }}
-                    className="btn-brutal w-full py-3 rounded-xl font-bold text-sm bg-ink text-lime flex items-center justify-center gap-2 mt-2"
-                  >
-                    <Crosshair size={16} />
-                    Hunt this drop
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Flash drop countdown */}
-            {isActive && isFlashDrop(drop) && (
-              <div style={{
-                background: "#FF640015",
-                border: "1.5px solid #FF640044",
-                borderRadius: 10,
-                padding: "8px 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}>
-                <span style={{ fontSize: 16 }}>⚡</span>
-                <div>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#FF6400" }}>
-                    Flash Drop — {timeLeft(drop.expiry)} left!
-                  </p>
-                  <p style={{ margin: 0, fontSize: 11, color: "#aaa" }}>
-                    This drop expires very soon — hurry!
-                  </p>
-                </div>
+                {/* Comments */}
+                <DropComments dropId={String(drop.id)} />
               </div>
-            )}
-
-            {/* Inactive state */}
-            {!isActive && status !== "done" && (
-              <div className="text-center py-4 text-muted font-semibold">
-                {drop.status === DROP_STATUS.Claimed
-                  ? "This drop has already been claimed."
-                  : "This drop has expired."}
-              </div>
-            )}
-
-            {/* Comments */}
-            <DropComments dropId={String(drop.id)} />
-          </div>
-        )}
+            </>
+          );
+        })()}
       </motion.div>
     </>
   );

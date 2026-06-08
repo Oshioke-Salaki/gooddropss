@@ -12,6 +12,7 @@ import { PushPermissionBanner } from "@/components/PushPermissionBanner";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
 import type { Drop, LatLng } from "@/types";
+import { DROP_STATUS } from "@/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -51,7 +52,15 @@ export default function HomePage() {
       {/* Full-screen map — starts below header, ends above bottom nav on mobile */}
       <div className="absolute top-14 left-0 right-0 bottom-16 sm:bottom-0">
         <MapView
-          drops={drops.filter((d) => !d.hint.startsWith("[P:"))}
+          drops={drops.filter((d) => {
+            if (d.hint.startsWith("[P:")) return false;
+            if (d.status === DROP_STATUS.Active) return true;
+            const now = Math.floor(Date.now() / 1000);
+            const cutoff = now - 24 * 60 * 60;
+            // claimed drops: use claimedAt; expired/reclaimed drops: use expiry
+            if (d.claimedAt > 0) return d.claimedAt > cutoff;
+            return d.expiry > cutoff;
+          })}
           onDropClick={handleDropClick}
           userLocation={userLoc}
           onUserLocation={handleUserLocation}

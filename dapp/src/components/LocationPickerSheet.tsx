@@ -48,6 +48,7 @@ interface FlyTarget {
 export interface Props {
   open: boolean;
   initialCenter: { lat: number; lng: number } | null;
+  currentLocation?: { lat: number; lng: number } | null;
   onConfirm: (lat: number, lng: number, placeName: string | null) => void;
   onClose: () => void;
 }
@@ -60,6 +61,7 @@ const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 };
 export function LocationPickerSheet({
   open,
   initialCenter,
+  currentLocation,
   onConfirm,
   onClose,
 }: Props) {
@@ -161,9 +163,18 @@ export function LocationPickerSheet({
 
   // ── My location ───────────────────────────────────────────────────────────────
   function goToMyLocation() {
+    setLocErr("");
+
+    // Prefer the live-tracked position from the main map — it's already
+    // high-accuracy from watchPosition and requires no async call.
+    if (currentLocation) {
+      setFlyTarget({ lat: currentLocation.lat, lng: currentLocation.lng, seq: ++flySeq.current });
+      return;
+    }
+
+    // Fallback: fetch once (no live position available yet)
     if (!navigator.geolocation) return;
     setLocating(true);
-    setLocErr("");
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);

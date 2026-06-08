@@ -6,6 +6,7 @@ import { useDrops } from "@/hooks/useDrops";
 import { formatG$ } from "@/lib/utils";
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS } from "@/types";
+import type { HunterStreak } from "@/types";
 import clsx from "clsx";
 
 interface Rank {
@@ -24,10 +25,12 @@ function RankRow({
   rank,
   entry,
   label,
+  streak,
 }: {
   rank: number;
   entry: Rank;
   label?: string;
+  streak?: HunterStreak | null;
 }) {
   const isTop3 = rank <= 3;
   return (
@@ -52,7 +55,22 @@ function RankRow({
         {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}
       </div>
       <Link href={`/hunter/${entry.address}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
-        <div className="font-bold text-sm truncate"><UserHandle address={entry.address} /></div>
+        <div className="font-bold text-sm truncate flex items-center gap-1.5">
+          <UserHandle address={entry.address} />
+          {streak && streak.current >= 2 && (
+            <span
+              title={`${streak.current}-day streak`}
+              className={clsx(
+                "text-xs font-black px-1.5 py-0.5 rounded-full border leading-none shrink-0",
+                streak.current >= 7
+                  ? "bg-orange-500 border-orange-700 text-white"
+                  : "bg-cream border-ink text-ink"
+              )}
+            >
+              🔥{streak.current}
+            </span>
+          )}
+        </div>
         <div className="text-xs opacity-70 font-medium">{entry.count} {label}</div>
       </Link>
       <div className="text-right shrink-0">
@@ -66,6 +84,7 @@ function RankRow({
 export default function LeaderboardPage() {
   const { drops, loading, fetchDrops } = useDrops();
   const [tab, setTab] = useState<"hunters" | "droppers">("hunters");
+  const [streaks, setStreaks] = useState<Record<string, HunterStreak>>({});
 
   useEffect(() => {
     fetchDrops();
@@ -108,6 +127,27 @@ export default function LeaderboardPage() {
       totalDrops: drops.length,
     };
   }, [drops]);
+
+  // Fetch streaks for top 20 hunters once the list is computed
+  useEffect(() => {
+    const top = hunters.slice(0, 20);
+    if (top.length === 0) return;
+    Promise.allSettled(
+      top.map((h) =>
+        fetch(`/api/engagement?address=${h.address}`)
+          .then((r) => r.json())
+          .then((d) => ({ address: h.address.toLowerCase(), streak: d.streak as HunterStreak | null }))
+      )
+    ).then((results) => {
+      const map: Record<string, HunterStreak> = {};
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.streak) {
+          map[r.value.address] = r.value.streak;
+        }
+      }
+      setStreaks(map);
+    });
+  }, [hunters]);
 
   return (
     <div className="min-h-screen bg-cream pb-24">
@@ -179,6 +219,7 @@ export default function LeaderboardPage() {
                   rank={i + 1}
                   entry={entry}
                   label={tab === "hunters" ? "claims" : "drops"}
+                  streak={tab === "hunters" ? (streaks[entry.address.toLowerCase()] ?? null) : null}
                 />
               ))
             )}

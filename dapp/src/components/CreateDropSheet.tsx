@@ -246,66 +246,139 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
               ? `${typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz"}/drop/${createdDropId}`
               : null;
             return (
-              <div className="space-y-4">
-                <div className="bg-lime border-2 border-ink rounded-xl p-5 text-center space-y-3">
-                  <div className="text-5xl">🎉</div>
-                  <p className="font-black text-xl">Drop created!</p>
-                  <p className="text-sm text-ink/70">
-                    {amount} G$ hidden{placeName ? ` in ${placeName}` : ""}. Time to hunt!
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* ── Hero card ── */}
+                <div style={{
+                  background: "#111", border: "2px solid #111",
+                  borderRadius: 20, boxShadow: "4px 4px 0 #BFFD00",
+                  padding: "28px 20px 22px", textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 52, marginBottom: 14, lineHeight: 1 }}>🎉</div>
+                  <p style={{ margin: "0 0 14px", fontWeight: 900, fontSize: 26, color: "#BFFD00", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                    Drop hidden!
                   </p>
+
+                  {/* Amount pill */}
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "#BFFD00", color: "#111",
+                    border: "2px solid #BFFD00", borderRadius: 100,
+                    padding: "6px 18px", fontWeight: 900, fontSize: 20,
+                    marginBottom: placeName ? 8 : 18,
+                  }}>
+                    💰 {amount} G$
+                  </div>
+
+                  {placeName && (
+                    <p style={{ margin: "0 0 18px", fontSize: 13, color: "#888", fontWeight: 600 }}>
+                      📍 {placeName}
+                    </p>
+                  )}
+
                   <button
                     onClick={handleShare}
-                    className="btn-brutal w-full bg-ink text-lime font-bold py-3 rounded-xl flex items-center justify-center gap-2"
+                    style={{
+                      width: "100%", padding: "12px",
+                      background: "transparent", color: "#BFFD00",
+                      border: "2px solid #BFFD00", borderRadius: 12,
+                      fontWeight: 800, fontSize: 14, letterSpacing: "0.01em",
+                      cursor: "pointer", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      transition: "background 0.15s, color 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; e.currentTarget.style.color = "#111"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#BFFD00"; }}
                   >
-                    <span>Post on 𝕏</span><span>↗</span>
+                    <span>Post on 𝕏</span><span style={{ fontSize: 16 }}>↗</span>
                   </button>
                 </div>
 
-                {/* Invitation link card — shown for all drops */}
+                {/* ── Share card ── */}
                 {shareUrl && (
-                  <div className="bg-card border-2 border-ink rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wider text-muted">
-                      {isPrivate ? "📫 Invitation link" : "🔗 Drop link"}
-                    </p>
-                    <p className="text-xs text-muted leading-relaxed">
-                      {isPrivate
-                        ? "Share this privately — only people with this link can find the drop."
-                        : "Anyone with this link goes directly to this drop."}
-                    </p>
-
-                    {/* URL row */}
-                    <div className="flex items-center gap-2 bg-cream border border-ink rounded-lg px-3 py-2 min-w-0">
-                      <span className="text-xs font-mono text-muted truncate flex-1 min-w-0">
-                        {shareUrl}
-                      </span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard?.writeText(shareUrl).then(() => {
-                            setLinkCopied(true);
-                            setTimeout(() => setLinkCopied(false), 2000);
-                          });
-                        }}
-                        className="shrink-0 flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 bg-ink text-lime rounded-md"
-                      >
-                        {linkCopied ? <Check size={12} /> : <Copy size={12} />}
-                        {linkCopied ? "Copied" : "Copy"}
-                      </button>
+                  <div style={{
+                    background: "#fff", border: "2px solid #111",
+                    borderRadius: 20, boxShadow: "3px 3px 0 #111",
+                    overflow: "hidden",
+                  }}>
+                    {/* QR section */}
+                    <div style={{
+                      background: "#f5f4f0", borderBottom: "2px solid #111",
+                      padding: "20px 20px 16px", textAlign: "center",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                    }}>
+                      <p style={{ margin: 0, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>
+                        {isPrivate ? "📫 Private invitation" : "🔗 Drop link"}
+                      </p>
+                      <div style={{
+                        background: "#fff", border: "2.5px solid #111",
+                        borderRadius: 14, padding: 14,
+                        boxShadow: "3px 3px 0 #111",
+                        display: "inline-block",
+                      }}>
+                        <QRCodeSVG value={shareUrl} size={148} level="M" includeMargin={false} />
+                      </div>
+                      <p style={{ margin: 0, fontSize: 11, color: "#888", fontWeight: 600, maxWidth: 220, lineHeight: 1.5 }}>
+                        {isPrivate
+                          ? "Only people with this link can find the drop"
+                          : "Scan to jump straight to the drop"}
+                      </p>
                     </div>
 
-                    {/* QR code */}
-                    <div className="flex justify-center pt-1">
-                      <div className="border-2 border-ink rounded-xl p-3 bg-white inline-block">
-                        <QRCodeSVG value={shareUrl} size={140} level="M" includeMargin={false} />
+                    {/* URL + copy */}
+                    <div style={{ padding: "12px 14px", borderBottom: "1.5px solid #e8e6e0" }}>
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        background: "#f5f4f0", border: "2px solid #111",
+                        borderRadius: 10, padding: "7px 8px 7px 12px",
+                      }}>
+                        <span style={{
+                          flex: 1, minWidth: 0, fontFamily: "monospace",
+                          fontSize: 11, color: "#666",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {shareUrl}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText(shareUrl).then(() => {
+                              setLinkCopied(true);
+                              setTimeout(() => setLinkCopied(false), 2000);
+                            });
+                          }}
+                          style={{
+                            flexShrink: 0,
+                            display: "flex", alignItems: "center", gap: 6,
+                            background: linkCopied ? "#BFFD00" : "#111",
+                            color: linkCopied ? "#111" : "#BFFD00",
+                            border: "none", borderRadius: 8,
+                            padding: "7px 13px", fontWeight: 800, fontSize: 12,
+                            cursor: "pointer", fontFamily: "inherit",
+                            transition: "background 0.15s, color 0.15s",
+                          }}
+                        >
+                          {linkCopied ? <Check size={12} /> : <Copy size={12} />}
+                          {linkCopied ? "Copied!" : "Copy link"}
+                        </button>
                       </div>
                     </div>
 
+                    {/* Share via OS sheet */}
                     {typeof navigator !== "undefined" && "share" in navigator && (
                       <button
                         onClick={() => navigator.share?.({ title: "GoodDrops — hidden G$", url: shareUrl })}
-                        className="btn-brutal w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold bg-cream border-2 border-ink"
+                        style={{
+                          width: "100%", padding: "14px 16px",
+                          background: "transparent", border: "none",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          fontWeight: 800, fontSize: 14, color: "#111",
+                          cursor: "pointer", fontFamily: "inherit",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                       >
-                        <Share2 size={14} />
-                        Share invitation
+                        <Share2 size={16} />
+                        Share drop link
                       </button>
                     )}
                   </div>
@@ -313,9 +386,16 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
                 <button
                   onClick={() => { onSuccess(); reset(); }}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm text-ink/60 hover:text-ink transition-colors"
+                  style={{
+                    width: "100%", padding: "12px",
+                    background: "transparent", border: "none",
+                    fontWeight: 700, fontSize: 14, color: "#888",
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#111"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "#888"; }}
                 >
-                  Done
+                  Done — back to map
                 </button>
               </div>
             );
@@ -523,6 +603,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       <LocationPickerSheet
         open={pickerOpen}
         initialCenter={lat !== null && lng !== null ? { lat, lng } : userLocation}
+        currentLocation={userLocation}
         onConfirm={handleLocationConfirm}
         onClose={() => setPickerOpen(false)}
       />

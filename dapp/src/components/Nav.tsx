@@ -9,6 +9,7 @@ import { Map, Package, Trophy } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
+import { useGracePeriod } from "@/hooks/useGracePeriod";
 import { VerificationModal } from "@/components/VerificationModal";
 import { formatG$ } from "@/lib/utils";
 import clsx from "clsx";
@@ -24,10 +25,11 @@ const links = [
 
 interface WalletButtonProps {
   isVerified: boolean;
+  isVerificationLoading: boolean;
   onOpenVerify: () => void;
 }
 
-function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
+function WalletButton({ isVerified, isVerificationLoading, onOpenVerify }: WalletButtonProps) {
   const { login, logout, ready, authenticated } = usePrivy();
   const { wallets } = useWallets();
   const { address: wagmiAddress, chainId } = useAccount();
@@ -62,6 +64,13 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
     const h = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
     mq.addEventListener("change", h);
     return () => mq.removeEventListener("change", h);
+  }, []);
+
+  // Open wallet modal when ClaimSheet success state dispatches gd:openWallet
+  useEffect(() => {
+    const onOpenWallet = () => setShowModal(true);
+    window.addEventListener("gd:openWallet", onOpenWallet);
+    return () => window.removeEventListener("gd:openWallet", onOpenWallet);
   }, []);
 
   if (!ready) return null;
@@ -115,7 +124,20 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
 
   const shortAddress = `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-  const gdBadge = isVerified ? (
+  const gdBadge = isVerificationLoading ? (
+    <span
+      title="Checking verification…"
+      style={{
+        background: "#e5e5e5", color: "#888", border: "1.5px solid #bbb",
+        borderRadius: "5px", fontSize: "10px", fontWeight: 900,
+        padding: "1px 5px", letterSpacing: "0.02em", lineHeight: 1.4,
+        whiteSpace: "nowrap", flexShrink: 0,
+        animation: "pulse 1.5s ease-in-out infinite",
+      }}
+    >
+      ···
+    </span>
+  ) : isVerified ? (
     <span
       title="Verified"
       style={{
@@ -194,16 +216,18 @@ function WalletButton({ isVerified, onOpenVerify }: WalletButtonProps) {
 interface VerifyBannerProps {
   isVerified: boolean;
   isFetching: boolean;
+  isVerificationLoading: boolean;
+  inGrace: boolean;
   isConnected: boolean;
   onGetVerified: () => void;
 }
 
-export function VerifyBanner({ isVerified, isFetching, isConnected, onGetVerified }: VerifyBannerProps) {
+export function VerifyBanner({ isVerified, isFetching, isVerificationLoading, inGrace, isConnected, onGetVerified }: VerifyBannerProps) {
   const [dismissed, setDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  if (!mounted || !isConnected || isFetching || isVerified || dismissed) return null;
+  if (!mounted || !isConnected || isFetching || isVerificationLoading || isVerified || inGrace || dismissed) return null;
 
   return (
     <div
@@ -258,6 +282,8 @@ export function Nav() {
     setIsVerifying,
     refresh,
   } = useVerification();
+  const { inGrace } = useGracePeriod();
+  const isVerificationLoading = status === "loading";
 
   // Broadcast verification so every useGoodDollarProfile instance refetches immediately
   const prevVerified = useRef(false);
@@ -267,6 +293,15 @@ export function Nav() {
     }
     prevVerified.current = isVerified;
   }, [isVerified]);
+
+  // Listen for events dispatched by ClaimSheet / DropPageClient to open modals.
+  // gd:openVerify — opens the GoodDollar face-verification flow.
+  // gd:openWallet — opens the wallet modal (for UBI claim prompt after a drop claim).
+  useEffect(() => {
+    const onOpenVerify = () => setIsVerifying(true);
+    window.addEventListener("gd:openVerify", onOpenVerify);
+    return () => window.removeEventListener("gd:openVerify", onOpenVerify);
+  }, [setIsVerifying]);
 
   return (
     <>
@@ -296,7 +331,7 @@ export function Nav() {
 
           {/* Wallet */}
           <div className="shrink-0">
-            <WalletButton isVerified={isVerified} onOpenVerify={() => setIsVerifying(true)} />
+            <WalletButton isVerified={isVerified} isVerificationLoading={isVerificationLoading} onOpenVerify={() => setIsVerifying(true)} />
           </div>
         </div>
       </nav>
@@ -304,6 +339,8 @@ export function Nav() {
       <VerifyBanner
         isVerified={isVerified}
         isFetching={isFetching}
+        isVerificationLoading={isVerificationLoading}
+        inGrace={inGrace}
         isConnected={isConnected}
         onGetVerified={() => setIsVerifying(true)}
       />
