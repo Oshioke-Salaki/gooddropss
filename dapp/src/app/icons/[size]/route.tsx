@@ -7,29 +7,45 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ size: string }> }
 ) {
-  const { size: sizeStr } = await params;
-  const size = Math.min(Math.max(parseInt(sizeStr) || 512, 16), 1024);
-  const radius = Math.round(size * 0.22);
-  const fontSize = Math.round(size * 0.52);
+  const { size } = await params;
+  const sz = size === "512" ? 512 : 192;
 
   return new ImageResponse(
     (
       <div
         style={{
-          width: size,
-          height: size,
-          background: "#BFFD00",
+          width: sz, height: sz,
+          background: "#111111",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          borderRadius: radius,
-          border: `${Math.max(2, Math.round(size * 0.03))}px solid #111111`,
-          boxShadow: `${Math.round(size * 0.04)}px ${Math.round(size * 0.04)}px 0 #111111`,
+          borderRadius: sz * 0.22,
         }}
       >
-        <span style={{ fontSize, lineHeight: 1, display: "flex" }}>💰</span>
+        {/* Lime G$ mark */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: sz * 0.03,
+        }}>
+          <span style={{
+            fontSize: sz * 0.42,
+            fontWeight: 900,
+            color: "#BFFD00",
+            lineHeight: 1,
+            display: "flex",
+          }}>G$</span>
+          <div style={{
+            width: sz * 0.5,
+            height: sz * 0.06,
+            background: "#BFFD00",
+            borderRadius: sz * 0.03,
+            display: "flex",
+          }} />
+        </div>
       </div>
     ),
-    { width: size, height: size }
+    { width: sz, height: sz }
   );
 }

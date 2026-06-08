@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { fetchDropById } from "@/lib/subgraph";
-import { formatG$ } from "@/lib/utils";
+import { formatG$, parseDropHint, getDropRarity, RARITY } from "@/lib/utils";
 import { DROP_STATUS } from "@/types";
 
 export const contentType = "image/png";
@@ -42,11 +42,12 @@ export default async function DropOgImage({
   const statusBg    = isActive ? "#BFFD00" : "#444444";
   const statusColor = isActive ? "#111111" : "#ffffff";
 
-  const hint = drop.hint
-    ? drop.hint.length > 80
-      ? drop.hint.slice(0, 80) + "…"
-      : drop.hint
-    : null;
+  const rawHint = parseDropHint(drop.hint).hint;
+  const hint = rawHint ? (rawHint.length > 80 ? rawHint.slice(0, 80) + "…" : rawHint) : null;
+
+  const rarity = getDropRarity(drop.amount);
+  const r = RARITY[rarity];
+  const accentColor = r.color;
 
   return new ImageResponse(
     (
@@ -105,7 +106,7 @@ export default async function DropOgImage({
           <span style={{
             fontSize: 120,
             fontWeight: 900,
-            color: "#BFFD00",
+            color: accentColor,
             letterSpacing: "-0.04em",
             lineHeight: 0.9,
             display: "flex",

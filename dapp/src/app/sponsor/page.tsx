@@ -107,6 +107,52 @@ function CampaignCard({ campaign, drops, claims, onSelect }: {
   );
 }
 
+// ── Claims chart ─────────────────────────────────────────────────────────────
+
+function ClaimsChart({ drops, color }: { drops: Drop[]; color: string }) {
+  const now = Math.floor(Date.now() / 1000);
+  const buckets = Array.from({ length: 7 }, (_, i) => {
+    const dayStart = now - (6 - i) * 86400;
+    const dayEnd   = dayStart + 86400;
+    return {
+      label: new Date(dayStart * 1000).toLocaleDateString("en", { weekday: "short" }),
+      count: drops.filter(d => d.claimedAt > 0 && d.claimedAt >= dayStart && d.claimedAt < dayEnd).length,
+    };
+  });
+  const max = Math.max(...buckets.map(b => b.count), 1);
+  const total = buckets.reduce((s, b) => s + b.count, 0);
+
+  return (
+    <div style={{
+      background: "#111", border: "2px solid #222",
+      borderRadius: 14, padding: "16px 18px", marginBottom: 20,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: "#555", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+          Claims — last 7 days
+        </p>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 900, color: color }}>
+          {total} total
+        </p>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 64 }}>
+        {buckets.map(({ label, count }) => (
+          <div key={label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+            <div style={{
+              width: "100%",
+              height: count > 0 ? `${Math.max(4, (count / max) * 48)}px` : "3px",
+              background: count > 0 ? color : "#222",
+              borderRadius: 4,
+              transition: "height 0.4s ease",
+            }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#444", textTransform: "uppercase" }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Campaign drop list ────────────────────────────────────────────────────────
 
 function CampaignDropList({ drops, color }: { drops: Drop[]; color: string }) {
@@ -411,6 +457,8 @@ export default function SponsorPage() {
               </div>
             ))}
           </div>
+
+          <ClaimsChart drops={campDrops} color={selected.color} />
 
           {/* Drops */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>

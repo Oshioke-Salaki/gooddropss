@@ -25,7 +25,7 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 });
 
 export default function HomePage() {
-  const { drops, loading, fetchDrops } = useDrops();
+  const { drops, loading, fetchDrops, markClaimed } = useDrops();
   useDropNotifications(drops); // fires browser notification when own drop is claimed
   const [selectedDrop, setSelectedDrop] = useState<Drop | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
@@ -171,7 +171,7 @@ export default function HomePage() {
         drop={selectedDrop}
         userLocation={userLoc}
         onClose={() => setSelectedDrop(null)}
-        onSuccess={() => { setSelectedDrop(null); fetchDrops(); }}
+        onSuccess={() => { if (selectedDrop) markClaimed(selectedDrop.id); setSelectedDrop(null); }}
         onHunt={(drop) => { setSelectedDrop(null); setHuntingDrop(drop); }}
       />
     </div>

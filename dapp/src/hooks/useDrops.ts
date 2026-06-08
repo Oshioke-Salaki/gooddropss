@@ -19,5 +19,17 @@ export function useDrops() {
     }
   }, []);
 
-  return { drops, loading, fetchDrops };
+  const markClaimed = useCallback((dropId: bigint) => {
+    const now = Math.floor(Date.now() / 1000);
+    setDrops((prev) =>
+      prev.map((d) =>
+        d.id === dropId ? { ...d, status: 1, claimedAt: now } : d
+      )
+    );
+    setTimeout(() => {
+      fetchDrops();
+    }, 5000);
+  }, [fetchDrops]);
+
+  return { drops, loading, fetchDrops, markClaimed };
 }
