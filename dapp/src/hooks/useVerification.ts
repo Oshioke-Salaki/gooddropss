@@ -74,7 +74,7 @@ export function useVerification() {
     try {
       setIsGeneratingLink(true);
       const idSDK = new (IdentitySDK as any)(publicClient, walletClient, "production");
-      const callbackUrl = window.location.origin + window.location.pathname;
+      const callbackUrl = window.location.href;
       const linkResult = await idSDK.generateFVLink(false, callbackUrl, 42220);
       let finalLink = "";
       if (typeof linkResult === "string") finalLink = linkResult;

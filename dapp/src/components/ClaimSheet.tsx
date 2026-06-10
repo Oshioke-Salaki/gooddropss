@@ -84,16 +84,34 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
 
   async function handleClaim() {
-    if (!canClaim || !drop) return;
+    if (!canClaim || !drop || !address) return;
     setStatus("claiming");
     setErrMsg("");
     try {
+      const proofRes = await fetch("/api/claim-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dropId:  drop.id.toString(),
+          claimer: address,
+          userLat: userLocation?.lat,
+          userLng: userLocation?.lng,
+        }),
+      });
+
+      if (!proofRes.ok) {
+        const body = await proofRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not verify location — try again.");
+      }
+
+      const { deadline, sig } = await proofRes.json();
       const tx = await writeContractAsync({
         address: GOOD_DROPS_ADDRESS,
         abi: GOOD_DROPS_ABI,
-        functionName: "claim",
-        args: [drop.id],
+        functionName: "claimWithProof",
+        args: [drop.id, BigInt(deadline), sig as `0x${string}`],
       });
+
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
       if (address) {

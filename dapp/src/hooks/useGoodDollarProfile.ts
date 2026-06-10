@@ -8,13 +8,15 @@ const IDENTITY_ADDRESS =
 
 const IDENTITY_ABI = [
   {
-    name: "isWhitelisted",
+    name: "getWhitelistedRoot",
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "user", type: "address" }],
-    outputs: [{ type: "bool" }],
+    outputs: [{ name: "root", type: "address" }],
   },
 ] as const;
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export function useGoodDollarProfile() {
   const { address } = useAccount();
@@ -30,7 +32,7 @@ export function useGoodDollarProfile() {
       {
         address: IDENTITY_ADDRESS,
         abi: IDENTITY_ABI,
-        functionName: "isWhitelisted",
+        functionName: "getWhitelistedRoot",
         args: [address!],
       },
     ],
@@ -50,7 +52,8 @@ export function useGoodDollarProfile() {
   }, [refetch]);
 
   const balance = (data?.[0]?.result as bigint | undefined) ?? 0n;
-  const isVerified = (data?.[1]?.result as boolean | undefined) ?? false;
+  const root = (data?.[1]?.result as string | undefined) ?? ZERO_ADDRESS;
+  const isVerified = root !== ZERO_ADDRESS;
 
   return { balance, isVerified, isFetching: !address || data === undefined };
 }

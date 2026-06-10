@@ -114,7 +114,7 @@ export default function HomePage() {
           onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #BFFD00"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
           onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #BFFD00"; e.currentTarget.style.transform = "translate(0,0)"; }}
         >
-          <span>Hunt Chain</span>
+          <span>Drop Chain</span>
           <span>🔗</span>
         </button>
         {/* Drop G$ FAB */}

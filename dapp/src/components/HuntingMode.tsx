@@ -21,13 +21,15 @@ interface Props {
   userLocation: LatLng | null;
   onClose: () => void;
   onSuccess: () => void;
+  privateToken?: string;
+  dropCoords?: { lat: number; lng: number };
 }
 
 type ClaimStatus = "idle" | "claiming" | "done" | "error";
 
 const MAX_RANGE = 800;
 
-export function HuntingMode({ drop, userLocation, onClose, onSuccess }: Props) {
+export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords }: Props) {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
 
@@ -49,8 +51,8 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess }: Props) {
     };
   }, []);
 
-  const dropLat = gpsToDeg(drop.lat);
-  const dropLng = gpsToDeg(drop.lng);
+  const dropLat = dropCoords?.lat ?? gpsToDeg(drop.lat);
+  const dropLng = dropCoords?.lng ?? gpsToDeg(drop.lng);
 
   const distance = liveLocation
     ? Math.round(haversineDistance(liveLocation.lat, liveLocation.lng, dropLat, dropLng))
@@ -85,12 +87,31 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess }: Props) {
     if (!address || !isClose || claimStatus !== "idle") return;
     setClaimStatus("claiming");
     try {
+      const proofRes = await fetch("/api/claim-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dropId:  drop.id.toString(),
+          claimer: address,
+          userLat: liveLocation?.lat,
+          userLng: liveLocation?.lng,
+          ...(privateToken ? { privateToken } : {}),
+        }),
+      });
+
+      if (!proofRes.ok) {
+        const body = await proofRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not verify location — try again.");
+      }
+
+      const { deadline, sig } = await proofRes.json();
       const tx = await writeContractAsync({
         address: GOOD_DROPS_ADDRESS,
         abi: GOOD_DROPS_ABI,
-        functionName: "claim",
-        args: [drop.id],
+        functionName: "claimWithProof",
+        args: [drop.id, BigInt(deadline), sig as `0x${string}`],
       });
+
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setClaimStatus("done");
     } catch (e: unknown) {

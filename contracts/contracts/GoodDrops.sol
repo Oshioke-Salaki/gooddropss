@@ -10,12 +10,18 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {ReentrancyGuard}     from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20}              from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20}           from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ECDSA}               from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils}    from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 // ─── GoodDollar Identity Interface ───────────────────────────────────────────
 // Celo mainnet:  0xC361A6E67822a0EDc17D899227dd9FC50BD62F42
 // Celo Alfajores: set via initialize()
+// getWhitelistedRoot returns the face-verified root address for a wallet.
+// A non-zero return means the wallet is whitelisted. Using the root (rather
+// than isWhitelisted) lets the contract track the underlying human identity,
+// preventing the same person from claiming via multiple linked wallets.
 interface IIdentityV2 {
-    function isWhitelisted(address user) external view returns (bool);
+    function getWhitelistedRoot(address user) external view returns (address root);
 }
 
 /**
@@ -52,6 +58,8 @@ contract GoodDrops is
     UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
 
     // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -89,19 +97,25 @@ contract GoodDrops is
 
     // ─── Storage ─────────────────────────────────────────────────────────────
 
+    // ── Original storage — DO NOT reorder, insert before, or remove ──────────
     IERC20      public gToken;
     IIdentityV2 public identityContract;
 
-    bool    public identityRequired;   // toggle for emergency / testing
-    uint96  public maxDropAmount;      // safety cap per drop
-    uint96  public minDropAmount;      // prevents dust drops
-    uint40  public minExpiryDuration;  // shortest allowed drop lifetime
-    uint40  public maxExpiryDuration;  // longest allowed drop lifetime
+    bool    public identityRequired;
+    uint96  public maxDropAmount;
+    uint96  public minDropAmount;
+    uint40  public minExpiryDuration;
+    uint40  public maxExpiryDuration;
 
-    uint256 public dropCount;   // total drops ever created; also last used ID
-    uint256 public totalLocked; // G$ currently held by contract (active drops only)
+    uint256 public dropCount;
+    uint256 public totalLocked;
 
     mapping(uint256 => Drop) public drops;
+
+    // ── v2 additions — appended after all original slots ─────────────────────
+    address public gpsSigner;                    // server key that signs proximity proofs
+    bool    public gpsRequired;                  // when true, claim() requires a GPS proof
+    mapping(bytes32 => bool) public usedProofs;  // replay protection for GPS proofs
 
     // ─── Custom Errors ───────────────────────────────────────────────────────
 
@@ -121,6 +135,10 @@ contract GoodDrops is
     error IdentityContractNotSet();
     error CannotRescueLockedTokens();
     error MinExceedsMax();
+    error GpsProofRequired();
+    error InvalidGpsProof();
+    error ProofExpired();
+    error ProofAlreadyUsed();
 
     // ─── Events ──────────────────────────────────────────────────────────────
 
@@ -157,6 +175,8 @@ contract GoodDrops is
     event ExpiryLimitsUpdated(uint40 minDuration, uint40 maxDuration);
     event IdentityRequiredUpdated(bool required);
     event IdentityContractUpdated(address indexed oldContract, address indexed newContract);
+    event GpsSignerUpdated(address indexed oldSigner, address indexed newSigner);
+    event GpsRequiredUpdated(bool required);
     event TokensRescued(address indexed token, uint256 amount, address indexed to);
 
     // ─── Constructor ─────────────────────────────────────────────────────────
@@ -258,13 +278,44 @@ contract GoodDrops is
     // ─── Core: Claim ─────────────────────────────────────────────────────────
 
     /**
-     * @notice Claim a drop. Caller must be GoodDollar-verified and must be
-     *         physically at the drop location (enforced by the frontend before
-     *         this transaction is submitted).
+     * @notice Claim a drop. Caller must be GoodDollar-verified.
+     *         When gpsRequired=true this reverts — use claimWithProof() instead.
      *
      * @param dropId  The drop to claim.
      */
     function claim(uint256 dropId) external whenNotPaused nonReentrant {
+        if (gpsRequired) revert GpsProofRequired();
+        _executeClaim(dropId);
+    }
+
+    /**
+     * @notice Claim a drop with a server-signed GPS proximity proof.
+     *         The proof is: ethSignedMessageHash(keccak256(dropId, claimer, deadline))
+     *         signed by gpsSigner. deadline is a unix timestamp (60s window recommended).
+     *
+     * @param dropId    The drop to claim.
+     * @param deadline  Unix timestamp after which the proof expires.
+     * @param sig       Server signature over keccak256(dropId, claimer, deadline).
+     */
+    function claimWithProof(
+        uint256 dropId,
+        uint256 deadline,
+        bytes calldata sig
+    ) external whenNotPaused nonReentrant {
+        if (gpsSigner == address(0)) revert GpsProofRequired();
+        if (block.timestamp > deadline) revert ProofExpired();
+
+        bytes32 proofHash = keccak256(abi.encodePacked(dropId, msg.sender, deadline));
+        if (usedProofs[proofHash]) revert ProofAlreadyUsed();
+
+        address recovered = proofHash.toEthSignedMessageHash().recover(sig);
+        if (recovered != gpsSigner) revert InvalidGpsProof();
+
+        usedProofs[proofHash] = true;
+        _executeClaim(dropId);
+    }
+
+    function _executeClaim(uint256 dropId) internal {
         Drop storage drop = drops[dropId];
 
         // ── Validations ────────────────────────────────────────────────────
@@ -275,7 +326,10 @@ contract GoodDrops is
 
         if (identityRequired) {
             if (address(identityContract) == address(0)) revert IdentityContractNotSet();
-            if (!identityContract.isWhitelisted(msg.sender)) revert NotWhitelisted();
+            // getWhitelistedRoot returns the face-verified root address.
+            // A zero return means the caller is not whitelisted.
+            address root = identityContract.getWhitelistedRoot(msg.sender);
+            if (root == address(0)) revert NotWhitelisted();
         }
 
         // ── Effects ────────────────────────────────────────────────────────
@@ -290,8 +344,6 @@ contract GoodDrops is
         // ── Interactions ───────────────────────────────────────────────────
         gToken.safeTransfer(msg.sender, amount);
 
-        // Read dropper from storage after writes — still the original dropper,
-        // since we never mutate drop.dropper.
         emit DropClaimed(dropId, msg.sender, drop.dropper, amount, claimedAt);
     }
 
@@ -409,8 +461,41 @@ contract GoodDrops is
         emit TokensRescued(token, amount, owner());
     }
 
+    function setGpsSigner(address newSigner) external onlyOwner {
+        emit GpsSignerUpdated(gpsSigner, newSigner);
+        gpsSigner = newSigner;
+        if (newSigner == address(0) && gpsRequired) {
+            gpsRequired = false;
+            emit GpsRequiredUpdated(false);
+        }
+    }
+
+    function setGpsRequired(bool required) external onlyOwner {
+        if (required && gpsSigner == address(0)) revert ZeroAddress();
+        gpsRequired = required;
+        emit GpsRequiredUpdated(required);
+    }
+
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
+    // ─── V2 Reinitializer ────────────────────────────────────────────────────
+
+    /**
+     * @notice Called via upgradeToAndCall when upgrading a v1 proxy to v2.
+     *         Atomically enables GPS enforcement in the same transaction as the
+     *         upgrade, eliminating the window where claim() is callable without a
+     *         GPS proof between the upgrade and manual setGpsSigner/setGpsRequired calls.
+     *
+     * @param _gpsSigner  Address whose private key signs claim-proof payloads.
+     */
+    function initializeV2(address _gpsSigner) external reinitializer(2) {
+        if (_gpsSigner == address(0)) revert ZeroAddress();
+        emit GpsSignerUpdated(gpsSigner, _gpsSigner);
+        gpsSigner   = _gpsSigner;
+        gpsRequired = true;
+        emit GpsRequiredUpdated(true);
+    }
 
     // ─── UUPS ────────────────────────────────────────────────────────────────
 

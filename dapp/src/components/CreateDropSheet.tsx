@@ -62,6 +62,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const [isPrivate,     setIsPrivate]     = useState(false);
   const [targetAddress, setTargetAddress] = useState("");
   const [createdDropId, setCreatedDropId] = useState<bigint | null>(null);
+  const [privateToken,  setPrivateToken]  = useState<string | null>(null);
   const [linkCopied,    setLinkCopied]    = useState(false);
 
   const reset = useCallback(() => {
@@ -76,6 +77,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     setIsPrivate(false);
     setTargetAddress("");
     setCreatedDropId(null);
+    setPrivateToken(null);
     setLinkCopied(false);
   }, []);
 
@@ -103,6 +105,25 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
     const expiry = Math.floor(Date.now() / 1000) + duration + 120;
 
+    // For private drops: store real coordinates server-side and pass (0,0) on-chain
+    // so GPS coordinates are never readable from the blockchain or events.
+    let onChainLat = lat;
+    let onChainLng = lng;
+    let token: string | null = null;
+
+    if (isPrivate && !campaignId) {
+      const res = await fetch("/api/private-drops", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      });
+      if (!res.ok) { setErrMsg("Could not store private drop — try again."); return; }
+      const data = await res.json();
+      token = data.token as string;
+      onChainLat = 0;
+      onChainLng = 0;
+    }
+
     // Build stored hint: campaign drops take priority over private encoding
     const storedHint = campaignId
       ? buildCampaignHint(hint, campaignId)
@@ -128,11 +149,12 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       setStatus("dropping");
       const dropTx = await writeContractAsync({
         address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
-        args: [degToGps(lat), degToGps(lng), amountBig as bigint, expiry, storedHint],
+        args: [degToGps(onChainLat), degToGps(onChainLng), amountBig as bigint, expiry, storedHint],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: dropTx });
 
       // Extract the created drop ID from the DropCreated event log
+      let newDropId: bigint | null = null;
       for (const log of receipt.logs) {
         try {
           const decoded = decodeEventLog({
@@ -142,12 +164,25 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
             eventName: "DropCreated",
           });
           if (decoded.args.dropId !== undefined) {
-            setCreatedDropId(decoded.args.dropId as bigint);
+            newDropId = decoded.args.dropId as bigint;
             break;
           }
         } catch { /* not this log */ }
       }
 
+      // Stamp the on-chain dropId onto the private-drop record
+      if (token && newDropId !== null) {
+        fetch("/api/private-drops", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, dropId: newDropId.toString() }),
+        }).catch(() => {});
+        setPrivateToken(token);
+        // Persist token locally so the share link is recoverable even if this modal is closed
+        try { localStorage.setItem(`gd:privdrop:${newDropId}`, token); } catch {}
+      }
+
+      setCreatedDropId(newDropId);
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
@@ -242,8 +277,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
           {/* Success state */}
           {status === "done" && (() => {
+            const base = typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz";
             const shareUrl = createdDropId !== null
-              ? `${typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz"}/drop/${createdDropId}`
+              ? `${base}/drop/${createdDropId}${privateToken ? `?k=${privateToken}` : ""}`
               : null;
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

@@ -54,25 +54,44 @@ async function main() {
   console.log(`\n✅ GoodDrops proxy deployed:          ${proxyAddress}`);
   console.log(`   Implementation (logic contract):   ${implAddress}`);
 
+  // ── Wire up GPS signer ────────────────────────────────────────────────────
+  // GPS_SIGNER_KEY is the private key of the server wallet that signs proofs.
+  // Derive the public address from it and register it on the contract, then
+  // enable gpsRequired so claim() is blocked and only claimWithProof() works.
+  const gpsSignerKey = process.env.GPS_SIGNER_KEY;
+  if (gpsSignerKey) {
+    const gpsWallet   = new ethers.Wallet(gpsSignerKey);
+    const gpsAddress  = gpsWallet.address;
+    console.log(`Setting GPS signer: ${gpsAddress}`);
+    await (await proxy.setGpsSigner(gpsAddress)).wait();
+    await (await proxy.setGpsRequired(true)).wait();
+    console.log("GPS enforcement: enabled ✅");
+  } else {
+    console.log("⚠️  GPS_SIGNER_KEY not set — GPS enforcement disabled. Set it and call setGpsSigner + setGpsRequired(true) manually.");
+  }
+
   // Verify initial state
-  const maxDrop = await proxy.maxDropAmount();
-  const minDrop = await proxy.minDropAmount();
+  const maxDrop  = await proxy.maxDropAmount();
+  const minDrop  = await proxy.minDropAmount();
   const identReq = await proxy.identityRequired();
+  const gpsReq   = await proxy.gpsRequired();
+  const gpsSigner = await proxy.gpsSigner();
 
   console.log(`\n── Initial config ──────────────────────────────`);
-  console.log(`   maxDropAmount:    ${ethers.formatEther(maxDrop)} G$`);
-  console.log(`   minDropAmount:    ${ethers.formatEther(minDrop)} G$`);
-  console.log(`   identityRequired: ${identReq}`);
-  console.log(`   minExpiryDuration: 1 hour`);
-  console.log(`   maxExpiryDuration: 30 days`);
+  console.log(`   maxDropAmount:     ${ethers.formatEther(maxDrop)} G$`);
+  console.log(`   minDropAmount:     ${ethers.formatEther(minDrop)} G$`);
+  console.log(`   identityRequired:  ${identReq}`);
+  console.log(`   gpsRequired:       ${gpsReq}`);
+  console.log(`   gpsSigner:         ${gpsSigner}`);
   console.log(`────────────────────────────────────────────────\n`);
 
   console.log("Next steps:");
-  console.log(`  1. Verify proxy on Celoscan:`);
+  console.log(`  1. Update dapp contract address:`);
+  console.log(`     GOOD_DROPS_ADDRESS = "${proxyAddress}"  in dapp/src/lib/contracts.ts`);
+  console.log(`  2. Set GPS_SIGNER_KEY in Vercel (same key used above)`);
+  console.log(`  3. Redeploy subgraph pointing to new proxy address`);
+  console.log(`  4. Verify on Celoscan:`);
   console.log(`     npx hardhat verify --network ${chainName} ${proxyAddress}`);
-  console.log(`  2. Save proxy address → dapp .env:`);
-  console.log(`     NEXT_PUBLIC_GOOD_DROPS_ADDRESS="${proxyAddress}"`);
-  console.log(`  3. Export ABI from artifacts/contracts/GoodDrops.sol/GoodDrops.json`);
 }
 
 main()

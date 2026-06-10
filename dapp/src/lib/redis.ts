@@ -16,4 +16,6 @@ export const keys = {
   campaignsByOwner: (addr: string)    => `gd:campaigns:owner:${addr.toLowerCase()}`,
   campaignClaims:   (id: string)      => `gd:campaign:claims:${id}`,
   streak:           (address: string) => `gd:streak:${address.toLowerCase()}`,
+  privateDrop:      (token: string)   => `gd:privdrop:${token}`,
+  velocity:         (address: string) => `gd:velocity:${address.toLowerCase()}`,
 };

@@ -94,6 +94,31 @@ export const GOOD_DROPS_ABI = [
     outputs: [],
   },
   {
+    name: "claimWithProof",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "dropId",   type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "sig",      type: "bytes"   },
+    ],
+    outputs: [],
+  },
+  {
+    name: "gpsRequired",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "initializeV2",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "_gpsSigner", type: "address" }],
+    outputs: [],
+  },
+  {
     name: "reclaimExpired",
     type: "function",
     stateMutability: "nonpayable",

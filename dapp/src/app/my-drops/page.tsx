@@ -83,13 +83,18 @@ function DropCard({
       )}
 
       <div className="text-xs text-muted space-y-1">
-        <button
-          onClick={() => openGoogleMapsWalking(gpsToDeg(drop.lat), gpsToDeg(drop.lng))}
-          className="flex items-center gap-1.5 hover:text-ink transition-colors"
-        >
-          📍 {formatDegrees(drop.lat)} N, {formatDegrees(drop.lng)} E
-          <span className="underline font-semibold">Open in Maps ↗</span>
-        </button>
+        {/* Private drops store (0,0) on-chain — showing maps would go to the ocean */}
+        {isPrivate ? (
+          <div className="flex items-center gap-1.5">📍 Location hidden</div>
+        ) : (
+          <button
+            onClick={() => openGoogleMapsWalking(gpsToDeg(drop.lat), gpsToDeg(drop.lng))}
+            className="flex items-center gap-1.5 hover:text-ink transition-colors"
+          >
+            📍 {formatDegrees(drop.lat)} N, {formatDegrees(drop.lng)} E
+            <span className="underline font-semibold">Open in Maps ↗</span>
+          </button>
+        )}
         {isActive && <div>⏰ {timeLeft(drop.expiry)}</div>}
         {drop.status === DROP_STATUS.Claimed && drop.claimer && (
           <div>✓ Claimed by <UserHandle address={drop.claimer} /></div>
@@ -189,7 +194,12 @@ function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop) => voi
 function QRShareModal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const { isPrivate } = parseDropHint(drop.hint);
-  const url = `${typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz"}/drop/${drop.id}`;
+  const base = `${typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz"}/drop/${drop.id}`;
+  // For private drops, recover the invite token from localStorage so the QR/link includes ?k=TOKEN
+  const privateToken = isPrivate && typeof window !== "undefined"
+    ? (localStorage.getItem(`gd:privdrop:${drop.id}`) ?? null)
+    : null;
+  const url = isPrivate && privateToken ? `${base}?k=${privateToken}` : base;
 
   function copy() {
     navigator.clipboard?.writeText(url).then(() => {

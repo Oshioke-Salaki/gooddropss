@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useAccount, useWriteContract } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
@@ -17,6 +17,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
 import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
 import { VerificationModal } from "@/components/VerificationModal";
+import { HuntingMode } from "@/components/HuntingMode";
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS, type Drop, type Campaign } from "@/types";
 
@@ -36,17 +37,24 @@ function useCampaign(campaignId: string | null) {
 type ClaimStatus = "idle" | "claiming" | "done" | "error";
 
 export default function DropPageClient({ dropId }: { dropId: string }) {
-  const [drop,    setDrop]    = useState<Drop | null | undefined>(undefined);
-  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
-  const [status,  setStatus]  = useState<ClaimStatus>("idle");
-  const [errMsg,  setErrMsg]  = useState("");
-  const [copied,  setCopied]  = useState(false);
+  const [drop,       setDrop]       = useState<Drop | null | undefined>(undefined);
+  const [userLoc,    setUserLoc]    = useState<{ lat: number; lng: number } | null>(null);
+  const [status,     setStatus]     = useState<ClaimStatus>("idle");
+  const [errMsg,     setErrMsg]     = useState("");
+  const [copied,     setCopied]     = useState(false);
+  const [isHunting,  setIsHunting]  = useState(false);
+  // Real coords for private drops — fetched via token from URL query param
+  const [privateCoords, setPrivateCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const privateFetched = useRef(false);
+  const privateToken = typeof window !== "undefined"
+    ? (new URLSearchParams(window.location.search).get("k") ?? undefined)
+    : undefined;
 
   const { login, authenticated } = usePrivy();
   const { address }              = useAccount();
   const isConnected              = authenticated && !!address;
   const { isVerified }           = useGoodDollarProfile();
-  const { inGrace, left, used }  = useGracePeriod();
+  const { inGrace, left }        = useGracePeriod();
   const verificationOk           = isVerified || inGrace;
   const { writeContractAsync }   = useWriteContract();
   const {
@@ -103,6 +111,20 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     return () => { cancelled = true; };
   }, [dropId]);
 
+  // ── Private drop: fetch real coords using token from URL ──────────────────
+  useEffect(() => {
+    if (!drop || privateFetched.current) return;
+    const parsed = parseDropHint(drop.hint);
+    if (!parsed.isPrivate) return;
+    const token = new URLSearchParams(window.location.search).get("k");
+    if (!token) return;
+    privateFetched.current = true;
+    fetch(`/api/private-drops?token=${encodeURIComponent(token)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.lat !== undefined) setPrivateCoords({ lat: d.lat, lng: d.lng }); })
+      .catch(() => {});
+  }, [drop]);
+
   // ── GPS watcher ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -116,15 +138,33 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
   // ── Claim ──────────────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
-    if (!drop) return;
+    if (!drop || !address) return;
     setStatus("claiming");
     setErrMsg("");
     try {
+      const proofRes = await fetch("/api/claim-proof", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dropId:  drop.id.toString(),
+          claimer: address,
+          userLat: userLoc?.lat,
+          userLng: userLoc?.lng,
+          ...(privateToken ? { privateToken } : {}),
+        }),
+      });
+
+      if (!proofRes.ok) {
+        const body = await proofRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not verify location — try again.");
+      }
+
+      const { deadline, sig } = await proofRes.json();
       const tx = await writeContractAsync({
         address:      GOOD_DROPS_ADDRESS,
         abi:          GOOD_DROPS_ABI,
-        functionName: "claim",
-        args:         [drop.id],
+        functionName: "claimWithProof",
+        args:         [drop.id, BigInt(deadline), sig as `0x${string}`],
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
@@ -182,8 +222,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // parsedHint and campaign are computed above (before early returns) to satisfy hooks rules.
   const { isPrivate, target, hint, chainNextId, isChainLast } = parsedHint!;
   const isChain = chainNextId !== null || isChainLast;
-  const dropLat   = gpsToDeg(drop.lat);
-  const dropLng   = gpsToDeg(drop.lng);
+  // Private drops store (0,0) on-chain; real coords come from the server via token.
+  const dropLat = isPrivate && privateCoords ? privateCoords.lat : gpsToDeg(drop.lat);
+  const dropLng = isPrivate && privateCoords ? privateCoords.lng : gpsToDeg(drop.lng);
   const now       = Math.floor(Date.now() / 1000);
   const isExpired = drop.expiry < now;
   const isActive  = drop.status === DROP_STATUS.Active && !isExpired;
@@ -214,6 +255,16 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
   return (
     <Shell isVerifying={isVerifying} setIsVerifying={setIsVerifying} fvLink={fvLink} verifyStatus={verifyStatus} onVerifyRefresh={refreshVerify}>
+      {isHunting && drop && isActive && (
+        <HuntingMode
+          drop={drop}
+          userLocation={userLoc}
+          dropCoords={isPrivate && privateCoords ? privateCoords : undefined}
+          privateToken={privateToken}
+          onClose={() => setIsHunting(false)}
+          onSuccess={() => { setIsHunting(false); setStatus("done"); }}
+        />
+      )}
       {/* Sponsor banner */}
       {campaign && (
         <div style={{
@@ -324,7 +375,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         )}
 
         <p style={{ margin: 0, fontSize: 12, color: "#999" }}>
-          Hidden by <UserHandle address={drop.dropper} />
+          {isPrivate ? "Hidden by someone special 🤫" : <>Hidden by <UserHandle address={drop.dropper} /></>}
         </p>
       </div>
 
@@ -406,42 +457,66 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </p>
           </div>
 
-          {/* Walk there */}
-          <button
-            onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
-            style={secondaryBtn}
-          >
-            <Navigation size={15} strokeWidth={2.5} />
-            Walk there
-          </button>
-
-          {/* Warnings */}
-          {isConnected && target && !isForMe && (
-            <div style={warnBox}>
-              ⚠️ This drop was meant for <UserHandle address={target} />
+          {/* Block non-target users for targeted private drops */}
+          {isConnected && target && !isForMe ? (
+            <div style={{ ...warnBox, textAlign: "center", padding: "20px 16px" }}>
+              <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 15 }}>Not for you</p>
+              <p style={{ margin: 0, fontSize: 13 }}>
+                This drop was hidden for <UserHandle address={target} />
+              </p>
             </div>
-          )}
-          {status === "error" && errMsg && (
-            <div style={errorBox}>{errMsg}</div>
-          )}
-
-          {/* Claim CTA */}
-          {!isConnected ? (
-            <button onClick={login} style={primaryBtn("#111", "#BFFD00", true)}>
-              Sign in to claim
-            </button>
           ) : (
-            <button
-              onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleClaim}
-              disabled={status !== "error" && !canClaim}
-              style={primaryBtn(
-                (canClaim || status === "error") ? "#BFFD00" : "#eee",
-                (canClaim || status === "error") ? "#111" : "#aaa",
-                (canClaim || status === "error"),
+            <>
+              {/* Hunt this drop — full-screen mode with compass + proximity ring */}
+              {!isClose && (
+                <button
+                  onClick={() => isConnected ? setIsHunting(true) : login()}
+                  style={{
+                    ...secondaryBtn,
+                    background: "#111", color: "#BFFD00",
+                    border: "2px solid #111",
+                    boxShadow: "3px 3px 0 #BFFD00",
+                    fontWeight: 800,
+                  }}
+                >
+                  🎯 {isConnected ? "Hunt this drop" : "Sign in to hunt"}
+                </button>
               )}
-            >
-              {claimLabel()}
-            </button>
+
+              {/* Walk there — hidden when not signed in (leaks private coords) or already in range */}
+              {isConnected && !isClose && (
+                <button
+                  onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
+                  style={secondaryBtn}
+                >
+                  <Navigation size={15} strokeWidth={2.5} />
+                  Walk there
+                </button>
+              )}
+
+              {status === "error" && errMsg && (
+                <div style={errorBox}>{errMsg}</div>
+              )}
+
+              {/* Claim CTA */}
+              {!isConnected ? (
+                <button onClick={login} style={primaryBtn("#111", "#BFFD00", true)}>
+                  Sign in to claim
+                </button>
+              ) : (
+                <button
+                  onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleClaim}
+                  disabled={status !== "error" && !canClaim}
+                  style={primaryBtn(
+                    (canClaim || status === "error") ? "#BFFD00" : "#eee",
+                    (canClaim || status === "error") ? "#111" : "#aaa",
+                    (canClaim || status === "error"),
+                  )}
+                >
+                  {claimLabel()}
+                </button>
+              )}
+            </>
           )}
 
           {/* Grace period counter — free claims remaining */}
@@ -520,8 +595,40 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         </div>
       )}
 
-      {/* QR / share section */}
-      <div style={{ ...card, textAlign: "center" }}>
+      {/* Share / invite section — hidden for private drops (sharing defeats the purpose) */}
+      {isPrivate ? (
+        isSelf && (
+          <div style={{ ...card, textAlign: "center" }}>
+            <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>
+              📫 Private invitation link
+            </p>
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: "#888" }}>
+              Only share this with the person you hid the drop for
+            </p>
+            <div style={{
+              display: "inline-block",
+              background: "#fff", border: "2px solid #111",
+              borderRadius: 12, padding: 14, marginBottom: 14,
+            }}>
+              <QRCodeSVG value={pageUrl} size={150} level="M" />
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button onClick={copyLink} style={{
+                display: "flex", alignItems: "center", gap: 7,
+                background: copied ? "#BFFD00" : "#f5f4f0",
+                border: "2px solid #111", borderRadius: 10,
+                padding: "9px 16px", fontSize: 13, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+                transition: "background 0.2s",
+              }}>
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {copied ? "Copied!" : "Copy invite link"}
+              </button>
+            </div>
+          </div>
+        )
+      ) : (
+        <div style={{ ...card, textAlign: "center" }}>
         <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>
           Share this drop
         </p>
@@ -561,6 +668,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           )}
         </div>
       </div>
+      )}
     </Shell>
   );
 }
