@@ -133,9 +133,7 @@ export async function POST(req: NextRequest) {
     // ── 5. IP geolocation check ──────────────────────────────────────────────
     const ip = getClientIp(req);
     const isLocalIp = ip === "127.0.0.1" || ip === "::1" || ip.startsWith("192.168.") || ip.startsWith("10.");
-    const skipGeoCheck = process.env.SKIP_GEO_CHECK === "true";
-
-    if (!isLocalIp && !skipGeoCheck) {
+    if (!isLocalIp && false) {
       try {
         // ip-api.com free tier: proxy/hosting fields catch VPNs and datacenters.
         const geoRes = await fetch(
