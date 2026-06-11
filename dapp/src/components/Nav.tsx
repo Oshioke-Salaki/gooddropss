@@ -423,7 +423,7 @@ export function Nav() {
           </Link>
 
           {/* Desktop nav links */}
-          <div className="hidden sm:flex items-center gap-0.5 flex-1 justify-center overflow-hidden">
+          <div className="hidden sm:flex items-center gap-0.5 flex-1 justify-center overflow-hidden min-w-0 shrink">
             {links.map((l) => (
               <Link
                 key={l.href}
@@ -440,8 +440,8 @@ export function Nav() {
             ))}
           </div>
 
-          {/* Wallet */}
-          <div className="shrink-0">
+          {/* Wallet — max-w prevents a wide wallet badge from squeezing nav links out */}
+          <div className="shrink-0 max-w-[220px]">
             <WalletButton
               isVerified={isVerified}
               isVerificationLoading={isVerificationLoading}

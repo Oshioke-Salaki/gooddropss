@@ -96,8 +96,8 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* FABs — fixed so Leaflet's stacking context can't bury them */}
-      <div style={{ position: "fixed", bottom: "96px", right: "20px", zIndex: 999, display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
+      {/* Action buttons — fixed so Leaflet's stacking context can't bury them */}
+      <div className="map-actions" style={{ position: "fixed", bottom: "96px", right: "20px", zIndex: 999, display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
         {/* Hunt Chain FAB */}
         <button
           onClick={() => setShowChain(true)}
