@@ -14,12 +14,18 @@ import {
   isFlashDrop,
   openGoogleMapsWalking,
   parseDropHint,
+  shortAddr,
+  formatUsdApprox,
 } from "@/lib/utils";
 import { DropComments } from "@/components/DropComments";
 import { UserHandle } from "@/components/UserHandle";
+import { Celebration } from "@/components/Celebration";
+import { ShareableClaimCard } from "@/components/ShareableClaimCard";
+import { SafetyNote } from "@/components/SafetyNote";
 import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
+import { useCountUp } from "@/hooks/useCountUp";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -53,6 +59,11 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const verificationOk = isVerified || inGrace;
   const [status, setStatus] = useState<Status>("idle");
   const [errMsg, setErrMsg] = useState("");
+
+  // Animated count-up for the claimed amount on the success screen.
+  const amountNum   = drop ? Number(drop.amount) / 1e18 : 0;
+  const countUp     = useCountUp(amountNum, status === "done");
+  const countUpText = amountNum >= 1 ? Math.round(countUp).toLocaleString() : countUp.toFixed(2);
 
   const parsed = drop ? parseDropHint(drop.hint) : null;
   const { campaign, claims } = useCampaign(parsed?.campaignId ?? null);
@@ -119,7 +130,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ address }),
-        }).catch(() => {});
+        })
+          .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
+          .catch(() => {});
       }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
@@ -269,6 +282,11 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     color: flash ? "#FF6400" : "#BFFD00",
                     marginLeft: 8,
                   }}>G$</span>
+                  {formatUsdApprox(drop.amount) && (
+                    <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#9a9db0", marginTop: 6 }}>
+                      {formatUsdApprox(drop.amount)} USD · real, spendable G$
+                    </span>
+                  )}
                 </div>
 
                 {/* Meta row */}
@@ -400,62 +418,51 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   // Chain last / regular success
                   const isChainWin = parsed?.isChainLast;
                   return (
-                    <div style={{
-                      background: "#111", border: "2px solid #111",
-                      borderRadius: 18,
-                      boxShadow: `4px 4px 0 ${isChainWin ? "#FFD700" : "#BFFD00"}`,
-                      padding: "28px 20px 22px", textAlign: "center",
-                    }}>
-                      <div style={{ fontSize: 60, marginBottom: 8, lineHeight: 1 }}>
-                        {isChainWin ? "🏆" : "🎯"}
-                      </div>
-                      <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 24, color: "#BFFD00", letterSpacing: "-0.02em" }}>
-                        {isChainWin ? "Hunt Complete!" : "You found it!"}
-                      </p>
-                      <div style={{ margin: "12px 0 20px" }}>
-                        <span style={{ fontSize: 48, fontWeight: 900, color: "#fff", letterSpacing: "-0.03em" }}>
-                          {formatG$(drop.amount)}
-                        </span>
-                        <span style={{ fontSize: 28, fontWeight: 900, color: "#BFFD00", marginLeft: 6 }}>G$</span>
-                      </div>
-                      <p style={{ margin: "0 0 20px", fontSize: 13, color: "#666" }}>
-                        {isChainWin ? "You conquered the entire chain!" : "Transferred to your wallet."}
-                      </p>
-
-                      {/* Share */}
-                      <button
-                        onClick={() => {
-                          const text = isChainWin
-                            ? `I just completed a GoodDrops Hunt Chain 🏆 and claimed ${formatG$(drop.amount)} G$!\n\nMulti-stop real-world treasure hunt on GoodDrops 💰\n\n#GoodDollar #GoodDrops`
-                            : `I just found a hidden drop of ${formatG$(drop.amount)} G$ in the wild 🎯💰\n\nGoodDrops lets you hide and hunt real money IRL!\n\n#GoodDollar #GoodDrops #Web3`;
-                          window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
-                        }}
-                        style={{
-                          width: "100%", padding: "13px",
-                          background: "transparent", color: "#fff",
-                          border: "1.5px solid rgba(255,255,255,0.2)", borderRadius: 12,
-                          fontWeight: 800, fontSize: 14,
-                          cursor: "pointer", fontFamily: "inherit",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                          marginBottom: 10,
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.5)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; }}
-                      >
-                        Post on 𝕏 ↗
-                      </button>
-
-                      {ubiPrompt}
-
-                      <button onClick={onSuccess} style={{
-                        marginTop: 10, width: "100%", padding: "10px",
-                        background: "transparent", border: "none",
-                        color: "#555", fontWeight: 700, fontSize: 13,
-                        cursor: "pointer", fontFamily: "inherit",
+                    <>
+                      <Celebration active colors={isChainWin ? ["#FFD700", "#BFFD00", "#fff"] : undefined} />
+                      <div style={{
+                        background: "#111", border: "2px solid #111",
+                        borderRadius: 18,
+                        boxShadow: `4px 4px 0 ${isChainWin ? "#FFD700" : "#BFFD00"}`,
+                        padding: "28px 20px 22px", textAlign: "center",
                       }}>
-                        Done — back to map
-                      </button>
-                    </div>
+                        <div className="success-pop" style={{ fontSize: 60, marginBottom: 8, lineHeight: 1 }}>
+                          {isChainWin ? "🏆" : "🎯"}
+                        </div>
+                        <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 24, color: "#BFFD00", letterSpacing: "-0.02em" }}>
+                          {isChainWin ? "Hunt Complete!" : "You found it!"}
+                        </p>
+                        <div style={{ margin: "12px 0 20px" }}>
+                          <span style={{ fontSize: 48, fontWeight: 900, color: "#fff", letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>
+                            {countUpText}
+                          </span>
+                          <span style={{ fontSize: 28, fontWeight: 900, color: "#BFFD00", marginLeft: 6 }}>G$</span>
+                        </div>
+                        <p style={{ margin: "0 0 20px", fontSize: 13, color: "#888" }}>
+                          {isChainWin ? "You conquered the entire chain!" : "Transferred to your wallet."}
+                        </p>
+
+                        {/* Shareable win card + one-tap share */}
+                        <ShareableClaimCard
+                          amount={drop.amount}
+                          rarity={getDropRarity(drop.amount)}
+                          place={parsed?.hint || null}
+                          handle={address ? shortAddr(address) : "a hunter"}
+                          dropId={drop.id.toString()}
+                        />
+
+                        <div style={{ marginTop: 12 }}>{ubiPrompt}</div>
+
+                        <button onClick={onSuccess} style={{
+                          marginTop: 10, width: "100%", padding: "10px",
+                          background: "transparent", border: "none",
+                          color: "#888", fontWeight: 700, fontSize: 13,
+                          cursor: "pointer", fontFamily: "inherit",
+                        }}>
+                          Done — back to map
+                        </button>
+                      </div>
+                    </>
                   );
                 })()}
 
@@ -582,6 +589,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     >
                       {claimLabel()}
                     </button>
+
+                    <SafetyNote />
 
                     {/* Grace period counter */}
                     {isConnected && !isVerified && inGrace && (

@@ -169,6 +169,13 @@ contract GoodDrops is
         uint96  amount
     );
 
+    // Emitted when a dropper extends/reactivates a drop's expiry
+    event DropExtended(
+        uint256 indexed dropId,
+        address indexed dropper,
+        uint40  newExpiry
+    );
+
     // Config events — makes every admin change fully auditable on-chain
     event MaxDropAmountUpdated(uint96 oldMax, uint96 newMax);
     event MinDropAmountUpdated(uint96 oldMin, uint96 newMin);
@@ -373,6 +380,89 @@ contract GoodDrops is
         gToken.safeTransfer(msg.sender, amount);
 
         emit DropReclaimed(dropId, msg.sender, amount);
+    }
+
+    /**
+     * @notice Reclaim several expired, unclaimed drops in a single transaction.
+     *         Every id must belong to the caller, be Active, and be past expiry —
+     *         otherwise the whole call reverts (all-or-nothing). Funds for all of
+     *         them are returned in one transfer.
+     *
+     * @param dropIds  The expired drops to reclaim.
+     */
+    function reclaimManyExpired(uint256[] calldata dropIds) external nonReentrant {
+        uint256 total;
+        for (uint256 i = 0; i < dropIds.length; i++) {
+            Drop storage drop = drops[dropIds[i]];
+
+            if (drop.dropper == address(0))       revert DropNotFound();
+            if (msg.sender != drop.dropper)       revert NotDropper();
+            if (drop.status != DropStatus.Active) revert DropInactive();
+            if (block.timestamp < drop.expiry)    revert DropNotExpired();
+
+            drop.status = DropStatus.Reclaimed;
+            total += drop.amount;
+
+            emit DropReclaimed(dropIds[i], msg.sender, drop.amount);
+        }
+
+        totalLocked -= total;
+        gToken.safeTransfer(msg.sender, total);
+    }
+
+    /**
+     * @notice Extend (or reactivate) a drop's claim deadline. Works whether or
+     *         not the drop has already passed its expiry — the G$ stays locked
+     *         the entire time, so this simply pushes the claimable window forward
+     *         without any token movement. The drop keeps its id, coordinates and
+     *         shared links. Only the dropper can call it; claimed/reclaimed drops
+     *         cannot be revived.
+     *
+     * @param dropId     The drop to extend.
+     * @param newExpiry  New unix expiry; must sit within the configured
+     *                   [now + minDuration, now + maxDuration] window.
+     */
+    function extendExpiry(uint256 dropId, uint40 newExpiry) external whenNotPaused {
+        Drop storage drop = drops[dropId];
+
+        if (drop.dropper == address(0))       revert DropNotFound();
+        if (msg.sender != drop.dropper)       revert NotDropper();
+        if (drop.status != DropStatus.Active) revert DropInactive();
+
+        uint40 now40 = uint40(block.timestamp);
+        if (newExpiry < now40 + minExpiryDuration || newExpiry > now40 + maxExpiryDuration) {
+            revert InvalidExpiry();
+        }
+
+        drop.expiry = newExpiry;
+        emit DropExtended(dropId, msg.sender, newExpiry);
+    }
+
+    /**
+     * @notice Extend/reactivate several drops to the same new expiry in one
+     *         transaction. Every id must belong to the caller and be Active
+     *         (expired or not); otherwise the whole call reverts.
+     *
+     * @param dropIds    The drops to extend.
+     * @param newExpiry  New unix expiry applied to all of them; must sit within
+     *                   the configured [now + minDuration, now + maxDuration].
+     */
+    function extendManyExpiry(uint256[] calldata dropIds, uint40 newExpiry) external whenNotPaused {
+        uint40 now40 = uint40(block.timestamp);
+        if (newExpiry < now40 + minExpiryDuration || newExpiry > now40 + maxExpiryDuration) {
+            revert InvalidExpiry();
+        }
+
+        for (uint256 i = 0; i < dropIds.length; i++) {
+            Drop storage drop = drops[dropIds[i]];
+
+            if (drop.dropper == address(0))       revert DropNotFound();
+            if (msg.sender != drop.dropper)       revert NotDropper();
+            if (drop.status != DropStatus.Active) revert DropInactive();
+
+            drop.expiry = newExpiry;
+            emit DropExtended(dropIds[i], msg.sender, newExpiry);
+        }
     }
 
     // ─── Views ───────────────────────────────────────────────────────────────

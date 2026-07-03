@@ -25,4 +25,6 @@ dataSources:
           handler: handleDropClaimed
         - event: DropReclaimed(indexed uint256,indexed address,uint96)
           handler: handleDropReclaimed
+        - event: DropExtended(indexed uint256,indexed address,uint40)
+          handler: handleDropExtended
       file: GoodDrops/GoodDrops.wasm

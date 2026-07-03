@@ -1,113 +1,1349 @@
 [
   {
-    "name": "DropCreated",
-    "type": "event",
-    "anonymous": false,
-    "inputs": [
-      {
-        "name": "dropId",
-        "type": "uint256",
-        "internalType": "uint256",
-        "indexed": true
-      },
-      {
-        "name": "dropper",
-        "type": "address",
-        "internalType": "address",
-        "indexed": true
-      },
-      {
-        "name": "lat",
-        "type": "int32",
-        "internalType": "int32",
-        "indexed": false
-      },
-      {
-        "name": "lng",
-        "type": "int32",
-        "internalType": "int32",
-        "indexed": false
-      },
-      {
-        "name": "amount",
-        "type": "uint96",
-        "internalType": "uint96",
-        "indexed": false
-      },
-      {
-        "name": "expiry",
-        "type": "uint40",
-        "internalType": "uint40",
-        "indexed": false
-      },
-      {
-        "name": "hint",
-        "type": "string",
-        "internalType": "string",
-        "indexed": false
-      }
-    ]
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
   },
   {
-    "name": "DropClaimed",
-    "type": "event",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "target",
+        "type": "address"
+      }
+    ],
+    "name": "AddressEmptyCode",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AlreadyClaimed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "CannotRescueLockedTokens",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DropExpired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DropInactive",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DropNotExpired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "DropNotFound",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ECDSAInvalidSignature",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "length",
+        "type": "uint256"
+      }
+    ],
+    "name": "ECDSAInvalidSignatureLength",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "s",
+        "type": "bytes32"
+      }
+    ],
+    "name": "ECDSAInvalidSignatureS",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "implementation",
+        "type": "address"
+      }
+    ],
+    "name": "ERC1967InvalidImplementation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ERC1967NonPayable",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EnforcedPause",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ExpectedPause",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "FailedCall",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "GpsProofRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "HintTooLong",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "IdentityContractNotSet",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidAmount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidCoordinates",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidExpiry",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidGpsProof",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "InvalidInitialization",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "MinExceedsMax",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotDropper",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotInitializing",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotWhitelisted",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "owner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableInvalidOwner",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "OwnableUnauthorizedAccount",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ProofAlreadyUsed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ProofExpired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReentrancyGuardReentrantCall",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      }
+    ],
+    "name": "SafeERC20FailedOperation",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "SelfClaim",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "UUPSUnauthorizedCallContext",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "slot",
+        "type": "bytes32"
+      }
+    ],
+    "name": "UUPSUnsupportedProxiableUUID",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ZeroAddress",
+    "type": "error"
+  },
+  {
     "anonymous": false,
     "inputs": [
       {
-        "name": "dropId",
-        "type": "uint256",
+        "indexed": true,
         "internalType": "uint256",
-        "indexed": true
+        "name": "dropId",
+        "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "address",
         "name": "claimer",
-        "type": "address",
-        "internalType": "address",
-        "indexed": true
+        "type": "address"
       },
       {
+        "indexed": true,
+        "internalType": "address",
         "name": "dropper",
-        "type": "address",
-        "internalType": "address",
-        "indexed": true
+        "type": "address"
       },
       {
-        "name": "amount",
-        "type": "uint96",
+        "indexed": false,
         "internalType": "uint96",
-        "indexed": false
+        "name": "amount",
+        "type": "uint96"
       },
       {
-        "name": "claimedAt",
-        "type": "uint40",
+        "indexed": false,
         "internalType": "uint40",
-        "indexed": false
+        "name": "claimedAt",
+        "type": "uint40"
       }
-    ]
+    ],
+    "name": "DropClaimed",
+    "type": "event"
   },
   {
-    "name": "DropReclaimed",
-    "type": "event",
     "anonymous": false,
     "inputs": [
       {
-        "name": "dropId",
-        "type": "uint256",
+        "indexed": true,
         "internalType": "uint256",
-        "indexed": true
+        "name": "dropId",
+        "type": "uint256"
       },
       {
-        "name": "dropper",
-        "type": "address",
+        "indexed": true,
         "internalType": "address",
-        "indexed": true
+        "name": "dropper",
+        "type": "address"
       },
       {
-        "name": "amount",
-        "type": "uint96",
+        "indexed": false,
+        "internalType": "int32",
+        "name": "lat",
+        "type": "int32"
+      },
+      {
+        "indexed": false,
+        "internalType": "int32",
+        "name": "lng",
+        "type": "int32"
+      },
+      {
+        "indexed": false,
         "internalType": "uint96",
-        "indexed": false
+        "name": "amount",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "expiry",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "hint",
+        "type": "string"
       }
-    ]
+    ],
+    "name": "DropCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "dropper",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "newExpiry",
+        "type": "uint40"
+      }
+    ],
+    "name": "DropExtended",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "dropper",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "amount",
+        "type": "uint96"
+      }
+    ],
+    "name": "DropReclaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "minDuration",
+        "type": "uint40"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint40",
+        "name": "maxDuration",
+        "type": "uint40"
+      }
+    ],
+    "name": "ExpiryLimitsUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "required",
+        "type": "bool"
+      }
+    ],
+    "name": "GpsRequiredUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "oldSigner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newSigner",
+        "type": "address"
+      }
+    ],
+    "name": "GpsSignerUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "oldContract",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newContract",
+        "type": "address"
+      }
+    ],
+    "name": "IdentityContractUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "required",
+        "type": "bool"
+      }
+    ],
+    "name": "IdentityRequiredUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "version",
+        "type": "uint64"
+      }
+    ],
+    "name": "Initialized",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "oldMax",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "newMax",
+        "type": "uint96"
+      }
+    ],
+    "name": "MaxDropAmountUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "oldMin",
+        "type": "uint96"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint96",
+        "name": "newMin",
+        "type": "uint96"
+      }
+    ],
+    "name": "MinDropAmountUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "previousOwner",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "Paused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "to",
+        "type": "address"
+      }
+    ],
+    "name": "TokensRescued",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      }
+    ],
+    "name": "Unpaused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "implementation",
+        "type": "address"
+      }
+    ],
+    "name": "Upgraded",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "LAT_MAX",
+    "outputs": [
+      {
+        "internalType": "int32",
+        "name": "",
+        "type": "int32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "LAT_MIN",
+    "outputs": [
+      {
+        "internalType": "int32",
+        "name": "",
+        "type": "int32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "LNG_MAX",
+    "outputs": [
+      {
+        "internalType": "int32",
+        "name": "",
+        "type": "int32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "LNG_MIN",
+    "outputs": [
+      {
+        "internalType": "int32",
+        "name": "",
+        "type": "int32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_HINT_LENGTH",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "UPGRADE_INTERFACE_VERSION",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      }
+    ],
+    "name": "claim",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "deadline",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "sig",
+        "type": "bytes"
+      }
+    ],
+    "name": "claimWithProof",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "int32",
+        "name": "lat",
+        "type": "int32"
+      },
+      {
+        "internalType": "int32",
+        "name": "lng",
+        "type": "int32"
+      },
+      {
+        "internalType": "uint96",
+        "name": "amount",
+        "type": "uint96"
+      },
+      {
+        "internalType": "uint40",
+        "name": "expiry",
+        "type": "uint40"
+      },
+      {
+        "internalType": "string",
+        "name": "hint",
+        "type": "string"
+      }
+    ],
+    "name": "createDrop",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "dropCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "drops",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "dropper",
+        "type": "address"
+      },
+      {
+        "internalType": "uint96",
+        "name": "amount",
+        "type": "uint96"
+      },
+      {
+        "internalType": "address",
+        "name": "claimer",
+        "type": "address"
+      },
+      {
+        "internalType": "uint40",
+        "name": "expiry",
+        "type": "uint40"
+      },
+      {
+        "internalType": "uint40",
+        "name": "claimedAt",
+        "type": "uint40"
+      },
+      {
+        "internalType": "enum GoodDrops.DropStatus",
+        "name": "status",
+        "type": "uint8"
+      },
+      {
+        "internalType": "int32",
+        "name": "lat",
+        "type": "int32"
+      },
+      {
+        "internalType": "int32",
+        "name": "lng",
+        "type": "int32"
+      },
+      {
+        "internalType": "string",
+        "name": "hint",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint40",
+        "name": "newExpiry",
+        "type": "uint40"
+      }
+    ],
+    "name": "extendExpiry",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "dropIds",
+        "type": "uint256[]"
+      },
+      {
+        "internalType": "uint40",
+        "name": "newExpiry",
+        "type": "uint40"
+      }
+    ],
+    "name": "extendManyExpiry",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gToken",
+    "outputs": [
+      {
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getDrop",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "dropper",
+            "type": "address"
+          },
+          {
+            "internalType": "uint96",
+            "name": "amount",
+            "type": "uint96"
+          },
+          {
+            "internalType": "address",
+            "name": "claimer",
+            "type": "address"
+          },
+          {
+            "internalType": "uint40",
+            "name": "expiry",
+            "type": "uint40"
+          },
+          {
+            "internalType": "uint40",
+            "name": "claimedAt",
+            "type": "uint40"
+          },
+          {
+            "internalType": "enum GoodDrops.DropStatus",
+            "name": "status",
+            "type": "uint8"
+          },
+          {
+            "internalType": "int32",
+            "name": "lat",
+            "type": "int32"
+          },
+          {
+            "internalType": "int32",
+            "name": "lng",
+            "type": "int32"
+          },
+          {
+            "internalType": "string",
+            "name": "hint",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct GoodDrops.Drop",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gpsRequired",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "gpsSigner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "identityContract",
+    "outputs": [
+      {
+        "internalType": "contract IIdentityV2",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "identityRequired",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_gToken",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_identityContract",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_owner",
+        "type": "address"
+      }
+    ],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_gpsSigner",
+        "type": "address"
+      }
+    ],
+    "name": "initializeV2",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      }
+    ],
+    "name": "isClaimable",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "maxDropAmount",
+    "outputs": [
+      {
+        "internalType": "uint96",
+        "name": "",
+        "type": "uint96"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "maxExpiryDuration",
+    "outputs": [
+      {
+        "internalType": "uint40",
+        "name": "",
+        "type": "uint40"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minDropAmount",
+    "outputs": [
+      {
+        "internalType": "uint96",
+        "name": "",
+        "type": "uint96"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "minExpiryDuration",
+    "outputs": [
+      {
+        "internalType": "uint40",
+        "name": "",
+        "type": "uint40"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "pause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "paused",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "proxiableUUID",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "dropId",
+        "type": "uint256"
+      }
+    ],
+    "name": "reclaimExpired",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[]",
+        "name": "dropIds",
+        "type": "uint256[]"
+      }
+    ],
+    "name": "reclaimManyExpired",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "rescueTokens",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint40",
+        "name": "minDuration",
+        "type": "uint40"
+      },
+      {
+        "internalType": "uint40",
+        "name": "maxDuration",
+        "type": "uint40"
+      }
+    ],
+    "name": "setExpiryLimits",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "required",
+        "type": "bool"
+      }
+    ],
+    "name": "setGpsRequired",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newSigner",
+        "type": "address"
+      }
+    ],
+    "name": "setGpsSigner",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newContract",
+        "type": "address"
+      }
+    ],
+    "name": "setIdentityContract",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bool",
+        "name": "required",
+        "type": "bool"
+      }
+    ],
+    "name": "setIdentityRequired",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint96",
+        "name": "newMax",
+        "type": "uint96"
+      }
+    ],
+    "name": "setMaxDropAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint96",
+        "name": "newMin",
+        "type": "uint96"
+      }
+    ],
+    "name": "setMinDropAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalLocked",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "unpause",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "newImplementation",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes",
+        "name": "data",
+        "type": "bytes"
+      }
+    ],
+    "name": "upgradeToAndCall",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "usedProofs",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ]

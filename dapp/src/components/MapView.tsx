@@ -120,21 +120,32 @@ function makeDropIcon(drop: Drop): L.DivIcon {
     });
   }
 
+  // Rarity-at-altitude: bigger, richer pins for rarer drops so the eye is drawn
+  // to the valuable "glints" even when zoomed far out.
+  const SIZE_BY_RARITY: Record<typeof rarity, { size: number; font: number; ring: string }> = {
+    common:    { size: 40, font: 10, ring: "none" },
+    uncommon:  { size: 48, font: 11, ring: "none" },
+    rare:      { size: 58, font: 12, ring: `0 0 0 3px rgba(0,207,255,0.28)` },
+    legendary: { size: 70, font: 14, ring: `0 0 0 4px rgba(255,215,0,0.4)` },
+  };
+  const s = SIZE_BY_RARITY[rarity];
+
   return L.divIcon({
     className: r.animClass,
     html: `<div style="
-      width:48px;height:48px;
+      width:${s.size}px;height:${s.size}px;
       background:${r.color};
-      border:2px solid rgba(0,0,0,0.5);
+      border:${rarity === "legendary" ? 3 : 2}px solid rgba(0,0,0,0.5);
       border-radius:50%;
       display:flex;align-items:center;justify-content:center;
-      font-weight:900;font-size:11px;color:${r.textColor};
+      font-weight:900;font-size:${s.font}px;color:${r.textColor};
       cursor:pointer;
       font-family:'Space Grotesk',sans-serif;
       user-select:none;
+      box-shadow:${s.ring};
     ">${label}</div>`,
-    iconSize: [48, 48],
-    iconAnchor: [24, 24],
+    iconSize: [s.size, s.size],
+    iconAnchor: [s.size / 2, s.size / 2],
   });
 }
 

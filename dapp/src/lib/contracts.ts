@@ -125,6 +125,33 @@ export const GOOD_DROPS_ABI = [
     inputs: [{ name: "dropId", type: "uint256" }],
     outputs: [],
   },
+  {
+    name: "reclaimManyExpired",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "dropIds", type: "uint256[]" }],
+    outputs: [],
+  },
+  {
+    name: "extendExpiry",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "dropId", type: "uint256" },
+      { name: "newExpiry", type: "uint40" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "extendManyExpiry",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "dropIds", type: "uint256[]" },
+      { name: "newExpiry", type: "uint40" },
+    ],
+    outputs: [],
+  },
   // ── Events ───────────────────────────────────────────────────────────────
   {
     name: "DropCreated",
@@ -157,6 +184,15 @@ export const GOOD_DROPS_ABI = [
       { name: "dropId", type: "uint256", indexed: true },
       { name: "dropper", type: "address", indexed: true },
       { name: "amount", type: "uint96", indexed: false },
+    ],
+  },
+  {
+    name: "DropExtended",
+    type: "event",
+    inputs: [
+      { name: "dropId", type: "uint256", indexed: true },
+      { name: "dropper", type: "address", indexed: true },
+      { name: "newExpiry", type: "uint40", indexed: false },
     ],
   },
 ] as const;

@@ -11,13 +11,17 @@ import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contra
 import {
   formatG$, gpsToDeg, getDropRarity, RARITY,
   haversineDistance, timeLeft, isFlashDrop,
-  parseDropHint, openGoogleMapsWalking,
+  parseDropHint, openGoogleMapsWalking, shortAddr, formatUsdApprox,
 } from "@/lib/utils";
+import { SafetyNote } from "@/components/SafetyNote";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
 import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
+import { useCountUp } from "@/hooks/useCountUp";
 import { VerificationModal } from "@/components/VerificationModal";
 import { HuntingMode } from "@/components/HuntingMode";
+import { Celebration } from "@/components/Celebration";
+import { ShareableClaimCard } from "@/components/ShareableClaimCard";
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS, type Drop, type Campaign } from "@/types";
 
@@ -57,6 +61,11 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const { inGrace, left }        = useGracePeriod();
   const verificationOk           = isVerified || inGrace;
   const { writeContractAsync }   = useWriteContract();
+
+  // Animated count-up for the claimed amount on the success screen.
+  const successAmount    = drop ? Number(drop.amount) / 1e18 : 0;
+  const successCount     = useCountUp(successAmount, status === "done");
+  const successCountText = successAmount >= 1 ? Math.round(successCount).toLocaleString() : successCount.toFixed(2);
   const {
     status: verifyStatus, fvLink, isVerifying,
     setIsVerifying, refresh: refreshVerify,
@@ -174,7 +183,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ address }),
-        }).catch(() => {});
+        })
+          .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
+          .catch(() => {});
       }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
@@ -356,6 +367,11 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             {formatG$(drop.amount)}
           </span>
           <span style={{ fontSize: 32, fontWeight: 900, color: "#BFFD00" }}> G$</span>
+          {formatUsdApprox(drop.amount) && (
+            <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#5a5a5a", marginTop: 4 }}>
+              {formatUsdApprox(drop.amount)} USD · real, spendable G$
+            </span>
+          )}
         </div>
 
         {/* Clue */}
@@ -399,35 +415,54 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </div>
           ) : (
             /* Regular or chain-last success */
-            <div style={{ ...card, background: "#BFFD00", textAlign: "center" }}>
-              <div style={{ fontSize: 60, marginBottom: 12 }}>{isChainLast ? "🏆" : "🎯"}</div>
-              <p style={{ fontWeight: 900, fontSize: 24, margin: "0 0 8px" }}>
-                {isChainLast ? "Hunt Complete!" : "You found it!"}
-              </p>
-              <p style={{ fontSize: 15, margin: "0 0 20px", color: "#111" }}>
-                {formatG$(drop.amount)} G$ is yours!
-              </p>
-              <Link href="/" style={{ ...brutLink, display: "block", textAlign: "center", marginBottom: 12 }}>
-                Hunt more drops →
-              </Link>
-              {/* UBI prompt only for verified users — unverified users cannot claim UBI */}
-              {isVerified && (
-                <div style={{
-                  background: "rgba(0,0,0,0.1)", borderRadius: 12,
-                  padding: "12px 14px", marginTop: 4, cursor: "pointer",
-                  border: "1.5px solid rgba(0,0,0,0.2)",
-                }}
-                  onClick={() => window.dispatchEvent(new CustomEvent("gd:openWallet"))}
-                >
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                    💰 Also claim your daily G$ UBI
-                  </p>
-                  <p style={{ margin: "3px 0 0", fontSize: 11, color: "#333" }}>
-                    Tap to open wallet → claim GoodDollar UBI
-                  </p>
+            <>
+              <Celebration active colors={isChainLast ? ["#FFD700", "#BFFD00", "#fff"] : undefined} />
+              <div style={{ ...card, background: "#BFFD00", textAlign: "center" }}>
+                <div className="success-pop" style={{ fontSize: 60, marginBottom: 12 }}>{isChainLast ? "🏆" : "🎯"}</div>
+                <p style={{ fontWeight: 900, fontSize: 24, margin: "0 0 8px" }}>
+                  {isChainLast ? "Hunt Complete!" : "You found it!"}
+                </p>
+                <p style={{ margin: "0 0 18px" }}>
+                  <span style={{ fontSize: 40, fontWeight: 900, color: "#111", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+                    {successCountText}
+                  </span>
+                  <span style={{ fontSize: 22, fontWeight: 900, color: "#111", marginLeft: 4 }}>G$</span>
+                  <span style={{ display: "block", fontSize: 13, color: "#333", marginTop: 2 }}>is yours!</span>
+                </p>
+
+                {/* Shareable win card */}
+                <div style={{ marginBottom: 12 }}>
+                  <ShareableClaimCard
+                    amount={drop.amount}
+                    rarity={getDropRarity(drop.amount)}
+                    place={hint || null}
+                    handle={address ? shortAddr(address) : "a hunter"}
+                    dropId={drop.id.toString()}
+                  />
                 </div>
-              )}
-            </div>
+
+                <Link href="/" style={{ ...brutLink, display: "block", textAlign: "center", marginBottom: 12 }}>
+                  Hunt more drops →
+                </Link>
+                {/* UBI prompt only for verified users — unverified users cannot claim UBI */}
+                {isVerified && (
+                  <div style={{
+                    background: "rgba(0,0,0,0.1)", borderRadius: 12,
+                    padding: "12px 14px", marginTop: 4, cursor: "pointer",
+                    border: "1.5px solid rgba(0,0,0,0.2)",
+                  }}
+                    onClick={() => window.dispatchEvent(new CustomEvent("gd:openWallet"))}
+                  >
+                    <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                      💰 Also claim your daily G$ UBI
+                    </p>
+                    <p style={{ margin: "3px 0 0", fontSize: 11, color: "#333" }}>
+                      Tap to open wallet → claim GoodDollar UBI
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </>
 
@@ -516,6 +551,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
                   {claimLabel()}
                 </button>
               )}
+
+              <div style={{ marginTop: 12 }}>
+                <SafetyNote />
+              </div>
             </>
           )}
 

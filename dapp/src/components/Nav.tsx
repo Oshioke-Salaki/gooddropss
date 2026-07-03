@@ -7,6 +7,7 @@ import { useAccount, useSwitchChain, useDisconnect } from "wagmi";
 import { celo } from "viem/chains";
 import { Map, Package, Trophy } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
+import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
 import { useGracePeriod } from "@/hooks/useGracePeriod";
@@ -440,8 +441,9 @@ export function Nav() {
             ))}
           </div>
 
-          {/* Wallet — max-w prevents a wide wallet badge from squeezing nav links out */}
-          <div className="shrink-0 max-w-[220px]">
+          {/* Streak + Wallet — max-w prevents a wide wallet badge from squeezing nav links out */}
+          <div className="shrink-0 flex items-center gap-2 max-w-[280px]">
+            <StreakBadge />
             <WalletButton
               isVerified={isVerified}
               isVerificationLoading={isVerificationLoading}

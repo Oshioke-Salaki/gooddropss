@@ -9,6 +9,7 @@ import { HuntingMode } from "@/components/HuntingMode";
 import { ActivityTicker } from "@/components/ActivityTicker";
 import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
+import { ColdStartCard } from "@/components/ColdStartCard";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
 import type { Drop, LatLng } from "@/types";
@@ -142,6 +143,15 @@ export default function HomePage() {
       <ActivityTicker />
       <PushPermissionBanner />
       <OnboardingOverlay />
+
+      {/* Cold-start capture — shows worldwide proof-of-life + notify/seed CTAs
+          when the hunter has no drops near them. */}
+      <ColdStartCard
+        drops={drops}
+        userLoc={userLoc}
+        loading={loading}
+        onDrop={() => setShowCreate(true)}
+      />
 
       {/* Hunting mode — full screen immersive overlay */}
       {huntingDrop && (

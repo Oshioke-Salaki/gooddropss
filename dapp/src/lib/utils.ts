@@ -26,6 +26,27 @@ export function shortAddr(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
+// G$ → USD rate. Configurable so it can track the real oracle price without a
+// code change; falls back to a conservative default when unset.
+const GDOLLAR_USD_RATE = Number(process.env.NEXT_PUBLIC_GDOLLAR_USD ?? "0.00003");
+
+/** USD value of a G$ (wei) amount as a number. */
+export function gDollarUsd(wei: bigint): number {
+  return (Number(wei) / 1e18) * GDOLLAR_USD_RATE;
+}
+
+/**
+ * Human "≈ $X" string for a G$ amount, or null when the value rounds below one
+ * cent (so the UI can gracefully omit a depressing sub-cent figure).
+ */
+export function formatUsdApprox(wei: bigint): string | null {
+  const usd = gDollarUsd(wei);
+  if (usd < 0.01) return null;
+  if (usd < 1)    return `≈ $${usd.toFixed(2)}`;
+  if (usd < 1000) return `≈ $${usd.toFixed(usd % 1 === 0 ? 0 : 2)}`;
+  return `≈ $${(usd / 1000).toFixed(1)}k`;
+}
+
 export function timeLeft(expiry: number): string {
   const diff = expiry - Math.floor(Date.now() / 1000);
   if (diff <= 0) return "Expired";

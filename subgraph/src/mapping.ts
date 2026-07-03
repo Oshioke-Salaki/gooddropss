@@ -3,6 +3,7 @@ import {
   DropCreated,
   DropClaimed,
   DropReclaimed,
+  DropExtended,
 } from "../generated/GoodDrops/GoodDrops";
 import { Drop } from "../generated/schema";
 
@@ -42,6 +43,17 @@ export function handleDropReclaimed(event: DropReclaimed): void {
   if (drop == null) return;
 
   drop.status = 2; // Reclaimed
+
+  drop.save();
+}
+
+export function handleDropExtended(event: DropExtended): void {
+  let drop = Drop.load(event.params.dropId.toString());
+  if (drop == null) return;
+
+  // Reactivation: push the expiry forward. Status stays Active (0) — the drop
+  // was never claimed or reclaimed, it just had a new deadline set.
+  drop.expiry = event.params.newExpiry;
 
   drop.save();
 }

@@ -16,7 +16,7 @@ import {
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS, type Drop } from "@/types";
 import { QRCodeSVG } from "qrcode.react";
-import { QrCode, Copy, Check, Share2, X, Printer } from "lucide-react";
+import { QrCode, Copy, Check, Share2, X, Printer, RefreshCw, Undo2 } from "lucide-react";
 import clsx from "clsx";
 
 const STATUS_LABEL: Record<number, string> = {
@@ -28,12 +28,16 @@ const STATUS_LABEL: Record<number, string> = {
 function DropCard({
   drop,
   onReclaim,
+  onReactivate,
   isReclaiming,
+  isReactivating,
   onShare,
 }: {
   drop: Drop;
   onReclaim: (id: bigint) => void;
+  onReactivate: (id: bigint) => void;
   isReclaiming: boolean;
+  isReactivating: boolean;
   onShare: (drop: Drop) => void;
 }) {
   const isExpiredActive =
@@ -41,6 +45,7 @@ function DropCard({
     drop.expiry < Math.floor(Date.now() / 1000);
   const isActive =
     drop.status === DROP_STATUS.Active && !isExpiredActive;
+  const busy = isReclaiming || isReactivating;
   const { isPrivate, hint: cleanHint, chainNextId, isChainLast } = parseDropHint(drop.hint);
   const isChain = chainNextId !== null || isChainLast;
 
@@ -99,23 +104,34 @@ function DropCard({
         {drop.status === DROP_STATUS.Claimed && drop.claimer && (
           <div>✓ Claimed by <UserHandle address={drop.claimer} /></div>
         )}
-        {isExpiredActive && <div>You can reclaim your G$</div>}
+        {isExpiredActive && <div>Reactivate it, or reclaim your G$</div>}
       </div>
 
       {isExpiredActive && (
-        <button
-          onClick={() => !isReclaiming && onReclaim(drop.id)}
-          disabled={isReclaiming}
-          className={clsx(
-            "btn-brutal w-full py-2.5 rounded-xl text-sm font-bold transition-all",
-            isReclaiming
-              ? "bg-border text-muted cursor-not-allowed shadow-none"
-              : "bg-lime text-ink"
-          )}
-          style={isReclaiming ? { boxShadow: "none", transform: "none" } : {}}
-        >
-          {isReclaiming ? "Reclaiming…" : `Reclaim ${formatG$(drop.amount)} G$`}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => !busy && onReactivate(drop.id)}
+            disabled={busy}
+            className={clsx(
+              "btn-brutal flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5",
+              busy ? "bg-border text-muted cursor-not-allowed shadow-none" : "bg-ink text-lime"
+            )}
+            style={busy ? { boxShadow: "none", transform: "none" } : {}}
+          >
+            {isReactivating ? "Reactivating…" : <><RefreshCw size={14} /> Reactivate</>}
+          </button>
+          <button
+            onClick={() => !busy && onReclaim(drop.id)}
+            disabled={busy}
+            className={clsx(
+              "btn-brutal flex-1 py-2.5 rounded-xl text-sm font-bold transition-all",
+              busy ? "bg-border text-muted cursor-not-allowed shadow-none" : "bg-lime text-ink"
+            )}
+            style={busy ? { boxShadow: "none", transform: "none" } : {}}
+          >
+            {isReclaiming ? "Reclaiming…" : `Reclaim ${formatG$(drop.amount)} G$`}
+          </button>
+        </div>
       )}
 
       {/* Share / QR + Print sticker buttons */}
@@ -281,13 +297,19 @@ function QRShareModal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+// Default reactivation window when a dropper revives an expired drop.
+const REACTIVATE_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const REACTIVATE_LABEL   = "7 days";
+
 export default function MyDropsPage() {
   const { address, isConnected } = useAccount();
   const { drops, loading, fetchDrops } = useDrops();
   const { writeContractAsync } = useWriteContract();
   const [tab, setTab] = useState<"created" | "claimed">("created");
-  const [reclaiming, setReclaiming] = useState<bigint | null>(null);
-  const [sharingDrop, setSharingDrop] = useState<Drop | null>(null);
+  const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
+  const [reactivating, setReactivating] = useState<bigint | null>(null);
+  const [bulkBusy, setBulkBusy]         = useState<"reclaim" | "reactivate" | null>(null);
+  const [sharingDrop, setSharingDrop]   = useState<Drop | null>(null);
 
   useEffect(() => {
     fetchDrops();
@@ -301,6 +323,14 @@ export default function MyDropsPage() {
       d.claimer.toLowerCase() === address?.toLowerCase() &&
       d.status === DROP_STATUS.Claimed
   );
+
+  // Expired-but-unclaimed drops the dropper can reclaim or reactivate.
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expiredDrops = myCreated.filter(
+    (d) => d.status === DROP_STATUS.Active && d.expiry < nowSec
+  );
+  const expiredTotalWei = expiredDrops.reduce((s, d) => s + d.amount, 0n);
+  const anyBusy = reclaiming !== null || reactivating !== null || bulkBusy !== null;
 
   async function handleReclaim(dropId: bigint) {
     setReclaiming(dropId);
@@ -317,6 +347,68 @@ export default function MyDropsPage() {
       console.error(e);
     } finally {
       setReclaiming(null);
+    }
+  }
+
+  async function handleReactivate(dropId: bigint) {
+    setReactivating(dropId);
+    try {
+      // uint40 → viem expects a JS number (only >48-bit ints are bigint)
+      const newExpiry = Math.floor(Date.now() / 1000) + REACTIVATE_SECONDS;
+      const tx = await writeContractAsync({
+        address: GOOD_DROPS_ADDRESS,
+        abi: GOOD_DROPS_ABI,
+        functionName: "extendExpiry",
+        args: [dropId, newExpiry],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      fetchDrops();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setReactivating(null);
+    }
+  }
+
+  async function handleReclaimAll() {
+    if (expiredDrops.length === 0) return;
+    setBulkBusy("reclaim");
+    try {
+      const ids = expiredDrops.map((d) => d.id);
+      const tx = await writeContractAsync({
+        address: GOOD_DROPS_ADDRESS,
+        abi: GOOD_DROPS_ABI,
+        functionName: "reclaimManyExpired",
+        args: [ids],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      fetchDrops();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBulkBusy(null);
+    }
+  }
+
+  async function handleReactivateAll() {
+    if (expiredDrops.length === 0) return;
+    setBulkBusy("reactivate");
+    try {
+      const ids = expiredDrops.map((d) => d.id);
+      // uint40 → viem expects a JS number (only >48-bit ints are bigint)
+      const newExpiry = Math.floor(Date.now() / 1000) + REACTIVATE_SECONDS;
+      const tx = await writeContractAsync({
+        address: GOOD_DROPS_ADDRESS,
+        abi: GOOD_DROPS_ABI,
+        functionName: "extendManyExpiry",
+        args: [ids, newExpiry],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      fetchDrops();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBulkBusy(null);
     }
   }
 
@@ -351,6 +443,43 @@ export default function MyDropsPage() {
                 <div className="text-sm font-semibold mt-1">Drops claimed</div>
               </div>
             </div>
+
+            {/* Bulk actions for expired drops */}
+            {tab === "created" && expiredDrops.length > 0 && (
+              <div className="bg-ink text-cream border-2 border-ink rounded-2xl p-4 mb-5 shadow-brutal-lime">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">⏳</span>
+                  <p className="font-black text-base">
+                    {expiredDrops.length} expired drop{expiredDrops.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <p className="text-xs text-cream/70 mb-3">
+                  Holding <b className="text-lime">{formatG$(expiredTotalWei)} G$</b> — reactivate them for another {REACTIVATE_LABEL}, or reclaim your G$. One transaction handles them all.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleReactivateAll}
+                    disabled={anyBusy}
+                    className={clsx(
+                      "flex-1 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-1.5 border-2",
+                      anyBusy ? "bg-border/20 text-muted border-border/30 cursor-not-allowed" : "bg-lime text-ink border-lime hover:opacity-90"
+                    )}
+                  >
+                    {bulkBusy === "reactivate" ? "Reactivating…" : <><RefreshCw size={15} /> Reactivate all</>}
+                  </button>
+                  <button
+                    onClick={handleReclaimAll}
+                    disabled={anyBusy}
+                    className={clsx(
+                      "flex-1 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-1.5 border-2",
+                      anyBusy ? "bg-border/20 text-muted border-border/30 cursor-not-allowed" : "bg-cream text-ink border-cream hover:opacity-90"
+                    )}
+                  >
+                    {bulkBusy === "reclaim" ? "Reclaiming…" : <><Undo2 size={15} /> Reclaim all</>}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Tabs */}
             <div className="flex border-2 border-ink rounded-xl overflow-hidden mb-5">
@@ -398,7 +527,9 @@ export default function MyDropsPage() {
                       key={String(d.id)}
                       drop={d}
                       onReclaim={handleReclaim}
-                      isReclaiming={reclaiming === d.id}
+                      onReactivate={handleReactivate}
+                      isReclaiming={reclaiming === d.id || bulkBusy === "reclaim"}
+                      isReactivating={reactivating === d.id || bulkBusy === "reactivate"}
                       onShare={setSharingDrop}
                     />
                   ))}
