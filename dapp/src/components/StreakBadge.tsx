@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
 import type { HunterStreak } from "@/types";
 
 /**
@@ -11,14 +12,17 @@ import type { HunterStreak } from "@/types";
  */
 export function StreakBadge() {
   const { address } = useAccount();
+  const { authenticated } = usePrivy();
+  // Privy is authoritative — wagmi can report a stale address after logout.
+  const signedInAddress = authenticated && address ? address : null;
   const [streak, setStreak] = useState<HunterStreak | null>(null);
 
   useEffect(() => {
-    if (!address) { setStreak(null); return; }
+    if (!signedInAddress) { setStreak(null); return; }
     let cancelled = false;
 
     const load = () => {
-      fetch(`/api/engagement?address=${address}`)
+      fetch(`/api/engagement?address=${signedInAddress}`)
         .then((r) => r.json())
         .then((d) => { if (!cancelled && d.streak) setStreak(d.streak); })
         .catch(() => {});
@@ -27,7 +31,7 @@ export function StreakBadge() {
     load();
     window.addEventListener("gd:streak-updated", load);
     return () => { cancelled = true; window.removeEventListener("gd:streak-updated", load); };
-  }, [address]);
+  }, [signedInAddress]);
 
   if (!streak || streak.current < 1) return null;
 

@@ -1,7 +1,8 @@
 "use client";
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { useAccount, useWriteContract } from "wagmi";
+import { useWriteContract } from "wagmi";
+import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import {
@@ -42,7 +43,7 @@ interface Props {
 }
 
 export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campaignId, campaignName, campaignColor }: Props) {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync } = useWriteContract();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
 

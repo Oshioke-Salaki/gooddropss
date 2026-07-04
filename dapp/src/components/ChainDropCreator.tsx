@@ -1,7 +1,8 @@
 "use client";
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { useAccount, useWriteContract } from "wagmi";
+import { useWriteContract } from "wagmi";
+import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { decodeEventLog } from "viem";
 import { Plus, Trash2, Loader2, Link2, Copy, Check, Trophy } from "lucide-react";
@@ -43,7 +44,7 @@ function makeEmptyStop(): ChainStop {
 }
 
 export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Props) {
-  const { address, isConnected }  = useAccount();
+  const { address, isConnected }  = useSignedInAccount();
   const { writeContractAsync }    = useWriteContract();
   const { balance, isFetching }   = useGoodDollarProfile();
 

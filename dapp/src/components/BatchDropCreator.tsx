@@ -3,7 +3,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import L from "leaflet";
 import dynamic from "next/dynamic";
-import { useAccount, useWriteContract } from "wagmi";
+import { useWriteContract } from "wagmi";
+import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { X, Trash2, Loader2, Navigation, ChevronUp, ChevronDown } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
@@ -177,7 +178,7 @@ interface Props {
 }
 
 export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync }   = useWriteContract();
   const { balance, isFetching }  = useGoodDollarProfile();
 

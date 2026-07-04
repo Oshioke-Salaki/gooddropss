@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useDrops } from "@/hooks/useDrops";
 import { publicClient } from "@/lib/publicClient";
@@ -302,7 +303,12 @@ const REACTIVATE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const REACTIVATE_LABEL   = "7 days";
 
 export default function MyDropsPage() {
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  const { authenticated } = usePrivy();
+  // Privy is the source of truth for auth. Wagmi can reconnect a stale connector
+  // from localStorage and report isConnected=true with a leftover address even
+  // when the user has signed out — which wrongly surfaced someone else's drops.
+  const isConnected = authenticated && !!address;
   const { drops, loading, fetchDrops } = useDrops();
   const { writeContractAsync } = useWriteContract();
   const [tab, setTab] = useState<"created" | "claimed">("created");
