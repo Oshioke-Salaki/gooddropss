@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
+import { resolveIdentityRoot } from "@/lib/identityRoot";
 import type { HunterStreak } from "@/types";
 
 export const runtime = "nodejs";
@@ -22,7 +23,10 @@ export async function GET(req: NextRequest) {
   if (!redis) return NextResponse.json({ streak: null });
 
   try {
-    const raw = await redis.get<string>(keys.streak(address));
+    // Key stats by the GoodDollar identity root so a person's connected wallets
+    // all share one streak (see resolveIdentityRoot).
+    const root = await resolveIdentityRoot(address);
+    const raw = await redis.get<string>(keys.streak(root));
     if (!raw) return NextResponse.json({ streak: { current: 0, best: 0, lastDate: "" } });
     const streak: HunterStreak = typeof raw === "string" ? JSON.parse(raw) : raw;
     return NextResponse.json({ streak });
@@ -43,7 +47,10 @@ export async function POST(req: NextRequest) {
     const redis = getRedis();
     if (!redis) return NextResponse.json({ streak: null, isNewDay: false });
 
-    const raw = await redis.get<string>(keys.streak(address));
+    // Increment the streak on the identity root, not the raw wallet, so hunting
+    // from any of a person's connected wallets keeps one continuous streak.
+    const root = await resolveIdentityRoot(address);
+    const raw = await redis.get<string>(keys.streak(root));
     const existing: HunterStreak = raw
       ? (typeof raw === "string" ? JSON.parse(raw) : raw)
       : { current: 0, best: 0, lastDate: "" };
@@ -66,7 +73,7 @@ export async function POST(req: NextRequest) {
       lastDate: todayStr,
     };
 
-    await redis.set(keys.streak(address), JSON.stringify(updated), { ex: 60 * 60 * 24 * 365 });
+    await redis.set(keys.streak(root), JSON.stringify(updated), { ex: 60 * 60 * 24 * 365 });
     return NextResponse.json({ streak: updated, isNewDay: true });
   } catch (e) {
     console.error("[engagement/post]", e);

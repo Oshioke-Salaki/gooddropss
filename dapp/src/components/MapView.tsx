@@ -1,47 +1,43 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  useMap,
-} from "react-leaflet";
-import L from "leaflet";
-import "leaflet.markercluster";
-import "leaflet.markercluster/dist/MarkerCluster.css";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import Supercluster from "supercluster";
 import { Navigation, MapPin, Plus, Minus } from "lucide-react";
 import { formatG$, gpsToDeg, getDropRarity, RARITY, isFlashDrop, haversineDistance } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
-import type { Drop, LatLng } from "@/types";
+import type { Drop, LatLng, Spot } from "@/types";
 import { DROP_STATUS } from "@/types";
-
-let mountCount = 0;
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
 
-// ── Custom drop icons (rarity-aware, dark theme) ─────────────────────────────
+// Free, no-API-key vector tiles (openfreemap.org) — crisp at every zoom,
+// supports rotate/pitch, and removes the Stadia raster key requirement.
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
-function makeDropIcon(drop: Drop): L.DivIcon {
+// ── Pin DOM builders (rarity-aware, dark theme) ───────────────────────────────
+// MapLibre markers are plain DOM elements, so every existing CSS pin animation
+// (pin-pulse-*, pin-flash) carries over unchanged.
+
+function makeDropElement(drop: Drop): HTMLDivElement {
+  const el = document.createElement("div");
   const active =
     drop.status === DROP_STATUS.Active &&
     drop.expiry > Math.floor(Date.now() / 1000);
 
   if (!active) {
     const isClaimed = drop.status === DROP_STATUS.Claimed;
-    return L.divIcon({
-      className: "",
-      html: `<div style="
-        width:36px;height:36px;
-        background:#1a1a2a;
-        border:1.5px solid #333;
-        border-radius:50%;
-        display:flex;align-items:center;justify-content:center;
-        font-weight:700;font-size:14px;color:#444;
-        cursor:pointer;font-family:'Space Grotesk',sans-serif;
-        user-select:none;
-      ">${isClaimed ? "✓" : "↩"}</div>`,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
-    });
+    el.innerHTML = `<div style="
+      width:36px;height:36px;
+      background:#1a1a2a;
+      border:1.5px solid #333;
+      border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:700;font-size:14px;color:#444;
+      cursor:pointer;font-family:'Space Grotesk',sans-serif;
+      user-select:none;
+    ">${isClaimed ? "✓" : "↩"}</div>`;
+    return el;
   }
 
   const flash      = isFlashDrop(drop);
@@ -52,245 +48,153 @@ function makeDropIcon(drop: Drop): L.DivIcon {
   const label      = formatG$(drop.amount);
 
   if (flash) {
-    return L.divIcon({
-      className: "pin-flash",
-      html: `<div style="
-        width:52px;height:52px;
-        background:#FF6400;
-        border:2.5px solid rgba(0,0,0,0.5);
-        border-radius:50%;
-        display:flex;flex-direction:column;align-items:center;justify-content:center;
-        font-weight:900;font-size:10px;color:#fff;
-        cursor:pointer;
-        font-family:'Space Grotesk',sans-serif;
-        user-select:none;gap:1px;
-      "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>`,
-      iconSize: [52, 52],
-      iconAnchor: [26, 26],
-    });
+    el.className = "pin-flash";
+    el.innerHTML = `<div style="
+      width:52px;height:52px;
+      background:#FF6400;
+      border:2.5px solid rgba(0,0,0,0.5);
+      border-radius:50%;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-weight:900;font-size:10px;color:#fff;
+      cursor:pointer;
+      font-family:'Space Grotesk',sans-serif;
+      user-select:none;gap:1px;
+    "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>`;
+    return el;
   }
 
-  // Chain drops: linked pin with 🔗 icon
   if (isChain) {
-    return L.divIcon({
-      className: r.animClass,
-      html: `<div style="
-        position:relative;
-        width:54px;height:54px;
-        background:#111;
-        border:2.5px solid ${r.color};
-        border-radius:50%;
-        display:flex;flex-direction:column;align-items:center;justify-content:center;
-        font-weight:900;font-size:10px;color:${r.color};
-        cursor:pointer;
-        font-family:'Space Grotesk',sans-serif;
-        user-select:none;gap:1px;
-        box-shadow:0 0 0 3px rgba(255,255,255,0.4);
-      ">
-        <span style="font-size:13px;line-height:1;">🔗</span>
-        <span>${label}</span>
-      </div>`,
-      iconSize: [54, 54],
-      iconAnchor: [27, 27],
-    });
+    el.className = r.animClass;
+    el.style.borderRadius = "50%";
+    el.innerHTML = `<div style="
+      width:54px;height:54px;
+      background:#111;
+      border:2.5px solid ${r.color};
+      border-radius:50%;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-weight:900;font-size:10px;color:${r.color};
+      cursor:pointer;
+      font-family:'Space Grotesk',sans-serif;
+      user-select:none;gap:1px;
+      box-shadow:0 0 0 3px rgba(255,255,255,0.4);
+    "><span style="font-size:13px;line-height:1;">🔗</span><span>${label}</span></div>`;
+    return el;
   }
 
-  // Campaign drops get a star badge and double-ring border to stand out
   if (isCampaign) {
-    return L.divIcon({
-      className: r.animClass,
-      html: `<div style="
-        position:relative;
-        width:54px;height:54px;
-        background:${r.color};
-        border:2.5px solid rgba(0,0,0,0.6);
-        border-radius:50%;
-        display:flex;flex-direction:column;align-items:center;justify-content:center;
-        font-weight:900;font-size:10px;color:${r.textColor};
-        cursor:pointer;
-        font-family:'Space Grotesk',sans-serif;
-        user-select:none;gap:1px;
-        box-shadow:0 0 0 3px rgba(255,255,255,0.6);
-      ">
-        <span style="font-size:11px;line-height:1;">⭐</span>
-        <span>${label}</span>
-      </div>`,
-      iconSize: [54, 54],
-      iconAnchor: [27, 27],
-    });
+    el.className = r.animClass;
+    el.style.borderRadius = "50%";
+    el.innerHTML = `<div style="
+      width:54px;height:54px;
+      background:${r.color};
+      border:2.5px solid rgba(0,0,0,0.6);
+      border-radius:50%;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-weight:900;font-size:10px;color:${r.textColor};
+      cursor:pointer;
+      font-family:'Space Grotesk',sans-serif;
+      user-select:none;gap:1px;
+      box-shadow:0 0 0 3px rgba(255,255,255,0.6);
+    "><span style="font-size:11px;line-height:1;">⭐</span><span>${label}</span></div>`;
+    return el;
   }
 
-  // Rarity-at-altitude: bigger, richer pins for rarer drops so the eye is drawn
-  // to the valuable "glints" even when zoomed far out.
+  // Rarity-at-altitude: bigger, richer pins for rarer drops.
   const SIZE_BY_RARITY: Record<typeof rarity, { size: number; font: number; ring: string }> = {
     common:    { size: 40, font: 10, ring: "none" },
     uncommon:  { size: 48, font: 11, ring: "none" },
-    rare:      { size: 58, font: 12, ring: `0 0 0 3px rgba(0,207,255,0.28)` },
-    legendary: { size: 70, font: 14, ring: `0 0 0 4px rgba(255,215,0,0.4)` },
+    rare:      { size: 58, font: 12, ring: "0 0 0 3px rgba(0,207,255,0.28)" },
+    legendary: { size: 70, font: 14, ring: "0 0 0 4px rgba(255,215,0,0.4)" },
   };
   const s = SIZE_BY_RARITY[rarity];
 
-  return L.divIcon({
-    className: r.animClass,
-    html: `<div style="
-      width:${s.size}px;height:${s.size}px;
-      background:${r.color};
-      border:${rarity === "legendary" ? 3 : 2}px solid rgba(0,0,0,0.5);
-      border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      font-weight:900;font-size:${s.font}px;color:${r.textColor};
-      cursor:pointer;
-      font-family:'Space Grotesk',sans-serif;
-      user-select:none;
-      box-shadow:${s.ring};
-    ">${label}</div>`,
-    iconSize: [s.size, s.size],
-    iconAnchor: [s.size / 2, s.size / 2],
-  });
+  el.className = r.animClass;
+  el.style.borderRadius = "50%";
+  el.innerHTML = `<div style="
+    width:${s.size}px;height:${s.size}px;
+    background:${r.color};
+    border:${rarity === "legendary" ? 3 : 2}px solid rgba(0,0,0,0.5);
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:900;font-size:${s.font}px;color:${r.textColor};
+    cursor:pointer;
+    font-family:'Space Grotesk',sans-serif;
+    user-select:none;
+    box-shadow:${s.ring};
+  ">${label}</div>`;
+  return el;
 }
 
-// ── User location marker (non-interactive so drops beneath it stay clickable) ─
-
-function UserLocationMarker({ location }: { location: LatLng }) {
-  const map = useMap();
-  useEffect(() => {
-    const marker = L.marker([location.lat, location.lng], {
-      icon: L.divIcon({
-        className: "",
-        html: `
-          <div style="position:relative;width:24px;height:24px;pointer-events:none;">
-            <div class="user-loc-pulse" style="
-              position:absolute;inset:-10px;
-              background:rgba(59,130,246,0.18);
-              border:2px solid rgba(59,130,246,0.35);
-              border-radius:50%;
-            "></div>
-            <div style="
-              width:24px;height:24px;
-              background:#3B82F6;
-              border:3.5px solid #ffffff;
-              border-radius:50%;
-              box-shadow:0 2px 10px rgba(59,130,246,0.55);
-            "></div>
-          </div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      }),
-      interactive: false,
-      zIndexOffset: 1000,
-    });
-    map.addLayer(marker);
-    return () => { map.removeLayer(marker); };
-  }, [location.lat, location.lng, map]);
-  return null;
+function makeClusterElement(count: number): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = "pin-pulse-uncommon";
+  el.style.borderRadius = "50%";
+  el.innerHTML = `<div style="
+    width:46px;height:46px;
+    background:#BFFD00;
+    border:2px solid rgba(0,0,0,0.5);
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:900;font-size:14px;color:#111;
+    cursor:pointer;
+    font-family:'Space Grotesk',sans-serif;
+    user-select:none;
+  ">${count}</div>`;
+  return el;
 }
 
-// ── Claim radius circle ──────────────────────────────────────────────────────
-
-function ClaimRadiusCircle({ center }: { center: LatLng }) {
-  const map = useMap();
-  useEffect(() => {
-    const circle = L.circle([center.lat, center.lng], {
-      radius: CLAIM_RADIUS_M,
-      color: "#3B82F6",
-      fillColor: "#3B82F6",
-      fillOpacity: 0.07,
-      weight: 1.5,
-      dashArray: "6 5",
-      interactive: false,
-    });
-    map.addLayer(circle);
-    return () => { map.removeLayer(circle); };
-  }, [center.lat, center.lng, map]);
-  return null;
+// GoodSpots: merchant shops that accept G$ — square tag pin, distinct from drops.
+function makeSpotElement(spot: Spot): HTMLDivElement {
+  const el = document.createElement("div");
+  el.innerHTML = `<div style="
+    width:44px;height:44px;
+    background:#111;
+    border:2.5px solid #BFFD00;
+    border-radius:12px 12px 12px 2px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    cursor:pointer;
+    font-family:'Space Grotesk',sans-serif;
+    user-select:none;
+    box-shadow:0 2px 10px rgba(191,253,0,0.35);
+  " title="${spot.name.replace(/"/g, "&quot;")}">
+    <span style="font-size:17px;line-height:1;">🏪</span>
+    <span style="font-size:7px;font-weight:900;color:#BFFD00;letter-spacing:0.04em;">G$ HERE</span>
+  </div>`;
+  return el;
 }
 
-// ── Map utilities inside MapContainer ───────────────────────────────────────
-
-function MapRefCapture({
-  mapRef,
-}: {
-  mapRef: React.MutableRefObject<L.Map | null>;
-}) {
-  const map = useMap();
-  useEffect(() => {
-    mapRef.current = map;
-    return () => { mapRef.current = null; };
-  }, [map, mapRef]);
-  return null;
+function makeUserElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.pointerEvents = "none";
+  el.innerHTML = `
+    <div style="position:relative;width:24px;height:24px;pointer-events:none;">
+      <div class="user-loc-pulse" style="
+        position:absolute;inset:-10px;
+        background:rgba(59,130,246,0.18);
+        border:2px solid rgba(59,130,246,0.35);
+        border-radius:50%;
+      "></div>
+      <div style="
+        width:24px;height:24px;
+        background:#3B82F6;
+        border:3.5px solid #ffffff;
+        border-radius:50%;
+        box-shadow:0 2px 10px rgba(59,130,246,0.55);
+      "></div>
+    </div>`;
+  return el;
 }
 
-// Watches position continuously. Only mounted after permission is confirmed granted.
-function LocationWatcher({ onLocation }: { onLocation: (loc: LatLng) => void }) {
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => onLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 }
-    );
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [onLocation]);
-
-  return null;
-}
-
-// ── Cluster layer ────────────────────────────────────────────────────────────
-// Manages a leaflet.markercluster group whose lifecycle mirrors the drops array.
-
-function ClusterLayer({
-  drops,
-  onDropClick,
-}: {
-  drops: Drop[];
-  onDropClick: (drop: Drop) => void;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    const group = (L as any).markerClusterGroup({
-      maxClusterRadius: 56,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      zoomToBoundsOnClick: true,
-      iconCreateFunction: (cluster: any) => {
-        const count = cluster.getChildCount();
-        return L.divIcon({
-          className: "pin-pulse-uncommon",
-          html: `<div style="
-            width:46px;height:46px;
-            background:#BFFD00;
-            border:2px solid rgba(0,0,0,0.5);
-            border-radius:50%;
-            display:flex;align-items:center;justify-content:center;
-            font-weight:900;font-size:14px;color:#111;
-            font-family:'Space Grotesk',sans-serif;
-          ">${count}</div>`,
-          iconSize: [46, 46],
-          iconAnchor: [23, 23],
-        });
-      },
-    });
-
-    drops.forEach((drop) => {
-      const marker = L.marker(
-        [gpsToDeg(drop.lat), gpsToDeg(drop.lng)],
-        { icon: makeDropIcon(drop) }
-      );
-      marker.on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        onDropClick(drop);
-      });
-      group.addLayer(marker);
-    });
-
-    map.addLayer(group);
-    return () => { map.removeLayer(group); };
-  }, [drops, map, onDropClick]);
-
-  return null;
+// ── Geodesic circle polygon (claim radius) — no turf needed ──────────────────
+function circlePolygon(lat: number, lng: number, radiusM: number, points = 64): GeoJSON.Feature<GeoJSON.Polygon> {
+  const coords: [number, number][] = [];
+  const dLat = (radiusM / 6_371_000) * (180 / Math.PI);
+  const dLng = dLat / Math.cos((lat * Math.PI) / 180);
+  for (let i = 0; i <= points; i++) {
+    const theta = (i / points) * 2 * Math.PI;
+    coords.push([lng + dLng * Math.cos(theta), lat + dLat * Math.sin(theta)]);
+  }
+  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [coords] } };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -300,15 +204,35 @@ interface Props {
   onDropClick: (drop: Drop) => void;
   userLocation: LatLng | null;
   onUserLocation: (loc: LatLng) => void;
+  spots?: Spot[];
+  onSpotClick?: (spot: Spot) => void;
 }
 
-export default function MapView({ drops, onDropClick, userLocation, onUserLocation }: Props) {
-  const [mapKey] = useState(() => ++mountCount);
-  const mapRef = useRef<L.Map | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [locateErr, setLocateErr] = useState("");
-  const [locPerm, setLocPerm] = useState<LocPerm>("unknown");
+type DropFeatureProps = { dropIndex: number };
+
+export default function MapView({ drops, onDropClick, userLocation, onUserLocation, spots = [], onSpotClick }: Props) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef       = useRef<maplibregl.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+
+  const [locating, setLocating]         = useState(false);
+  const [locateErr, setLocateErr]       = useState("");
+  const [locPerm, setLocPerm]           = useState<LocPerm>("unknown");
   const [showNearbyList, setShowNearbyList] = useState(false);
+
+  // Latest callbacks/data in refs so the map init effect never re-runs.
+  const onDropClickRef = useRef(onDropClick);
+  onDropClickRef.current = onDropClick;
+  const onSpotClickRef = useRef(onSpotClick);
+  onSpotClickRef.current = onSpotClick;
+  const dropsRef = useRef(drops);
+  dropsRef.current = drops;
+
+  // Marker registries so re-renders can clear stale DOM markers.
+  const dropMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const spotMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const userMarkerRef  = useRef<maplibregl.Marker | null>(null);
+  const clusterRef     = useRef<Supercluster<DropFeatureProps> | null>(null);
 
   const nearbyDrops = useMemo(() => {
     if (!userLocation) return [];
@@ -323,41 +247,213 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
       .sort((a, b) => a.dist - b.dist);
   }, [drops, userLocation]);
 
-  // Check permission state, trigger request when appropriate, watch for changes.
-  // Mirrors goyin-front's navigator.permissions.query pattern.
+  // ── Map init (runs once) ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: [0, 20],
+      zoom: 2.4,
+      maxPitch: 62,
+      attributionControl: false,
+    });
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    map.touchZoomRotate.enableRotation();
+    mapRef.current = map;
+
+    map.on("load", () => {
+      // Claim-radius circle source + layers (updated when user location changes)
+      map.addSource("gd-claim-radius", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "gd-claim-radius-fill",
+        type: "fill",
+        source: "gd-claim-radius",
+        paint: { "fill-color": "#3B82F6", "fill-opacity": 0.07 },
+      });
+      map.addLayer({
+        id: "gd-claim-radius-line",
+        type: "line",
+        source: "gd-claim-radius",
+        paint: { "line-color": "#3B82F6", "line-width": 1.5, "line-dasharray": [2, 2], "line-opacity": 0.6 },
+      });
+
+      // 3D buildings at close zoom — pure wow-factor; guarded because layer
+      // naming varies across style versions and this must never break the map.
+      try {
+        const style = map.getStyle();
+        const srcId = Object.keys(style.sources ?? {}).find(
+          (k) => (style.sources as Record<string, { type?: string }>)[k]?.type === "vector",
+        );
+        if (srcId) {
+          map.addLayer({
+            id: "gd-3d-buildings",
+            type: "fill-extrusion",
+            source: srcId,
+            "source-layer": "building",
+            minzoom: 14.5,
+            paint: {
+              "fill-extrusion-color": "#1e2030",
+              "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
+              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+              "fill-extrusion-opacity": 0.7,
+            },
+          });
+        }
+      } catch { /* 3D buildings are optional — never block the map */ }
+
+      setMapReady(true);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+      setMapReady(false);
+    };
+  }, []);
+
+  // ── Drop clustering + markers ───────────────────────────────────────────────
+  const renderDropMarkers = useCallback(() => {
+    const map = mapRef.current;
+    const index = clusterRef.current;
+    if (!map || !index) return;
+
+    dropMarkersRef.current.forEach((m) => m.remove());
+    dropMarkersRef.current = [];
+
+    const b = map.getBounds();
+    const clusters = index.getClusters(
+      [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      Math.floor(map.getZoom()),
+    );
+
+    for (const feature of clusters) {
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      let el: HTMLDivElement;
+
+      if ("cluster" in feature.properties && feature.properties.cluster) {
+        const clusterId = feature.properties.cluster_id as number;
+        el = makeClusterElement(feature.properties.point_count as number);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const zoom = index.getClusterExpansionZoom(clusterId);
+          map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 18), duration: 600 });
+        });
+      } else {
+        const drop = dropsRef.current[(feature.properties as DropFeatureProps).dropIndex];
+        if (!drop) continue;
+        el = makeDropElement(drop);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onDropClickRef.current(drop);
+        });
+      }
+
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([lng, lat])
+        .addTo(map);
+      dropMarkersRef.current.push(marker);
+    }
+  }, []);
+
+  // Rebuild the cluster index when drops change, then re-render.
+  useEffect(() => {
+    if (!mapReady) return;
+    const index = new Supercluster<DropFeatureProps>({ radius: 62, maxZoom: 17 });
+    index.load(
+      drops.map((d, i) => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [gpsToDeg(d.lng), gpsToDeg(d.lat)] },
+        properties: { dropIndex: i },
+      })),
+    );
+    clusterRef.current = index;
+    renderDropMarkers();
+  }, [drops, mapReady, renderDropMarkers]);
+
+  // Re-cluster as the viewport moves.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const handler = () => renderDropMarkers();
+    map.on("moveend", handler);
+    map.on("zoomend", handler);
+    return () => {
+      map.off("moveend", handler);
+      map.off("zoomend", handler);
+    };
+  }, [mapReady, renderDropMarkers]);
+
+  // ── Shop (GoodSpot) markers ─────────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    spotMarkersRef.current.forEach((m) => m.remove());
+    spotMarkersRef.current = spots.map((spot) => {
+      const el = makeSpotElement(spot);
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onSpotClickRef.current?.(spot);
+      });
+      return new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([spot.lng, spot.lat])
+        .addTo(map);
+    });
+    return () => {
+      spotMarkersRef.current.forEach((m) => m.remove());
+      spotMarkersRef.current = [];
+    };
+  }, [spots, mapReady]);
+
+  // ── User location marker + claim radius ────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (userLocation) {
+      if (!userMarkerRef.current) {
+        userMarkerRef.current = new maplibregl.Marker({ element: makeUserElement(), anchor: "center" })
+          .setLngLat([userLocation.lng, userLocation.lat])
+          .addTo(map);
+      } else {
+        userMarkerRef.current.setLngLat([userLocation.lng, userLocation.lat]);
+      }
+      const src = map.getSource("gd-claim-radius") as maplibregl.GeoJSONSource | undefined;
+      src?.setData(circlePolygon(userLocation.lat, userLocation.lng, CLAIM_RADIUS_M));
+    }
+  }, [userLocation, mapReady]);
+
+  // ── Geolocation permission flow ─────────────────────────────────────────────
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
 
     function doRequest() {
-      // Fast low-accuracy fix first, then the watcher handles high-accuracy updates
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           onUserLocation(loc);
           setLocPerm("granted");
-          if (mapRef.current) mapRef.current.flyTo([loc.lat, loc.lng], 16, { duration: 1.2 });
+          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 16, pitch: 48, duration: 1800 });
         },
         (err) => {
           if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
         },
-        { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 }
+        { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 },
       );
     }
 
     if (!navigator.permissions) {
-      // Older Safari — call directly, which triggers the browser dialog
       doRequest();
       return;
     }
 
     navigator.permissions.query({ name: "geolocation" }).then((result) => {
       setLocPerm(result.state as LocPerm);
-
-      if (result.state === "granted" || result.state === "prompt") {
-        // "granted" → silent success; "prompt" → triggers the browser permission dialog
-        doRequest();
-      }
-
+      if (result.state === "granted" || result.state === "prompt") doRequest();
       result.onchange = () => {
         const s = result.state as LocPerm;
         setLocPerm(s);
@@ -366,8 +462,19 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
           doRequest();
         }
       };
-    }).catch(() => doRequest()); // fallback: just try
+    }).catch(() => doRequest());
   }, [onUserLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Continuous high-accuracy watch once permission is granted.
+  useEffect(() => {
+    if (locPerm !== "granted" || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => onUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [locPerm, onUserLocation]);
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -380,7 +487,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
       (pos) => {
         const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         onUserLocation(loc);
-        if (mapRef.current) mapRef.current.flyTo([loc.lat, loc.lng], 17, { duration: 1.2 });
+        mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 17, pitch: 48, duration: 1400 });
         setLocating(false);
         setLocPerm("granted");
       },
@@ -396,7 +503,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
         }
         setTimeout(() => setLocateErr(""), 5_000);
       },
-      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 },
     );
   }, [onUserLocation]);
 
@@ -406,40 +513,16 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
       setTimeout(() => setLocateErr(""), 5_000);
       return;
     }
-
-    // Already have a fix — just pan to it
     if (mapRef.current && userLocation) {
-      mapRef.current.flyTo([userLocation.lat, userLocation.lng], 17, { duration: 1.2 });
+      mapRef.current.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 17, pitch: 48, duration: 1400 });
       return;
     }
-
     requestLocation();
   }
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <MapContainer
-        key={mapKey}
-        center={[20, 0]}
-        zoom={3}
-        style={{ width: "100%", height: "100%" }}
-        zoomControl={false}
-      >
-        <TileLayer
-          url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          maxZoom={20}
-        />
-
-        {userLocation && <UserLocationMarker location={userLocation} />}
-
-        {userLocation && <ClaimRadiusCircle center={userLocation} />}
-        <ClusterLayer drops={drops} onDropClick={onDropClick} />
-
-        {/* Watch continuously once permission is confirmed — avoids re-triggering the dialog */}
-        {locPerm === "granted" && <LocationWatcher onLocation={onUserLocation} />}
-        <MapRefCapture mapRef={mapRef} />
-      </MapContainer>
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
       {/* ── Location status banner ────────────────────────────────────────── */}
       {locPerm === "denied" && !locateErr && (
@@ -523,7 +606,6 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
       {/* ── Nearby drops chip + list ──────────────────────────────────────── */}
       {nearbyDrops.length > 0 && (
         <>
-          {/* Backdrop to dismiss list */}
           {showNearbyList && (
             <div
               onClick={() => setShowNearbyList(false)}
@@ -531,7 +613,6 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
             />
           )}
 
-          {/* Drop list (multiple nearby) */}
           {showNearbyList && nearbyDrops.length > 1 && (
             <div style={{
               position: "absolute",
@@ -581,7 +662,6 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
             </div>
           )}
 
-          {/* Chip */}
           <button
             onClick={() => {
               if (nearbyDrops.length === 1) {
@@ -644,7 +724,9 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
             key={delta}
             onClick={(e) => {
               e.stopPropagation();
-              if (mapRef.current) mapRef.current.setZoom(mapRef.current.getZoom() + delta);
+              if (!mapRef.current) return;
+              if (delta === 1) mapRef.current.zoomIn({ duration: 250 });
+              else mapRef.current.zoomOut({ duration: 250 });
             }}
             style={{
               width: "36px",

@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Loader2, Plus, ArrowLeft, Sparkles } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Nav } from "@/components/Nav";
@@ -239,7 +239,7 @@ function CampaignDropList({ drops, color }: { drops: Drop[]; color: string }) {
 
 export default function SponsorPage() {
   const { address, isConnected } = useAccount();
-  const { login, ready, authenticated } = usePrivy();
+  const { login, ready, authenticated } = useAuth();
 
   const [campaigns,      setCampaigns]      = useState<Campaign[]>([]);
   const [campaignClaims, setCampaignClaims] = useState<Record<string, number>>({});

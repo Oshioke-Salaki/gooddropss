@@ -1,0 +1,34 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- GoodDrops — "The Drop Pin": a location pin that is also a falling coin of G$.
+       Brutalist: ink field, lime mark, hard shadow. -->
+  <rect width="512" height="512" rx="112" fill="#111111"/>
+
+  <!-- hard offset shadow of the pin (brutalist drop shadow) -->
+  <path d="M270 429 C 240 386 152 308 152 222 A 118 118 0 1 1 388 222 C 388 308 300 386 270 429 Z"
+        fill="#000000" opacity="0.55"/>
+
+  <!-- landing glow where the drop hits the ground -->
+  <ellipse cx="256" cy="446" rx="66" ry="13" fill="#BFFD00" opacity="0.28"/>
+  <ellipse cx="256" cy="446" rx="34" ry="7" fill="#BFFD00" opacity="0.5"/>
+
+  <!-- the pin / droplet -->
+  <path d="M256 415 C 226 372 138 294 138 208 A 118 118 0 1 1 374 208 C 374 294 286 372 256 415 Z"
+        fill="#BFFD00"/>
+
+  <!-- coin face inside the pin head -->
+  <circle cx="256" cy="208" r="86" fill="#111111"/>
+  <circle cx="256" cy="208" r="86" stroke="#BFFD00" stroke-width="6" fill="none"/>
+
+  <!-- G$ -->
+  <text x="256" y="238" text-anchor="middle"
+        font-family="'Space Grotesk', Arial, Helvetica, sans-serif"
+        font-size="92" font-weight="900" fill="#BFFD00" letter-spacing="-2">G$</text>
+
+  <!-- motion ticks: the coin is dropping -->
+  <rect x="243" y="44" width="26" height="10" rx="5" fill="#BFFD00" opacity="0.35"/>
+  <rect x="200" y="60" width="18" height="8" rx="4" fill="#BFFD00" opacity="0.2"/>
+  <rect x="296" y="60" width="18" height="8" rx="4" fill="#BFFD00" opacity="0.2"/>
+
+  <!-- sparkle -->
+  <path d="M398 118 l7 18 18 7 -18 7 -7 18 -7 -18 -18 -7 18 -7 z" fill="#BFFD00" opacity="0.9"/>
+</svg>

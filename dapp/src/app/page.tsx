@@ -10,9 +10,10 @@ import { ActivityTicker } from "@/components/ActivityTicker";
 import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
 import { ColdStartCard } from "@/components/ColdStartCard";
+import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
-import type { Drop, LatLng } from "@/types";
+import type { Drop, LatLng, Spot } from "@/types";
 import { DROP_STATUS } from "@/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -33,13 +34,27 @@ export default function HomePage() {
   const [showChain,  setShowChain]      = useState(false);
   const [huntingDrop, setHuntingDrop]   = useState<Drop | null>(null);
   const [userLoc, setUserLoc]           = useState<LatLng | null>(null);
+  const [spots, setSpots]               = useState<Spot[]>([]);
+  const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
 
   useEffect(() => {
     fetchDrops();
   }, [fetchDrops]);
 
+  // GoodSpots — merchants that accept G$ nearby
+  useEffect(() => {
+    fetch("/api/spots")
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d.spots)) setSpots(d.spots); })
+      .catch(() => {});
+  }, []);
+
   const handleDropClick = useCallback((drop: Drop) => {
     setSelectedDrop(drop);
+  }, []);
+
+  const handleSpotClick = useCallback((spot: Spot) => {
+    setSelectedSpot(spot);
   }, []);
 
   const handleUserLocation = useCallback((loc: LatLng) => {
@@ -65,6 +80,8 @@ export default function HomePage() {
           onDropClick={handleDropClick}
           userLocation={userLoc}
           onUserLocation={handleUserLocation}
+          spots={spots}
+          onSpotClick={handleSpotClick}
         />
       </div>
 
@@ -183,6 +200,13 @@ export default function HomePage() {
         onClose={() => setSelectedDrop(null)}
         onSuccess={() => { if (selectedDrop) markClaimed(selectedDrop.id); setSelectedDrop(null); }}
         onHunt={(drop) => { setSelectedDrop(null); setHuntingDrop(drop); }}
+      />
+
+      {/* GoodSpots — proximity-gated G$ checkout at merchant locations */}
+      <ShopSheet
+        spot={selectedSpot}
+        userLocation={userLoc}
+        onClose={() => setSelectedSpot(null)}
       />
     </div>
   );

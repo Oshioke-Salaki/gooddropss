@@ -5,7 +5,14 @@ export function getRedis(): Redis | null {
   const url   = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return null;
-  return new Redis({ url, token });
+  return new Redis({
+    url,
+    token,
+    // Fail fast: the default (5 retries, exponential backoff) makes API routes
+    // hang for 20–30s when the network blips. One quick retry, then callers'
+    // graceful fallbacks kick in.
+    retry: { retries: 1, backoff: () => 300 },
+  });
 }
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
@@ -18,4 +25,9 @@ export const keys = {
   streak:           (address: string) => `gd:streak:${address.toLowerCase()}`,
   privateDrop:      (token: string)   => `gd:privdrop:${token}`,
   velocity:         (address: string) => `gd:velocity:${address.toLowerCase()}`,
+  // GoodSpots — merchants that accept G$ at a physical location
+  spot:             (id: string)      => `gd:spot:${id}`,
+  spotsAll:         ()                => `gd:spots:all`,
+  spotsByOwner:     (addr: string)    => `gd:spots:owner:${addr.toLowerCase()}`,
+  spotPayments:     (id: string)      => `gd:spot:payments:${id}`,
 };

@@ -50,3 +50,25 @@ export interface ChainStop {
   amount: string;
   clue:   string;
 }
+
+// ── GoodSpots: merchants that accept G$ at a physical location ────────────────
+
+export interface Spot {
+  id:           string;
+  name:         string;
+  description:  string;
+  category:     string;        // e.g. "food", "retail", "services"
+  discount:     string;        // human-readable offer, e.g. "10% off with G$"
+  wallet:       string;        // address that receives G$ payments
+  ownerAddress: string;        // who registered the spot
+  lat:          number;        // degrees
+  lng:          number;        // degrees
+  createdAt:    number;        // unix seconds
+}
+
+export interface SpotPayment {
+  payer:  string;
+  amount: string;   // G$ wei as string (JSON-safe)
+  tx:     string;
+  ts:     number;
+}

@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useAccount, useWriteContract } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAuth } from "@/hooks/useAuth";
 import { Navigation, Copy, Share2, Check } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
@@ -54,7 +54,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     ? (new URLSearchParams(window.location.search).get("k") ?? undefined)
     : undefined;
 
-  const { login, authenticated } = usePrivy();
+  const { login, authenticated } = useAuth();
   const { address }              = useAccount();
   const isConnected              = authenticated && !!address;
   const { isVerified }           = useGoodDollarProfile();
@@ -715,7 +715,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 // ── Layout shell ──────────────────────────────────────────────────────────────
 
 function ShellWalletButton() {
-  const { login, logout, authenticated, ready } = usePrivy();
+  const { login, logout, authenticated, ready } = useAuth();
   const { address } = useAccount();
   if (!ready) return null;
   const displayAddr = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "";
@@ -734,7 +734,7 @@ function ShellWalletButton() {
       padding: "7px 16px", fontWeight: 800, fontSize: 13,
       cursor: "pointer", fontFamily: "inherit",
     }}>
-      Connect
+      Sign In
     </button>
   );
 }

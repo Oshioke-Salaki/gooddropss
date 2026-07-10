@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAuth } from "@/hooks/useAuth";
 import type { HunterStreak } from "@/types";
 
 /**
@@ -12,7 +12,7 @@ import type { HunterStreak } from "@/types";
  */
 export function StreakBadge() {
   const { address } = useAccount();
-  const { authenticated } = usePrivy();
+  const { authenticated } = useAuth();
   // Privy is authoritative — wagmi can report a stale address after logout.
   const signedInAddress = authenticated && address ? address : null;
   const [streak, setStreak] = useState<HunterStreak | null>(null);

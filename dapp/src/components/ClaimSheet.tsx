@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAccount, useWriteContract } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
+import { useAuth } from "@/hooks/useAuth";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
@@ -53,7 +53,7 @@ interface Props {
 
 export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: Props) {
   const { address } = useAccount();
-  const { authenticated } = usePrivy();
+  const { authenticated } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
   const { isVerified } = useGoodDollarProfile();

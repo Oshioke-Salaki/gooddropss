@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useSwitchChain, useDisconnect } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
+import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
 import { Map, Package, Trophy } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
@@ -19,6 +19,7 @@ const links = [
   { href: "/", label: "Map" },
   { href: "/my-drops", label: "My Drops" },
   { href: "/leaderboard", label: "Rankings" },
+  { href: "/merchant", label: "Spots 🏪" },
   { href: "/sponsor", label: "Sponsor ⭐" },
 ];
 
@@ -35,30 +36,13 @@ function WalletButton({
   isVerificationLoading,
   onOpenVerify,
 }: WalletButtonProps) {
-  const { login, logout, ready, authenticated } = usePrivy();
-  const { wallets } = useWallets();
-  const { address: wagmiAddress, chainId } = useAccount();
+  const { login, logout, ready, authenticated } = useAuth();
+  const { address, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
-  const { disconnect } = useDisconnect();
 
-  // Must call wagmi disconnect FIRST, then Privy logout.
-  // Privy-only logout leaves the wagmi connector in localStorage so wagmi's
-  // reconnect() picks it back up on the next login — causing the stale-address bug.
-  async function handleDisconnect() {
-    disconnect(); // removes connector from localStorage, clears wagmi state
-    await logout(); // clears Privy session
-  }
+  // wagmi is the single source of truth now, so logout is a clean disconnect.
+  const handleDisconnect = logout;
 
-  // Privy is the source of truth. Wagmi persists connector state in localStorage
-  // and can return a stale address from a previous session after logout + re-login
-  // with a different method. Cross-validate: only use wagmiAddress if it belongs
-  // to one of the wallets in the current Privy session; otherwise fall back to
-  // the first Privy-managed wallet.
-  const sessionAddresses = new Set(wallets.map((w) => w.address.toLowerCase()));
-  const address: `0x${string}` | undefined =
-    wagmiAddress && sessionAddresses.has(wagmiAddress.toLowerCase())
-      ? wagmiAddress
-      : (wallets[0]?.address as `0x${string}` | undefined);
   const { balance } = useGoodDollarProfile();
   const [isNarrow, setIsNarrow] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -98,7 +82,7 @@ function WalletButton({
           whiteSpace: "nowrap",
         }}
       >
-        Connect
+        Sign In
       </button>
     );
   }

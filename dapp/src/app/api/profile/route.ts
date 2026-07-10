@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyMessage } from "viem";
 
-const redis = Redis.fromEnv();
+// Fail fast on network blips — the default (5 retries, exponential backoff)
+// makes requests hang for 20–30s when DNS/network hiccups.
+const redis = Redis.fromEnv({ retry: { retries: 1, backoff: () => 300 } });
 
 const USERNAME_RE  = /^[a-zA-Z0-9_-]{3,24}$/;
 const RESERVED     = new Set(["admin","gooddrops","gooddollar","celo","support","system"]);
@@ -13,9 +15,15 @@ export async function GET(req: NextRequest) {
   const address = req.nextUrl.searchParams.get("address")?.toLowerCase();
   if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
 
-  const raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${address}`);
-  if (!raw) return NextResponse.json(null);
-  return NextResponse.json(raw);
+  try {
+    const raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${address}`);
+    if (!raw) return NextResponse.json(null);
+    return NextResponse.json(raw);
+  } catch (e) {
+    // Redis unreachable — profiles are cosmetic, degrade to "no username" instead of 500
+    console.error("[profile/get]", e);
+    return NextResponse.json(null);
+  }
 }
 
 // ── POST /api/profile ──────────────────────────────────────────────────────

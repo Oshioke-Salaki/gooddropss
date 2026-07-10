@@ -1,0 +1,33 @@
+{
+  "name": "gooddrops-migrate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One-time bridge: link a Focus-Pet verified wallet (Privy/Web3Auth) to a new GoodDrops Magic wallet via GoodDollar account linking.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@goodsdks/citizen-sdk": "^1.2.5",
+    "@goodsdks/identity-sdk": "^1.0.5",
+    "@privy-io/react-auth": "^3.28.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@web3auth/modal": "^10.0.0",
+    "framer-motion": "^11.12.0",
+    "lucide-react": "^1.17.0",
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
