@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAccount, useReadContract } from "wagmi";
+import { Loader2 } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { fetchAllDrops } from "@/lib/subgraph";
 import { resolveRoots } from "@/lib/roots";
@@ -129,20 +130,31 @@ export default function AnalyticsPage() {
         </div>
         <p style={{ color: "#5a5a5a", fontSize: 14, marginBottom: 20 }}>Live from the subgraph + contract.</p>
 
-        {/* Security posture — the single most important operational flag */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 12,
-          background: identityRequired ? "#111" : "#FFE5E5",
-          color: identityRequired ? "#BFFD00" : "#C81E1E",
-          border: `2.5px solid ${identityRequired ? "#111" : "#FF3B3B"}`,
-          borderRadius: 14, padding: "13px 16px", marginBottom: 20, fontWeight: 800, fontSize: 13.5,
-        }}>
-          <span style={{ fontSize: 20 }}>{identityRequired ? "🛡️" : "⚠️"}</span>
-          {identityRequired === undefined ? "Checking claim protection…"
-            : identityRequired
-              ? "Identity required to claim — Sybil-protected ✓"
-              : "Identity NOT required — claims are open to anyone (farmable). Call setIdentityRequired(true)."}
-        </div>
+        {/* Security posture — the single most important operational flag.
+            Three states: loading (neutral), protected (dark/lime), open (red). */}
+        {(() => {
+          const loading   = identityRequired === undefined;
+          const protectedOn = identityRequired === true;
+          const bg     = loading ? "#f0efe9" : protectedOn ? "#111" : "#FFE5E5";
+          const fg     = loading ? "#888"    : protectedOn ? "#BFFD00" : "#C81E1E";
+          const border = loading ? "#ddd"    : protectedOn ? "#111" : "#FF3B3B";
+          return (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 12,
+              background: bg, color: fg, border: `2.5px solid ${border}`,
+              borderRadius: 14, padding: "13px 16px", marginBottom: 20, fontWeight: 800, fontSize: 13.5,
+            }}>
+              {loading
+                ? <Loader2 size={18} className="animate-spin" style={{ flexShrink: 0 }} />
+                : <span style={{ fontSize: 20 }}>{protectedOn ? "🛡️" : "⚠️"}</span>}
+              {loading
+                ? "Checking claim protection…"
+                : protectedOn
+                  ? "Identity required to claim — Sybil-protected ✓"
+                  : "Identity NOT required — claims are open to anyone (farmable). Call setIdentityRequired(true)."}
+            </div>
+          );
+        })()}
 
         {error && <p style={{ color: "#C81E1E", fontWeight: 700 }}>{error}</p>}
         {!m ? (
