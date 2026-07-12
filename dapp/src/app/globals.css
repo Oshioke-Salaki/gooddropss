@@ -1,4 +1,3 @@
-@import "leaflet/dist/leaflet.css";
 @import "tailwindcss";
 
 @theme {
@@ -102,12 +101,11 @@
 }
 .hunt-ring-pulse { animation: hunt-ring-pulse 1.2s ease-in-out infinite; }
 
-/* ── Leaflet overrides ───────────────────────────────────────────────────── */
-.leaflet-container {
+/* ── MapLibre overrides ──────────────────────────────────────────────────── */
+.maplibregl-map {
   font-family: var(--font-sans);
-  background: #f2f2f2;
 }
-.leaflet-control-attribution {
+.maplibregl-ctrl-attrib {
   background: rgba(245, 244, 240, 0.85) !important;
   font-size: 10px !important;
 }

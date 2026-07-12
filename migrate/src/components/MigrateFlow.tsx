@@ -77,6 +77,12 @@ export function MigrateFlow() {
         body: JSON.stringify({ email: email.trim() }),
       });
       const data = await res.json();
+      // A failed lookup (server/DB error) must NOT masquerade as "no account
+      // found" — that would wrongly tell real users they aren't in our records.
+      if (!res.ok) {
+        setErr(data.error ?? "Couldn't reach our records. Please try again.");
+        return;
+      }
       if (!data.found || !data.migratable) { setStep("notfound"); return; }
       setAuthType(data.authType as AuthType);
       setOldHint(data.wallet ?? null);

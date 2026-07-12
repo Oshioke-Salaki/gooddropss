@@ -1,59 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import L from "leaflet";
+import { useEffect, useRef } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { Plus, Minus } from "lucide-react";
 
-let mountCount = 0;
-
-// Flies the map to a programmatic target (search result or "my location").
-// Uses a seq counter so the same coords can retrigger a fly.
-function FlyController({
-  target,
-}: {
-  target: { lat: number; lng: number; seq: number } | null;
-}) {
-  const map = useMap();
-  const lastSeq = useRef(-1);
-  useEffect(() => {
-    if (!target || target.seq === lastSeq.current) return;
-    lastSeq.current = target.seq;
-    map.flyTo([target.lat, target.lng], 17, { animate: true, duration: 0.7 });
-  }, [target, map]);
-  return null;
-}
-
-// Reports movestart (dragging) and moveend (settled) to parent.
-function MoveHandler({
-  onDrag,
-  onSettle,
-}: {
-  onDrag: () => void;
-  onSettle: (lat: number, lng: number) => void;
-}) {
-  useMapEvents({
-    movestart: () => onDrag(),
-    moveend: (e) => {
-      const c = (e.target as L.Map).getCenter();
-      onSettle(c.lat, c.lng);
-    },
-  });
-  return null;
-}
-
-// Captures the Leaflet map instance into a ref owned by the parent.
-function MapRefCapture({
-  mapRef,
-}: {
-  mapRef: React.MutableRefObject<L.Map | null>;
-}) {
-  const map = useMap();
-  useEffect(() => {
-    mapRef.current = map;
-    return () => { mapRef.current = null; };
-  }, [map, mapRef]);
-  return null;
-}
+// Light vector style (keyless) — matches the old Carto "light" look, but as
+// vector tiles: sharper, faster, and no API key / rate limits.
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
 export interface Props {
   initialCenter: { lat: number; lng: number };
@@ -68,34 +21,57 @@ export default function LocationPickerMap({
   onCenterChange,
   onDragChange,
 }: Props) {
-  const [mapKey] = useState(() => ++mountCount);
-  const mapRef = useRef<L.Map | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef       = useRef<maplibregl.Map | null>(null);
+  const lastSeqRef   = useRef(-1);
+
+  // Latest callbacks in refs so the init effect never needs to re-run.
+  const onCenterRef = useRef(onCenterChange);
+  onCenterRef.current = onCenterChange;
+  const onDragRef = useRef(onDragChange);
+  onDragRef.current = onDragChange;
+
+  // ── Init (once) ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: [initialCenter.lng, initialCenter.lat],
+      zoom: 17,
+      attributionControl: false,
+    });
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    mapRef.current = map;
+
+    // The pin is a fixed crosshair in the parent; we just report the centre.
+    map.on("movestart", () => onDragRef.current(true));
+    map.on("moveend", () => {
+      const c = map.getCenter();
+      onDragRef.current(false);
+      onCenterRef.current(c.lat, c.lng);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+    // initialCenter is only the starting position — intentionally not a dep.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fly to a programmatic target (search result / "my location") ──────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !flyTarget) return;
+    if (flyTarget.seq === lastSeqRef.current) return;
+    lastSeqRef.current = flyTarget.seq;
+    map.flyTo({ center: [flyTarget.lng, flyTarget.lat], zoom: 17, duration: 700 });
+  }, [flyTarget]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <MapContainer
-        key={mapKey}
-        center={[initialCenter.lat, initialCenter.lng]}
-        zoom={17}
-        style={{ width: "100%", height: "100%" }}
-        zoomControl={false}
-      >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={20}
-        />
-        <MoveHandler
-          onDrag={() => onDragChange(true)}
-          onSettle={(lat, lng) => {
-            onDragChange(false);
-            onCenterChange(lat, lng);
-          }}
-        />
-        <FlyController target={flyTarget} />
-        <MapRefCapture mapRef={mapRef} />
-      </MapContainer>
+      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
       {/* Zoom controls */}
       <div
@@ -115,7 +91,12 @@ export default function LocationPickerMap({
         {[{ Icon: Plus, delta: 1 }, { Icon: Minus, delta: -1 }].map(({ Icon, delta }) => (
           <button
             key={delta}
-            onClick={() => mapRef.current?.setZoom((mapRef.current.getZoom()) + delta)}
+            onClick={() => {
+              const map = mapRef.current;
+              if (!map) return;
+              if (delta === 1) map.zoomIn({ duration: 250 });
+              else map.zoomOut({ duration: 250 });
+            }}
             style={{
               width: 36, height: 36,
               background: "#fff",

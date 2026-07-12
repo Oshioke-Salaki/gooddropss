@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
-import L from "leaflet";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import dynamic from "next/dynamic";
 import { useWriteContract } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
@@ -14,53 +14,11 @@ import {
 } from "@/lib/contracts";
 import { degToGps, buildCampaignHint, formatG$ } from "@/lib/utils";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
-import { decodeEventLog } from "viem";
 import type { Campaign } from "@/types";
-
-let mountCount = 0;
 
 interface FlyTarget { lat: number; lng: number; seq: number; }
 
-function FlyController({ target }: { target: FlyTarget | null }) {
-  const map = useMap();
-  const lastSeq = useRef(-1);
-  useEffect(() => {
-    if (!target || target.seq === lastSeq.current) return;
-    lastSeq.current = target.seq;
-    map.flyTo([target.lat, target.lng], 16, { animate: true, duration: 0.8 });
-  }, [target, map]);
-  return null;
-}
-
-function ZoomControls() {
-  const map = useMap();
-  return (
-    <div style={{
-      position: "absolute", top: 12, right: 12, zIndex: 1000,
-      display: "flex", flexDirection: "column",
-      border: "2px solid #111", borderRadius: 10, overflow: "hidden",
-      boxShadow: "2px 2px 0 #111",
-    }}>
-      {[{ label: "+", delta: 1 }, { label: "−", delta: -1 }].map(({ label, delta }) => (
-        <button
-          key={delta}
-          onClick={() => map.setZoom(map.getZoom() + delta)}
-          style={{
-            width: 36, height: 36, background: "#fff", border: "none",
-            borderBottom: delta === 1 ? "1.5px solid #111" : "none",
-            cursor: "pointer", fontFamily: "inherit",
-            fontWeight: 900, fontSize: 18, color: "#111",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
 const DURATIONS = [
   { label: "1h",  seconds: 3_600 },
@@ -72,74 +30,38 @@ const DURATIONS = [
 interface QueuedDrop { id: string; lat: number; lng: number; amount: string; hint: string; }
 type Status = "idle" | "approving" | "deploying" | "done" | "error";
 
-function DropPlacerLayer({ drops, onAdd, onRemove, campaign }: {
-  drops: QueuedDrop[]; onAdd: (lat: number, lng: number) => void;
-  onRemove: (id: string) => void; campaign: Campaign;
-}) {
-  useMapEvents({
-    click: (e) => {
-      if ((e.originalEvent.target as HTMLElement).closest(".leaflet-marker-icon")) return;
-      onAdd(e.latlng.lat, e.latlng.lng);
-    },
-  });
-  return (
-    <>
-      {drops.map((drop, i) => (
-        <Marker
-          key={drop.id}
-          position={[drop.lat, drop.lng]}
-          icon={L.divIcon({
-            className: "",
-            html: `<div style="
-              width:46px;height:46px;
-              background:${campaign.color};
-              border:2.5px solid #111;
-              border-radius:50%;
-              display:flex;flex-direction:column;align-items:center;justify-content:center;
-              font-weight:900;font-size:10px;color:#111;
-              cursor:pointer;font-family:'Space Grotesk',sans-serif;
-              user-select:none;box-shadow:2px 2px 0 #111;gap:1px;
-            "><span style="font-size:12px;line-height:1">${i + 1}</span><span>${drop.amount}G$</span></div>`,
-            iconSize: [46, 46],
-            iconAnchor: [23, 23],
-          })}
-          eventHandlers={{ click: () => onRemove(drop.id) }}
-        />
-      ))}
-    </>
-  );
+// Queued-drop pin (numbered, click to remove).
+function queuedPinEl(index: number, amount: string, color: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.innerHTML = `<div style="
+    width:46px;height:46px;
+    background:${color};
+    border:2.5px solid #111;
+    border-radius:50%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-weight:900;font-size:10px;color:#111;
+    cursor:pointer;font-family:'Space Grotesk',sans-serif;
+    user-select:none;box-shadow:2px 2px 0 #111;gap:1px;
+  "><span style="font-size:12px;line-height:1">${index + 1}</span><span>${amount}G$</span></div>`;
+  return el;
 }
 
-// Ghost pin that follows the cursor to preview where the drop will land
-function PreviewPin({ campaign, amount }: { campaign: Campaign; amount: string }) {
-  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
-  useMapEvents({
-    mousemove: (e) => setPos({ lat: e.latlng.lat, lng: e.latlng.lng }),
-    mouseout:  ()  => setPos(null),
-  });
-  if (!pos) return null;
-  return (
-    <Marker
-      position={[pos.lat, pos.lng]}
-      interactive={false}
-      icon={L.divIcon({
-        className: "",
-        html: `<div style="
-          width:46px;height:46px;
-          background:${campaign.color};
-          border:2.5px dashed #111;
-          border-radius:50%;
-          display:flex;flex-direction:column;align-items:center;justify-content:center;
-          font-weight:900;font-size:10px;color:#111;
-          opacity:0.65;
-          font-family:'Space Grotesk',sans-serif;
-          pointer-events:none;user-select:none;gap:1px;
-        "><span style="font-size:14px;line-height:1">+</span><span>${amount || "?"}G$</span></div>`,
-        iconSize: [46, 46],
-        iconAnchor: [23, 23],
-      })}
-    />
-  );
+// Ghost pin that follows the cursor to preview where the drop will land.
+function previewPinEl(amount: string, color: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.pointerEvents = "none";
+  el.innerHTML = `<div style="
+    width:46px;height:46px;
+    background:${color};
+    border:2.5px dashed #111;
+    border-radius:50%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-weight:900;font-size:10px;color:#111;
+    opacity:0.65;
+    font-family:'Space Grotesk',sans-serif;
+    pointer-events:none;user-select:none;gap:1px;
+  "><span style="font-size:14px;line-height:1">+</span><span>${amount || "?"}G$</span></div>`;
+  return el;
 }
 
 const DynamicMap = dynamic(
@@ -148,25 +70,109 @@ const DynamicMap = dynamic(
     onRemove: (id: string) => void; campaign: Campaign; flyTarget: FlyTarget | null;
     defaultAmount: string;
   }) {
-    const [mapKey] = useState(() => ++mountCount);
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const mapRef       = useRef<maplibregl.Map | null>(null);
+    const pinsRef      = useRef<maplibregl.Marker[]>([]);
+    const previewRef   = useRef<maplibregl.Marker | null>(null);
+    const lastSeqRef   = useRef(-1);
+    const [ready, setReady] = useState(false);
+
+    // Latest props/callbacks in refs so the init effect runs exactly once.
+    const onAddRef    = useRef(onAdd);        onAddRef.current = onAdd;
+    const colorRef    = useRef(campaign.color); colorRef.current = campaign.color;
+    const amountRef   = useRef(defaultAmount);  amountRef.current = defaultAmount;
+
+    // ── Init (once) ────────────────────────────────────────────────────────
+    useEffect(() => {
+      if (!containerRef.current || mapRef.current) return;
+      const map = new maplibregl.Map({
+        container: containerRef.current,
+        style: MAP_STYLE,
+        center: [3.3792, 6.5244],
+        zoom: 13,
+        attributionControl: false,
+      });
+      map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+      mapRef.current = map;
+      map.getCanvas().style.cursor = "crosshair";
+
+      // Click the map (not a pin) to queue a drop. DOM pins stop their own
+      // propagation, so this only fires for genuine map clicks.
+      map.on("click", (e) => onAddRef.current(e.lngLat.lat, e.lngLat.lng));
+
+      // Ghost preview pin follows the cursor.
+      map.on("mousemove", (e) => {
+        if (!previewRef.current) {
+          previewRef.current = new maplibregl.Marker({
+            element: previewPinEl(amountRef.current, colorRef.current),
+            anchor: "center",
+          }).setLngLat(e.lngLat).addTo(map);
+        } else {
+          previewRef.current.setLngLat(e.lngLat);
+        }
+      });
+      map.on("mouseout", () => { previewRef.current?.remove(); previewRef.current = null; });
+
+      map.on("load", () => setReady(true));
+      return () => { map.remove(); mapRef.current = null; setReady(false); };
+    }, []);
+
+    // ── Queued pins ────────────────────────────────────────────────────────
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !ready) return;
+      pinsRef.current.forEach((m) => m.remove());
+      pinsRef.current = drops.map((drop, i) => {
+        const el = queuedPinEl(i, drop.amount, campaign.color);
+        el.addEventListener("click", (ev) => { ev.stopPropagation(); onRemove(drop.id); });
+        return new maplibregl.Marker({ element: el, anchor: "center" })
+          .setLngLat([drop.lng, drop.lat])
+          .addTo(map);
+      });
+    }, [drops, campaign.color, onRemove, ready]);
+
+    // ── Fly to target ──────────────────────────────────────────────────────
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !flyTarget || flyTarget.seq === lastSeqRef.current) return;
+      lastSeqRef.current = flyTarget.seq;
+      map.flyTo({ center: [flyTarget.lng, flyTarget.lat], zoom: 16, duration: 800 });
+    }, [flyTarget]);
+
     return (
-      <MapContainer
-        key={mapKey}
-        center={[6.5244, 3.3792]}
-        zoom={13}
-        style={{ width: "100%", height: "100%", cursor: "crosshair" }}
-        zoomControl={false}
-      >
-        <TileLayer
-          url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          maxZoom={20}
-        />
-        <FlyController target={flyTarget} />
-        <ZoomControls />
-        <PreviewPin campaign={campaign} amount={defaultAmount} />
-        <DropPlacerLayer drops={drops} onAdd={onAdd} onRemove={onRemove} campaign={campaign} />
-      </MapContainer>
+      <div style={{ position: "relative", width: "100%", height: "100%" }}>
+        <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+        {/* Zoom controls */}
+        <div style={{
+          position: "absolute", top: 12, right: 12, zIndex: 1000,
+          display: "flex", flexDirection: "column",
+          border: "2px solid #111", borderRadius: 10, overflow: "hidden",
+          boxShadow: "2px 2px 0 #111",
+        }}>
+          {[{ label: "+", delta: 1 }, { label: "−", delta: -1 }].map(({ label, delta }) => (
+            <button
+              key={delta}
+              onClick={() => {
+                const map = mapRef.current;
+                if (!map) return;
+                if (delta === 1) map.zoomIn({ duration: 250 });
+                else map.zoomOut({ duration: 250 });
+              }}
+              style={{
+                width: 36, height: 36, background: "#fff", border: "none",
+                borderBottom: delta === 1 ? "1.5px solid #111" : "none",
+                cursor: "pointer", fontFamily: "inherit",
+                fontWeight: 900, fontSize: 18, color: "#111",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
     );
   }),
   { ssr: false, loading: () => <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#e8e6e0", fontSize: 32 }}>🗺️</div> }

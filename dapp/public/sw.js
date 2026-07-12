@@ -1,4 +1,4 @@
-const CACHE = "gooddrops-v8";
+const CACHE = "gooddrops-v9";
 const PRECACHE = ["/", "/my-drops", "/leaderboard"];
 
 self.addEventListener("install", (e) => {
