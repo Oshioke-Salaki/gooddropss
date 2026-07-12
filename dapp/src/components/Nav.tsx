@@ -10,7 +10,6 @@ import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
-import { useGracePeriod } from "@/hooks/useGracePeriod";
 import { VerificationModal } from "@/components/VerificationModal";
 import { formatG$ } from "@/lib/utils";
 import clsx from "clsx";
@@ -275,7 +274,6 @@ interface VerifyBannerProps {
   isVerified: boolean;
   isFetching: boolean;
   isVerificationLoading: boolean;
-  inGrace: boolean;
   isConnected: boolean;
   onGetVerified: () => void;
 }
@@ -284,7 +282,6 @@ export function VerifyBanner({
   isVerified,
   isFetching,
   isVerificationLoading,
-  inGrace,
   isConnected,
   onGetVerified,
 }: VerifyBannerProps) {
@@ -298,7 +295,6 @@ export function VerifyBanner({
     isFetching ||
     isVerificationLoading ||
     isVerified ||
-    inGrace ||
     dismissed
   )
     return null;
@@ -371,7 +367,6 @@ export function Nav() {
   const { isFetching } = useGoodDollarProfile();
   const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh } =
     useVerification();
-  const { inGrace } = useGracePeriod();
   const isVerificationLoading = status === "loading";
 
   // Broadcast verification so every useGoodDollarProfile instance refetches immediately
@@ -441,7 +436,6 @@ export function Nav() {
         isVerified={isVerified}
         isFetching={isFetching}
         isVerificationLoading={isVerificationLoading}
-        inGrace={inGrace}
         isConnected={isConnected}
         onGetVerified={() => setIsVerifying(true)}
       />

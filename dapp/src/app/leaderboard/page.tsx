@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useDrops } from "@/hooks/useDrops";
 import { formatG$ } from "@/lib/utils";
+import { resolveRoots } from "@/lib/roots";
 import { UserHandle } from "@/components/UserHandle";
 import { DROP_STATUS } from "@/types";
 import type { HunterStreak } from "@/types";
@@ -85,18 +86,37 @@ export default function LeaderboardPage() {
   const { drops, loading, fetchDrops } = useDrops();
   const [tab, setTab] = useState<"hunters" | "droppers">("hunters");
   const [streaks, setStreaks] = useState<Record<string, HunterStreak>>({});
+  // Map each wallet → its identity root, so a person's linked wallets collapse
+  // into one leaderboard entry (no double-counting migrated users).
+  const [roots, setRoots] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     fetchDrops();
   }, [fetchDrops]);
 
+  // Resolve identity roots for every participating wallet once drops are in.
+  useEffect(() => {
+    if (drops.length === 0) return;
+    const addrs = new Set<string>();
+    for (const d of drops) {
+      addrs.add(d.dropper.toLowerCase());
+      if (d.claimer !== "0x0000000000000000000000000000000000000000") addrs.add(d.claimer.toLowerCase());
+    }
+    let cancelled = false;
+    resolveRoots([...addrs]).then((m) => { if (!cancelled) setRoots(m); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [drops]);
+
   const { hunters, droppers, totalG$, totalDrops } = useMemo(() => {
     const hunterMap = new Map<string, { wei: bigint; count: number }>();
     const dropperMap = new Map<string, { wei: bigint; count: number }>();
     let totalG$ = 0n;
+    // Collapse each wallet to its identity root (falls back to the wallet itself
+    // until roots resolve, or for unverified wallets).
+    const keyOf = (addr: string) => roots.get(addr.toLowerCase()) ?? addr.toLowerCase();
 
     for (const drop of drops) {
-      const dk = drop.dropper.toLowerCase();
+      const dk = keyOf(drop.dropper);
       const prev = dropperMap.get(dk) ?? { wei: 0n, count: 0 };
       dropperMap.set(dk, { wei: prev.wei + drop.amount, count: prev.count + 1 });
 
@@ -104,7 +124,7 @@ export default function LeaderboardPage() {
         drop.status === DROP_STATUS.Claimed &&
         drop.claimer !== "0x0000000000000000000000000000000000000000"
       ) {
-        const ck = drop.claimer.toLowerCase();
+        const ck = keyOf(drop.claimer);
         const prevC = hunterMap.get(ck) ?? { wei: 0n, count: 0 };
         hunterMap.set(ck, { wei: prevC.wei + drop.amount, count: prevC.count + 1 });
         totalG$ += drop.amount;
@@ -126,7 +146,7 @@ export default function LeaderboardPage() {
       totalG$,
       totalDrops: drops.length,
     };
-  }, [drops]);
+  }, [drops, roots]);
 
   // Fetch streaks for top 20 hunters once the list is computed
   useEffect(() => {

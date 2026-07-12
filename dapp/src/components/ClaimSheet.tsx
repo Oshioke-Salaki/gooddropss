@@ -25,7 +25,6 @@ import { ShareableClaimCard } from "@/components/ShareableClaimCard";
 import { SafetyNote } from "@/components/SafetyNote";
 import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
-import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
 import { useCountUp } from "@/hooks/useCountUp";
 
 function useCampaign(campaignId: string | null) {
@@ -57,10 +56,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
   const { isVerified } = useGoodDollarProfile();
-  const { inGrace, left, contractEnforces } = useGracePeriod();
   const { writeContractAsync } = useWriteContract();
 
-  const verificationOk = isVerified || inGrace;
+  const verificationOk = isVerified;
   const [status, setStatus] = useState<Status>("idle");
   const [errMsg, setErrMsg] = useState("");
 
@@ -596,38 +594,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
                     <SafetyNote />
 
-                    {/* Grace period counter */}
-                    {isConnected && !isVerified && inGrace && (
-                      <div style={{
-                        background: "#f0fff4", border: "2px solid #111",
-                        borderRadius: 12, padding: "12px 14px",
-                        display: "flex", alignItems: "center", gap: 12,
-                      }}>
-                        <span style={{ fontSize: 20, flexShrink: 0 }}>🎯</span>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                            {left} free claim{left !== 1 ? "s" : ""} remaining
-                          </p>
-                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                            Verify anytime to unlock unlimited hunting
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
-                          style={{
-                            background: "transparent", color: "#111",
-                            border: "2px solid #111", borderRadius: 8,
-                            padding: "5px 12px", fontWeight: 800, fontSize: 11,
-                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}
-                        >
-                          Verify
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Grace exhausted */}
-                    {isConnected && !isVerified && !inGrace && (
+                    {/* Verification required — GoodDollar-verified humans only */}
+                    {isConnected && !isVerified && (
                       <div style={{
                         background: "#fff8e6", border: "2px solid #111",
                         borderRadius: 12, padding: "12px 14px",
@@ -635,9 +603,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       }}>
                         <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
                         <div style={{ flex: 1 }}>
-                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>Verification required</p>
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>Verify to claim</p>
                           <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                            You've used all {GRACE_CLAIM_LIMIT} free claims — verify to keep hunting
+                            One-time GoodDollar face check confirms you&apos;re a real human. Takes a minute.
                           </p>
                         </div>
                         <button

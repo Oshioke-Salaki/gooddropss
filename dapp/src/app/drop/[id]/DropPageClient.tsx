@@ -16,7 +16,6 @@ import {
 import { SafetyNote } from "@/components/SafetyNote";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
-import { useGracePeriod, GRACE_CLAIM_LIMIT } from "@/hooks/useGracePeriod";
 import { useCountUp } from "@/hooks/useCountUp";
 import { VerificationModal } from "@/components/VerificationModal";
 import { HuntingMode } from "@/components/HuntingMode";
@@ -58,8 +57,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const { address }              = useAccount();
   const isConnected              = authenticated && !!address;
   const { isVerified }           = useGoodDollarProfile();
-  const { inGrace, left }        = useGracePeriod();
-  const verificationOk           = isVerified || inGrace;
+  const verificationOk           = isVerified;
   const { writeContractAsync }   = useWriteContract();
 
   // Animated count-up for the claimed amount on the success screen.
@@ -558,39 +556,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </>
           )}
 
-          {/* Grace period counter — free claims remaining */}
-          {isConnected && !isVerified && inGrace && (
-            <div style={{
-              marginTop: 12, background: "#f0fff4",
-              border: "2px solid #111", borderRadius: 14,
-              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
-            }}>
-              <span style={{ fontSize: 20, flexShrink: 0 }}>🎯</span>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                  {left} free claim{left !== 1 ? "s" : ""} remaining
-                </p>
-                <p style={{ margin: "3px 0 0", fontSize: 11, color: "#888" }}>
-                  Verify anytime to unlock unlimited hunting
-                </p>
-              </div>
-              <button
-                onClick={() => setIsVerifying(true)}
-                style={{
-                  background: "transparent", color: "#111",
-                  border: "2px solid #111", borderRadius: 10,
-                  padding: "6px 12px", fontWeight: 800, fontSize: 12,
-                  cursor: "pointer", fontFamily: "inherit",
-                  flexShrink: 0, whiteSpace: "nowrap",
-                }}
-              >
-                Verify
-              </button>
-            </div>
-          )}
-
-          {/* Grace exhausted — verification now required */}
-          {isConnected && !isVerified && !inGrace && (
+          {/* Verify to claim — GoodDollar-verified humans only */}
+          {isConnected && !isVerified && (
             <div style={{
               marginTop: 12, background: "#fff8e6",
               border: "2px solid #111", borderRadius: 14,
@@ -599,10 +566,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
               <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
               <div style={{ flex: 1 }}>
                 <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                  Verification required
+                  Verify to claim
                 </p>
                 <p style={{ margin: "3px 0 0", fontSize: 11, color: "#888" }}>
-                  You&apos;ve used all {GRACE_CLAIM_LIMIT} free claims — verify to keep hunting
+                  One-time GoodDollar face check confirms you&apos;re a real human. Takes a minute.
                 </p>
               </div>
               <button
