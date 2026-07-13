@@ -8,12 +8,33 @@ import { Mail, Wallet, X, Loader2, ChevronLeft, ChevronRight } from "lucide-reac
 // Login sheet. "Continue with email" hands off to Magic's own dialog (email +
 // secure code) — the documented, reliable connector flow. "Connect a wallet"
 // lists every detected wallet (EIP-6963 discovery). Both feed one wagmi session.
+// The Magic SDK instance the connector owns (it's built with OAuthExtension).
+// Reusing it — rather than making a second one — is what makes Google work.
+type MagicSdk = {
+  oauth2?: {
+    loginWithRedirect: (o: { provider: string; redirectURI: string }) => Promise<unknown>;
+  };
+};
+
+function GoogleIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.05 6.05 29.3 4 24 4 12.95 4 4 12.95 4 24s8.95 20 20 20 20-8.95 20-20c0-1.34-.14-2.65-.4-3.5z"/>
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.05 6.05 29.3 4 24 4 16.3 4 9.65 8.34 6.3 14.7z"/>
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.2 5.2C39.9 35.9 44 30.6 44 24c0-1.34-.14-2.65-.4-3.5z"/>
+    </svg>
+  );
+}
+
 export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { connect, connectors, isPending } = useConnect();
   const { isConnected } = useAccount();
 
   const [view, setView] = useState<"main" | "wallets">("main");
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [err, setErr] = useState("");
 
   const magic = connectors.find((c) => c.id === "magic");
 
@@ -24,7 +45,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const walletConnectors: readonly Connector[] = named.length > 0 ? named : nonMagic;
 
   useEffect(() => { if (open && isConnected) onClose(); }, [open, isConnected, onClose]);
-  useEffect(() => { if (!open) { setView("main"); setPendingId(null); } }, [open]);
+  useEffect(() => { if (!open) { setView("main"); setPendingId(null); setErr(""); setGoogleBusy(false); } }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
 
   if (!open) return null;
@@ -33,6 +54,37 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     setPendingId(c.id);
     // Request Celo so external wallets are switched to the right chain on connect.
     connect({ connector: c, chainId: celo.id });
+  }
+
+  // Google sign-in. Uses the connector's OWN Magic instance (it always includes
+  // OAuthExtension) so there's a single shared session.
+  //
+  // The redirectURI MUST be one fixed URL — Google matches redirect URIs exactly,
+  // so sending window.location.href (which changes per page, and carries a
+  // trailing slash) fails with redirect_uri_mismatch. We always return to
+  // /auth/callback, which completes the login and sends the user back where they
+  // started.
+  async function loginWithGoogle() {
+    if (!magic || googleBusy) return;
+    const sdk = (magic as unknown as { magic?: MagicSdk }).magic;
+    if (!sdk?.oauth2?.loginWithRedirect) {
+      setErr("Google sign-in is unavailable right now. Please use email.");
+      return;
+    }
+    setGoogleBusy(true);
+    setErr("");
+    try {
+      // Remember where they were so the callback can send them back.
+      sessionStorage.setItem("gd:returnTo", window.location.pathname + window.location.search);
+      await sdk.oauth2.loginWithRedirect({
+        provider: "google",
+        redirectURI: `${window.location.origin}/auth/callback`,
+      });
+      // navigating away to Google…
+    } catch {
+      setGoogleBusy(false);
+      setErr("Couldn't start Google sign-in. Please try again.");
+    }
   }
 
   return (
@@ -80,20 +132,47 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
               Hide and hunt real G$ anywhere in the world.
             </p>
 
-            {/* Email via Magic's own dialog */}
+            {err && (
+              <p style={{
+                margin: "0 0 12px", padding: "10px 12px",
+                background: "#FFE5E5", border: "1.5px solid #FF3B3B",
+                borderRadius: 12, color: "#C81E1E", fontSize: 13, fontWeight: 600,
+              }}>
+                {err}
+              </p>
+            )}
+
+            {/* Google — primary path: no OTP email, so no spam-folder risk */}
             <button
-              onClick={() => { if (magic) pick(magic); }}
-              disabled={isPending || !magic}
+              onClick={loginWithGoogle}
+              disabled={isPending || googleBusy || !magic}
               style={{
                 width: "100%", padding: "16px",
                 background: "#BFFD00", color: "#111",
                 border: "2.5px solid #111", borderRadius: 16,
                 boxShadow: "4px 4px 0 #111",
-                fontWeight: 900, fontSize: 16, cursor: isPending ? "wait" : "pointer",
+                fontWeight: 900, fontSize: 16,
+                cursor: googleBusy ? "wait" : "pointer",
+                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+              }}
+            >
+              {googleBusy ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon size={20} />}
+              Continue with Google
+            </button>
+
+            {/* Email via Magic's own dialog */}
+            <button
+              onClick={() => { if (magic) pick(magic); }}
+              disabled={isPending || googleBusy || !magic}
+              style={{
+                width: "100%", padding: "14px", marginTop: 10,
+                background: "#fff", color: "#111",
+                border: "2px solid #111", borderRadius: 14,
+                fontWeight: 800, fontSize: 14, cursor: isPending ? "wait" : "pointer",
                 fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}
             >
-              {pendingId === "magic" ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />}
+              {pendingId === "magic" ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
               Continue with email
             </button>
 

@@ -26,6 +26,12 @@ if (typeof window !== "undefined") {
           network: { rpcUrl: CELO_RPC, chainId: celo.id },
         },
         enableEmailLogin: true,
+        // NOTE: deliberately no `oauthOptions`. The connector's built-in Google
+        // button hardcodes `redirectURI: window.location.href`, which varies per
+        // page and always fails Google's exact-match redirect_uri check. We drive
+        // Google ourselves from AuthModal against a single fixed /auth/callback
+        // URL instead. The connector's Magic instance always includes
+        // OAuthExtension, so `magic.oauth2` is available regardless of this option.
       },
     }) as unknown as CreateConnectorFn,
   );
