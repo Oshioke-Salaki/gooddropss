@@ -289,18 +289,31 @@ export function VerifyBanner({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  if (
-    !mounted ||
-    !isConnected ||
-    isFetching ||
-    isVerificationLoading ||
-    isVerified ||
-    dismissed
-  )
-    return null;
+  const visible =
+    mounted && isConnected && !isFetching && !isVerificationLoading && !isVerified && !dismissed;
+
+  // Publish the banner's height. It wraps to two lines on a phone, so anything
+  // below it (the "N drops live" pill) has to be told how tall it actually is
+  // rather than assuming one line.
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const clear = () => root.style.setProperty("--gd-banner-h", "0px");
+    const el = bannerRef.current;
+    if (!visible || !el) { clear(); return clear; }
+
+    const publish = () => root.style.setProperty("--gd-banner-h", `${el.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => { ro.disconnect(); clear(); };
+  }, [visible]);
+
+  if (!visible) return null;
 
   return (
     <div
+      ref={bannerRef}
       style={{
         position: "fixed",
         top: "56px",

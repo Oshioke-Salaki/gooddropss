@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { X, Bell, MapPin, Check } from "lucide-react";
 import { haversineDistance, formatG$, gpsToDeg } from "@/lib/utils";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
@@ -47,7 +47,27 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
   const isUnseeded =
     !loading &&
     (activeDrops.length === 0 || (userLoc !== null && nearestM > NEAR_THRESHOLD_M));
-  if (dismissed || !isUnseeded) return null;
+  const visible = !dismissed && isUnseeded;
+
+  // Publish our height so the map's floating controls (zoom, locate, the Drop
+  // buttons) lift above the sheet instead of sitting on top of it. Measured
+  // rather than hardcoded because the copy — and therefore the height — changes
+  // between the "no drops at all" and "drops exist but far away" states.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    const clear = () => root.style.setProperty("--gd-cold-inset", "0px");
+    const el = cardRef.current;
+    if (!visible || !el) { clear(); return clear; }
+
+    const publish = () => root.style.setProperty("--gd-cold-inset", `${el.offsetHeight + 12}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => { ro.disconnect(); clear(); };
+  }, [visible]);
+
+  if (!visible) return null;
 
   async function handleNotify() {
     setSubscribing(true);
@@ -58,11 +78,18 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
 
   return (
     <div
+      ref={cardRef}
       style={{
-        position: "fixed", left: "50%", bottom: 92,
+        position: "fixed", left: "50%",
+        // Sit directly above the bottom nav rather than at a fixed 92px, which
+        // on mobile put it underneath the nav's own shadow.
+        bottom: "calc(var(--gd-nav-h, 0px) + 12px)",
         transform: "translateX(-50%)",
-        width: "min(440px, calc(100vw - 32px))",
-        zIndex: 998,
+        width: "min(440px, calc(100vw - 24px))",
+        // Above the FABs (999) and the map controls (1000) — it's a prompt that
+        // needs an answer, so nothing should overlap it. The others move aside
+        // via --gd-cold-inset.
+        zIndex: 1001,
         background: "#111", color: "#fff",
         border: "2px solid #111", borderRadius: 20,
         boxShadow: "4px 4px 0 #BFFD00",

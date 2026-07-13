@@ -16,6 +16,21 @@
   --radius-lg: 20px;
 }
 
+/* ── Layout insets ──────────────────────────────────────────────────────────
+   The bottom of the map is shared by the bottom nav, the cold-start sheet, the
+   Drop G$ / Drop Chain buttons and the zoom + locate controls. They used to be
+   positioned with independent hardcoded offsets, so they simply stacked on top
+   of each other. Instead, the overlays that occupy space publish their height
+   here, and the floating controls reserve room for it. */
+:root {
+  --gd-nav-h:      0px;   /* bottom nav — mobile only */
+  --gd-cold-inset: 0px;   /* space taken by the cold-start sheet, 0 when hidden */
+  --gd-banner-h:   0px;   /* "verification required" banner under the header */
+}
+@media (max-width: 639px) {
+  :root { --gd-nav-h: 66px; }   /* h-16 + 2px top border */
+}
+
 @layer base {
   html,
   body {

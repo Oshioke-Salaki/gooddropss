@@ -567,7 +567,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
         <div
           style={{
             position: "absolute",
-            bottom: "100px",
+            bottom: "calc(100px + var(--gd-cold-inset, 0px))",
             left: "64px",
             zIndex: 1000,
             background: "#111111",
@@ -590,7 +590,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
         <div
           style={{
             position: "absolute",
-            bottom: "100px",
+            bottom: "calc(100px + var(--gd-cold-inset, 0px))",
             left: "64px",
             zIndex: 1000,
             background: "#111111",
@@ -614,7 +614,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
         title={locPerm === "denied" ? "Location access denied" : "Go to my location"}
         style={{
           position: "absolute",
-          bottom: "48px",
+          bottom: "calc(48px + var(--gd-cold-inset, 0px))",
           left: "12px",
           zIndex: 1000,
           width: "44px",
@@ -746,7 +746,7 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
       <div
         style={{
           position: "absolute",
-          bottom: "100px",
+          bottom: "calc(100px + var(--gd-cold-inset, 0px))",
           left: "12px",
           zIndex: 1000,
           display: "flex",

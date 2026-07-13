@@ -92,12 +92,15 @@ export default function HomePage() {
       <div
         style={{
           position: "fixed",
-          top: "108px",
+          // Header is 56px; the verification banner sits directly under it and
+          // wraps to two lines on mobile, so clear whatever height it reports.
+          top: "calc(70px + var(--gd-banner-h, 0px))",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 999,
           fontFamily: "inherit",
           pointerEvents: "none",
+          transition: "top 0.2s ease",
         }}
       >
         {loading && (
@@ -118,7 +121,17 @@ export default function HomePage() {
       </div>
 
       {/* Action buttons — fixed so Leaflet's stacking context can't bury them */}
-      <div className="map-actions" style={{ position: "fixed", bottom: "96px", right: "20px", zIndex: 999, display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end" }}>
+      <div
+        className="map-actions"
+        style={{
+          position: "fixed",
+          // Lift clear of the cold-start sheet when it's up; --gd-cold-inset is 0 otherwise.
+          bottom: "calc(96px + var(--gd-cold-inset, 0px))",
+          right: "20px", zIndex: 999,
+          display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end",
+          transition: "bottom 0.2s ease",
+        }}
+      >
         {/* Hunt Chain FAB */}
         <button
           onClick={() => setShowChain(true)}
