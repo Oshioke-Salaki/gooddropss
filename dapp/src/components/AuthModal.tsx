@@ -5,16 +5,30 @@ import type { Connector } from "wagmi";
 import { celo } from "viem/chains";
 import { Mail, Wallet, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
-// Login sheet. "Continue with email" hands off to Magic's own dialog (email +
-// secure code) — the documented, reliable connector flow. "Connect a wallet"
-// lists every detected wallet (EIP-6963 discovery). Both feed one wagmi session.
-// The Magic SDK instance the connector owns (it's built with OAuthExtension).
-// Reusing it — rather than making a second one — is what makes Google work.
+// Login sheet. We collect the email ourselves and hand it straight to Magic, so
+// Magic only ever renders its OTP *code* screen — never its generic "Sign-in
+// with Email" address step, which is off-brand and an extra click.
+//
+// Everything runs against the Magic instance the CONNECTOR owns. Spinning up a
+// second Magic instance is what broke this flow before: two instances race over
+// the same session and the connector ends up not seeing the login.
 type MagicSdk = {
+  auth?: {
+    loginWithEmailOTP: (o: { email: string; showUI: boolean }) => Promise<unknown>;
+  };
   oauth2?: {
     loginWithRedirect: (o: { provider: string; redirectURI: string }) => Promise<unknown>;
   };
 };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Magic rejects with these when the user simply closes/cancels its OTP dialog —
+// that's not an error worth shouting about.
+function isUserCancel(e: unknown): boolean {
+  const c = (e as { code?: string | number } | null)?.code;
+  return c === -32603 || c === "MAGIC_LINK_FAILED_VERIFICATION" || c === 4001;
+}
 
 function GoogleIcon({ size = 18 }: { size?: number }) {
   return (
@@ -28,15 +42,19 @@ function GoogleIcon({ size = 18 }: { size?: number }) {
 }
 
 export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { connect, connectors, isPending } = useConnect();
+  const { connect, connectAsync, connectors, isPending } = useConnect();
   const { isConnected } = useAccount();
 
   const [view, setView] = useState<"main" | "wallets">("main");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [email, setEmail] = useState("");
   const [err, setErr] = useState("");
 
   const magic = connectors.find((c) => c.id === "magic");
+  const emailOk = EMAIL_RE.test(email.trim());
+  const busy = isPending || googleBusy || emailBusy;
 
   // Wallet connectors = everything except Magic. EIP-6963 discovery adds named
   // wallets (id = rdns); prefer those and drop the generic `injected` fallback.
@@ -45,7 +63,12 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const walletConnectors: readonly Connector[] = named.length > 0 ? named : nonMagic;
 
   useEffect(() => { if (open && isConnected) onClose(); }, [open, isConnected, onClose]);
-  useEffect(() => { if (!open) { setView("main"); setPendingId(null); setErr(""); setGoogleBusy(false); } }, [open]);
+  useEffect(() => {
+    if (!open) {
+      setView("main"); setPendingId(null); setErr("");
+      setGoogleBusy(false); setEmailBusy(false); setEmail("");
+    }
+  }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
 
   if (!open) return null;
@@ -54,6 +77,33 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     setPendingId(c.id);
     // Request Celo so external wallets are switched to the right chain on connect.
     connect({ connector: c, chainId: celo.id });
+  }
+
+  // Email sign-in. We already have the address, so `showUI: true` makes Magic
+  // render only its code-entry step. It resolves once the code is verified; then
+  // we hand the live session to wagmi, whose isAuthorized() short-circuits on
+  // isLoggedIn() and connects without showing anything further.
+  async function loginWithEmail() {
+    if (!magic || busy || !emailOk) return;
+    const sdk = (magic as unknown as { magic?: MagicSdk }).magic;
+    if (!sdk?.auth?.loginWithEmailOTP) {
+      setErr("Email sign-in is unavailable right now. Please use Google.");
+      return;
+    }
+    setEmailBusy(true);
+    setErr("");
+    try {
+      await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
+      await connectAsync({ connector: magic, chainId: celo.id });
+      onClose();
+    } catch (e) {
+      if (!isUserCancel(e)) {
+        console.error("[auth] email sign-in failed", e);
+        setErr("That didn't work. Check the code and try again.");
+      }
+    } finally {
+      setEmailBusy(false);
+    }
   }
 
   // Google sign-in. Uses the connector's OWN Magic instance (it always includes
@@ -65,7 +115,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // /auth/callback, which completes the login and sends the user back where they
   // started.
   async function loginWithGoogle() {
-    if (!magic || googleBusy) return;
+    if (!magic || busy) return;
     const sdk = (magic as unknown as { magic?: MagicSdk }).magic;
     if (!sdk?.oauth2?.loginWithRedirect) {
       setErr("Google sign-in is unavailable right now. Please use email.");
@@ -145,7 +195,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             {/* Google — primary path: no OTP email, so no spam-folder risk */}
             <button
               onClick={loginWithGoogle}
-              disabled={isPending || googleBusy || !magic}
+              disabled={busy || !magic}
               style={{
                 width: "100%", padding: "16px",
                 background: "#BFFD00", color: "#111",
@@ -160,21 +210,58 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
               Continue with Google
             </button>
 
-            {/* Email via Magic's own dialog */}
-            <button
-              onClick={() => { if (magic) pick(magic); }}
-              disabled={isPending || googleBusy || !magic}
-              style={{
-                width: "100%", padding: "14px", marginTop: 10,
-                background: "#fff", color: "#111",
-                border: "2px solid #111", borderRadius: 14,
-                fontWeight: 800, fontSize: 14, cursor: isPending ? "wait" : "pointer",
-                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0" }}>
+              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
+              <span style={{ fontSize: 11, fontWeight: 800, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
+              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
+            </div>
+
+            {/* Email — collected here, so Magic only shows its code screen */}
+            <form
+              onSubmit={(e) => { e.preventDefault(); loginWithEmail(); }}
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
             >
-              {pendingId === "magic" ? <Loader2 size={16} className="animate-spin" /> : <Mail size={16} />}
-              Continue with email
-            </button>
+              <div style={{ position: "relative" }}>
+                <Mail
+                  size={17}
+                  color="#aaa"
+                  style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}
+                />
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); if (err) setErr(""); }}
+                  disabled={busy}
+                  style={{
+                    width: "100%", padding: "14px 14px 14px 40px",
+                    background: "#fff", color: "#111",
+                    border: "2px solid #111", borderRadius: 14,
+                    fontWeight: 700, fontSize: 15, fontFamily: "inherit",
+                    outline: "none", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={busy || !emailOk || !magic}
+                style={{
+                  width: "100%", padding: "14px",
+                  background: emailOk && !busy ? "#111" : "#e8e6e0",
+                  color: emailOk && !busy ? "#fff" : "#aaa",
+                  border: "2px solid", borderColor: emailOk && !busy ? "#111" : "#e8e6e0",
+                  borderRadius: 14, fontWeight: 800, fontSize: 15,
+                  cursor: emailOk && !busy ? "pointer" : "not-allowed",
+                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  transition: "background .15s, color .15s, border-color .15s",
+                }}
+              >
+                {emailBusy && <Loader2 size={16} className="animate-spin" />}
+                {emailBusy ? "Check your email…" : "Continue with email"}
+              </button>
+            </form>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0" }}>
               <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
@@ -188,7 +275,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
                 if (walletConnectors.length === 1) pick(walletConnectors[0]);
                 else setView("wallets");
               }}
-              disabled={isPending || walletConnectors.length === 0}
+              disabled={busy || walletConnectors.length === 0}
               style={{
                 width: "100%", padding: "14px",
                 background: "#fff", color: "#111",
@@ -204,7 +291,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             </button>
 
             <p style={{ margin: "16px 0 0", fontSize: 11, color: "#999", textAlign: "center", lineHeight: 1.5 }}>
-              Email creates a secure wallet for you automatically. No seed phrase needed.
+              Google or email creates a secure wallet for you automatically. No seed phrase needed.
             </p>
           </>
         ) : (
