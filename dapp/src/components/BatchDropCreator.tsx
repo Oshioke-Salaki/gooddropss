@@ -12,7 +12,7 @@ import {
   GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI,
   G_TOKEN_ADDRESS, ERC20_ABI,
 } from "@/lib/contracts";
-import { degToGps, buildCampaignHint, formatG$ } from "@/lib/utils";
+import { degToGps, buildCampaignHint, formatG$, X_HANDLES, X_HASHTAGS } from "@/lib/utils";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import type { Campaign } from "@/types";
 
@@ -516,7 +516,8 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
                         `Verified humans — come hunt them down 👇`,
                         `gooddrops.xyz`,
                         ``,
-                        `#GoodDrops #GoodDollar #Web3`,
+                        X_HANDLES,
+                        X_HASHTAGS,
                       ].join("\n");
                       window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
                     }}

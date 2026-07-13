@@ -10,10 +10,12 @@ import {
   GOOD_DROPS_ABI,
   G_TOKEN_ADDRESS,
   ERC20_ABI,
+  CLAIM_RADIUS_M,
 } from "@/lib/contracts";
 import {
   degToGps, formatG$,
   buildPrivateHint, buildPrivateHintNoTarget, buildCampaignHint, buildRiddleHint,
+  X_HANDLES, X_HASHTAGS,
 } from "@/lib/utils";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
@@ -320,7 +322,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
   function handleShare() {
     const loc = placeName ? `near ${placeName}` : "at a secret spot";
-    const text = `I just hid ${amount} G$ ${loc} 🎯\n\nCan you find it? Hunt it down on GoodDrops 💰\n\n#GoodDollar #GoodDrops #Web3`;
+    const text = `I just hid ${amount} G$ ${loc} 🎯\n\nCan you find it? Hunt it down on GoodDrops 💰\n\n${X_HANDLES}\n${X_HASHTAGS}`;
     window.open(
       `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
       "_blank", "noopener,noreferrer"
@@ -345,6 +347,16 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     riddleAnswer.length <= RIDDLE_MAX_ANSWER &&
     normalizeAnswer(riddleAnswer).length > 0;
   const riddleOn = hasRiddle && riddleReady;
+
+  // The clue is public and on-chain. Writing "under the RED bench" and then asking
+  // "what colour is the bench?" hands the answer away — the single easiest way to
+  // ruin a riddle, and the exact shape of our own placeholder text. Warn, don't
+  // block: a clue may legitimately contain the word by coincidence.
+  const answerNorm = normalizeAnswer(riddleAnswer);
+  const answerLeaked =
+    hasRiddle &&
+    answerNorm.length > 2 &&
+    normalizeAnswer(hint).includes(answerNorm);
 
   const canDrop =
     isConnected && lat !== null && lng !== null &&
@@ -753,7 +765,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
               {/* ── Hint ─────────────────────────────────────────────────────── */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted">Leave a clue</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted">
+                    Clue — where to look
+                  </label>
                   <span className={clsx("text-xs font-semibold", hint.length > hintMaxLen - 20 ? "text-danger" : "text-muted")}>
                     {hint.length}/{hintMaxLen}
                   </span>
@@ -761,10 +775,13 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 <textarea
                   value={hint}
                   onChange={(e) => setHint(e.target.value)}
-                  placeholder="e.g. Under the red bench near the fountain 🔍"
+                  placeholder="e.g. Under the bench by the fountain 🔍"
                   maxLength={hintMaxLen} rows={3}
                   className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm bg-transparent outline-none resize-none placeholder:text-muted"
                 />
+                <p className="text-xs text-muted">
+                  GPS only gets hunters within {CLAIM_RADIUS_M}m — the clue points them at the exact spot.
+                </p>
               </div>
 
               {/* ── Private drop toggle — hidden for campaign drops ───────── */}
@@ -882,8 +899,14 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                       />
                       <p className="text-xs text-muted">
                         Capitals, spaces and punctuation are ignored — &ldquo;The Red Bench!&rdquo; matches
-                        &ldquo;red bench&rdquo;. Never put the answer in the clue above.
+                        &ldquo;red bench&rdquo;.
                       </p>
+                      {answerLeaked && (
+                        <p className="text-xs font-semibold text-danger bg-danger/10 border-2 border-danger rounded-lg px-3 py-2">
+                          ⚠️ Your clue contains the answer — anyone can read it. The clue is public
+                          and stored on-chain.
+                        </p>
+                      )}
                     </div>
 
                     <div className="bg-white border-2 border-ink rounded-xl px-3 py-2.5 flex gap-2.5">

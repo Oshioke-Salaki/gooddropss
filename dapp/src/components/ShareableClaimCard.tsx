@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState, useCallback } from "react";
 import { Share2, Download, Check } from "lucide-react";
-import { formatG$, RARITY, type DropRarity } from "@/lib/utils";
+import { formatG$, RARITY, X_HANDLES, X_HASHTAGS, type DropRarity } from "@/lib/utils";
 
 interface Props {
   amount:   bigint;
@@ -29,7 +29,7 @@ export function ShareableClaimCard({ amount, rarity, place, handle, dropId, site
 
   const url = siteUrl ?? (typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz");
   const shareUrl  = `${url}/drop/${dropId}`;
-  const shareText = `I just found ${formatG$(amount)} G$ hidden in the real world on GoodDrops 🎯💰 Real money, real places. Come hunt with me:`;
+  const shareText = `I just found ${formatG$(amount)} G$ hidden in the real world on GoodDrops 🎯💰 Real money, real places. Come hunt with me:\n\n${X_HANDLES}\n${X_HASHTAGS}`;
 
   // ── Draw the card onto the canvas and return a Blob ──────────────────────
   const renderToBlob = useCallback(async (): Promise<Blob | null> => {

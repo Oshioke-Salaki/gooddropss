@@ -19,6 +19,19 @@ const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
 // MapLibre markers are plain DOM elements, so every existing CSS pin animation
 // (pin-pulse-*, pin-flash) carries over unchanged.
 
+// The marker wrapper carries border-radius:50% AND the pin-pulse-* box-shadow,
+// but the size only ever lived on the inner div — so the wrapper stretched to the
+// full width of the map container. A 1400×58 element with border-radius:50% and a
+// coloured glow renders as a giant ellipse straight across the map. Pin the
+// wrapper to the pin's real size so its rounding and glow describe the circle we
+// actually drew.
+function sizeWrapper(el: HTMLDivElement, px: number) {
+  el.style.width      = `${px}px`;
+  el.style.height     = `${px}px`;
+  el.style.boxSizing  = "border-box";
+  el.style.lineHeight = "0";
+}
+
 function makeDropElement(drop: Drop): HTMLDivElement {
   const el = document.createElement("div");
   const active =
@@ -27,6 +40,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
 
   if (!active) {
     const isClaimed = drop.status === DROP_STATUS.Claimed;
+    sizeWrapper(el, 36);
     el.innerHTML = `<div style="
       width:36px;height:36px;
       background:#1a1a2a;
@@ -68,6 +82,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
 
   if (flash) {
     el.className = "pin-flash";
+    sizeWrapper(el, 52);
     el.innerHTML = `<div style="
       width:52px;height:52px;
       background:#FF6400;
@@ -85,6 +100,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
   if (isChain) {
     el.className = r.animClass;
     el.style.borderRadius = "50%";
+    sizeWrapper(el, 54);
     el.innerHTML = `<div style="
       width:54px;height:54px;
       background:#111;
@@ -103,6 +119,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
   if (isCampaign) {
     el.className = r.animClass;
     el.style.borderRadius = "50%";
+    sizeWrapper(el, 54);
     el.innerHTML = `<div style="
       width:54px;height:54px;
       background:${r.color};
@@ -129,6 +146,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
 
   el.className = r.animClass;
   el.style.borderRadius = "50%";
+  sizeWrapper(el, s.size);
   el.innerHTML = `<div style="
     width:${s.size}px;height:${s.size}px;
     background:${r.color};
@@ -148,6 +166,7 @@ function makeClusterElement(count: number): HTMLDivElement {
   const el = document.createElement("div");
   el.className = "pin-pulse-uncommon";
   el.style.borderRadius = "50%";
+  sizeWrapper(el, 46);
   el.innerHTML = `<div style="
     width:46px;height:46px;
     background:#BFFD00;

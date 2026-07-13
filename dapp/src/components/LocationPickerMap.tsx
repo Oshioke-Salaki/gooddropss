@@ -4,9 +4,10 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Plus, Minus } from "lucide-react";
 
-// Light vector style (keyless) — matches the old Carto "light" look, but as
-// vector tiles: sharper, faster, and no API key / rate limits.
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
+// Same dark style as MapView and BatchDropCreator. Picking a location and then
+// seeing your drop on the map should look like one continuous surface — a light
+// "positron" picker made this screen read as a different app.
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
 export interface Props {
   initialCenter: { lat: number; lng: number };

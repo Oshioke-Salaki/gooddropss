@@ -219,6 +219,12 @@ export function buildRiddleHint(hint: string): string {
   return `[R]${hint}`;
 }
 
+// ── Social ────────────────────────────────────────────────────────────────────
+// Every share sheet in the app tags the same accounts. Defined once so the three
+// composers (drop, batch drop, claim card) can't drift apart.
+export const X_HANDLES  = "@gooddropss @gooddollarorg @Celo";
+export const X_HASHTAGS = "#GoodDrops #GoodDollar #Web3";
+
 export function buildPrivateHint(hint: string, targetAddress: string): string {
   return `[P:${targetAddress}]${hint}`;
 }
