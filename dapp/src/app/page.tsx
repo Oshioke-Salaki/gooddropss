@@ -13,6 +13,7 @@ import { ColdStartCard } from "@/components/ColdStartCard";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
+import { parseDropHint } from "@/lib/utils";
 import type { Drop, LatLng, Spot } from "@/types";
 import { DROP_STATUS } from "@/types";
 
@@ -69,7 +70,9 @@ export default function HomePage() {
       <div className="absolute top-14 left-0 right-0 bottom-16 sm:bottom-0">
         <MapView
           drops={drops.filter((d) => {
-            if (d.hint.startsWith("[P:")) return false;
+            // Must go through parseDropHint, not a startsWith: a riddle-locked
+            // private drop is "[R][P:…]", which no prefix test would catch.
+            if (parseDropHint(d.hint).isPrivate) return false;
             if (d.status === DROP_STATUS.Active) return true;
             const now = Math.floor(Date.now() / 1000);
             const cutoff = now - 24 * 60 * 60;

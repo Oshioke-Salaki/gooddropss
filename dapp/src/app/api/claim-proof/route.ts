@@ -4,6 +4,12 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
+import { parseDropHint } from "@/lib/utils";
+import {
+  hashAnswer, hashesEqual,
+  RIDDLE_LOCK_SECONDS, RIDDLE_MAX_TRIES, RIDDLE_TRY_WINDOW_S,
+  type RiddleRecord,
+} from "@/lib/riddles";
 
 export const runtime = "nodejs";
 
@@ -40,7 +46,7 @@ function getClientIp(req: NextRequest): string {
 }
 
 // POST /api/claim-proof
-// Body: { dropId, claimer, userLat, userLng, privateToken? }
+// Body: { dropId, claimer, userLat, userLng, privateToken?, answer? }
 // Returns: { deadline, sig }
 //
 // Checks (in order):
@@ -48,9 +54,15 @@ function getClientIp(req: NextRequest): string {
 //   2. Haversine distance: user must be within CLAIM_RADIUS_M of the drop
 //   3. Velocity check: implied travel speed since last claim must be < MAX_SPEED_KMH
 //   4. IP geolocation: IP must be within MAX_IP_DIST_KM of reported GPS; VPNs rejected
+//   5. Riddle: if the drop is riddle-locked, the answer must be right — and the
+//      first hunter to answer correctly holds an exclusive claim for 10 minutes
+//
+// This route is the ONLY thing that can authorise a claim (the contract's
+// gpsRequired = true means claimWithProof only accepts a signature from gpsSigner),
+// so every rule above is enforced simply by refusing to sign.
 export async function POST(req: NextRequest) {
   try {
-    const { dropId, claimer, userLat, userLng, privateToken } = await req.json();
+    const { dropId, claimer, userLat, userLng, privateToken, answer } = await req.json();
 
     if (
       typeof dropId  !== "string" || !dropId  ||
@@ -166,7 +178,84 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 6. Sign the proof ────────────────────────────────────────────────────
+    // ── 6. Riddle gate ───────────────────────────────────────────────────────
+    // The [R] marker lives on-chain, so a riddle drop is recognisable even if
+    // Redis is down — in which case we fail CLOSED (503) rather than sign a proof
+    // that skips the riddle entirely.
+    if (parseDropHint(drop.hint).hasRiddle) {
+      if (!redis) {
+        return NextResponse.json(
+          { error: "Riddle drops are temporarily unavailable — try again shortly" },
+          { status: 503 },
+        );
+      }
+
+      const riddle = await redis.get<RiddleRecord>(keys.riddle(dropId));
+      if (!riddle) {
+        // Marked as riddle-locked on-chain but no riddle stored: the dropper
+        // abandoned the flow after createDrop. Refuse rather than guess.
+        return NextResponse.json(
+          { error: "This drop's riddle is missing — it can't be claimed" },
+          { status: 409 },
+        );
+      }
+
+      const me     = (claimer as string).toLowerCase();
+      const holder = await redis.get<string>(keys.riddleLock(dropId));
+
+      if (holder && holder !== me) {
+        return NextResponse.json(
+          { error: "Someone else solved this riddle first — they have a few minutes to claim it." },
+          { status: 403 },
+        );
+      }
+
+      // If we already hold the lock, the riddle is behind us: don't make the
+      // hunter re-answer just because their first transaction failed.
+      if (!holder) {
+        if (typeof answer !== "string" || !answer.trim()) {
+          return NextResponse.json({ error: "Answer the riddle to claim this drop" }, { status: 403 });
+        }
+
+        // Throttle guessing. The hunter must already be within 100m and be a
+        // verified human to get here, but the answer space is small.
+        const triesKey = keys.riddleTries(dropId, me);
+        const tries    = await redis.incr(triesKey);
+        if (tries === 1) await redis.expire(triesKey, RIDDLE_TRY_WINDOW_S);
+        if (tries > RIDDLE_MAX_TRIES) {
+          return NextResponse.json(
+            { error: "Too many wrong answers — wait a minute and try again." },
+            { status: 429 },
+          );
+        }
+
+        const given = await hashAnswer(answer, riddle.salt);
+        if (!hashesEqual(given, riddle.answerHash)) {
+          return NextResponse.json(
+            { error: "Not quite — that's not the answer.", wrongAnswer: true },
+            { status: 403 },
+          );
+        }
+
+        // Correct. Take the exclusive reservation. NX makes this atomic, so two
+        // hunters answering in the same instant can't both win.
+        const won = await redis.set(keys.riddleLock(dropId), me, {
+          nx: true,
+          ex: RIDDLE_LOCK_SECONDS,
+        });
+        if (won === null) {
+          const nowHolder = await redis.get<string>(keys.riddleLock(dropId));
+          if (nowHolder !== me) {
+            return NextResponse.json(
+              { error: "Someone else solved this riddle first — by seconds!" },
+              { status: 403 },
+            );
+          }
+        }
+      }
+    }
+
+    // ── 7. Sign the proof ────────────────────────────────────────────────────
     const deadline = Math.floor(Date.now() / 1000) + PROOF_TTL_S;
 
     const hash = keccak256(

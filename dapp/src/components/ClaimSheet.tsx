@@ -26,6 +26,7 @@ import { SafetyNote } from "@/components/SafetyNote";
 import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useCountUp } from "@/hooks/useCountUp";
+import { useRiddle } from "@/hooks/useRiddle";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -70,11 +71,19 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const parsed = drop ? parseDropHint(drop.hint) : null;
   const { campaign, claims } = useCampaign(parsed?.campaignId ?? null);
 
+  const [answer, setAnswer] = useState("");
+  const { riddle, loading: riddleLoading } = useRiddle(
+    drop ? drop.id.toString() : null,
+    parsed?.hasRiddle ?? false,
+    address,
+  );
+
   const open = drop !== null;
 
   useEffect(() => {
     setStatus("idle");
     setErrMsg("");
+    setAnswer("");
   }, [drop?.id]);
 
   const dropLat = drop ? gpsToDeg(drop.lat) : 0;
@@ -90,8 +99,15 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const isSelfDrop = drop ? address?.toLowerCase() === drop.dropper.toLowerCase() : false;
   const isClose    = distance !== null && distance <= CLAIM_RADIUS_M;
 
+  // A riddle drop needs an answer typed in — unless we already won the lock, in
+  // which case the riddle is behind us and a retry shouldn't demand it again.
+  const needsAnswer  = !!parsed?.hasRiddle && !riddle?.lockedByMe;
+  const answerFilled = !needsAnswer || answer.trim().length > 0;
+  const riddleBlocked = !!riddle?.lockedByOther;
+
   const canClaim =
-    isConnected && verificationOk && isActive && !isSelfDrop && isClose && status === "idle";
+    isConnected && verificationOk && isActive && !isSelfDrop && isClose &&
+    answerFilled && !riddleBlocked && status === "idle";
 
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
@@ -109,6 +125,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
           claimer: address,
           userLat: userLocation?.lat,
           userLng: userLocation?.lng,
+          ...(needsAnswer ? { answer } : {}),
         }),
       });
 
@@ -151,6 +168,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     if (isSelfDrop)            return "Can't claim own drop";
     if (!userLocation)         return "Enable GPS to claim";
     if (!isClose)              return `${Math.round(distance ?? 0)}m away — get closer`;
+    if (riddleBlocked)         return "🔒 Someone solved it first";
+    if (!answerFilled)         return "🧩 Answer the riddle to claim";
     return `Claim ${formatG$(drop!.amount)} G$ →`;
   }
 
@@ -268,6 +287,15 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       padding: "3px 10px", borderRadius: 100,
                       letterSpacing: "0.12em", textTransform: "uppercase",
                     }}>⭐ {campaign.name}</span>
+                  )}
+                  {parsed?.hasRiddle && (
+                    <span style={{
+                      background: "transparent", color: "#BFFD00",
+                      border: "1.5px solid #BFFD00",
+                      fontSize: 9, fontWeight: 900,
+                      padding: "2px 9px", borderRadius: 100,
+                      letterSpacing: "0.12em", textTransform: "uppercase",
+                    }}>🧩 Riddle</span>
                   )}
                 </div>
 
@@ -555,6 +583,86 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       </button>
                     )}
 
+
+                    {/* ── RIDDLE ── */}
+                    {parsed?.hasRiddle && !isSelfDrop && (
+                      <div style={{
+                        background: "#111", border: "2px solid #111",
+                        borderRadius: 14, padding: "16px",
+                        boxShadow: "3px 3px 0 #BFFD00",
+                      }}>
+                        <p style={{
+                          margin: "0 0 10px", fontSize: 10, fontWeight: 800,
+                          textTransform: "uppercase", letterSpacing: "0.1em", color: "#BFFD00",
+                        }}>
+                          🧩 Riddle-locked
+                        </p>
+
+                        {riddleLoading && !riddle ? (
+                          <p style={{ margin: 0, fontSize: 13, color: "#888" }}>Loading the riddle…</p>
+                        ) : riddle ? (
+                          <>
+                            <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1.5 }}>
+                              {riddle.question}
+                            </p>
+
+                            {riddle.lockedByOther ? (
+                              <div style={{
+                                background: "rgba(255,59,59,0.12)", border: "1.5px solid #FF3B3B",
+                                borderRadius: 10, padding: "10px 12px",
+                              }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#FF3B3B" }}>
+                                  Someone solved it first
+                                </p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
+                                  They have a few minutes to claim. If they don&apos;t, it reopens — check back.
+                                </p>
+                              </div>
+                            ) : riddle.lockedByMe ? (
+                              <div style={{
+                                background: "rgba(191,253,0,0.12)", border: "1.5px solid #BFFD00",
+                                borderRadius: 10, padding: "10px 12px",
+                              }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#BFFD00" }}>
+                                  🥇 You solved it — it&apos;s yours to claim
+                                </p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
+                                  Nobody else can take it for the next few minutes.
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <input
+                                  type="text"
+                                  value={answer}
+                                  onChange={(e) => { setAnswer(e.target.value); if (status === "error") setStatus("idle"); }}
+                                  placeholder="Your answer…"
+                                  maxLength={60}
+                                  autoComplete="off"
+                                  style={{
+                                    width: "100%", padding: "13px 14px",
+                                    background: "rgba(255,255,255,0.06)",
+                                    border: "2px solid #333", borderRadius: 12,
+                                    color: "#fff", fontSize: 15, fontWeight: 700,
+                                    fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+                                  }}
+                                  onFocus={(e) => { e.currentTarget.style.borderColor = "#BFFD00"; }}
+                                  onBlur={(e)  => { e.currentTarget.style.borderColor = "#333"; }}
+                                />
+                                <p style={{ margin: "8px 0 0", fontSize: 11, color: "#666", lineHeight: 1.5 }}>
+                                  Spelling counts, but capitals and punctuation don&apos;t.
+                                  First correct answer gets 10 minutes of exclusive access.
+                                </p>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <p style={{ margin: 0, fontSize: 13, color: "#FF3B3B", fontWeight: 600 }}>
+                            This drop&apos;s riddle couldn&apos;t be loaded — it can&apos;t be claimed right now.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Error */}
                     {status === "error" && errMsg && (

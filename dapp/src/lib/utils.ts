@@ -154,11 +154,19 @@ export function formatDegrees(raw: number): string {
 // [CH:nextId]hint — public chain drop (first stop, links to nextId)
 // [P:][CH:id]hint — private chain drop (middle stop, hidden from map)
 // [P:][CHL]hint   — private chain drop (last stop, hidden from map)
+// [R]hint         — riddle-locked: hunter must answer correctly to claim.
+//                   Composes with any of the above (it's the outermost prefix).
+//
+// [R] is deliberately recorded ON-CHAIN rather than only in Redis. The riddle's
+// question/answer live server-side, but the *existence* of a riddle must be
+// tamper-proof: it lets the claim gate fail CLOSED when Redis is unavailable,
+// instead of silently signing a proof and letting someone skip the riddle.
 
 const PRIVATE_RE  = /^\[P:([^\]]*)\]([\s\S]*)/;
 const CAMPAIGN_RE = /^\[C:([^\]]+)\]([\s\S]*)/;
 const CHAIN_RE    = /^\[CH:([^\]]+)\]([\s\S]*)/;
 const CHAIN_LAST  = /^\[CHL\]([\s\S]*)/;
+const RIDDLE_RE   = /^\[R\]([\s\S]*)/;
 
 export function parseDropHint(raw: string): {
   isPrivate:   boolean;
@@ -166,31 +174,49 @@ export function parseDropHint(raw: string): {
   campaignId:  string | null;
   chainNextId: string | null;
   isChainLast: boolean;
+  hasRiddle:   boolean;
   hint:        string;
 } {
   let rest      = raw;
   let isPrivate = false;
+  let hasRiddle = false;
   let target: string | null = null;
 
-  // Strip [P:...] prefix first
+  // [R] is written outermost, but tolerate it on either side of [P:…] so a
+  // stray ordering can never make a riddle drop look unlocked.
+  const takeRiddle = () => {
+    const m = rest.match(RIDDLE_RE);
+    if (m) { hasRiddle = true; rest = m[1]; }
+  };
+
+  takeRiddle();
+
+  // Strip [P:...] prefix
   const priv = rest.match(PRIVATE_RE);
   if (priv) { isPrivate = true; target = priv[1] || null; rest = priv[2]; }
 
+  takeRiddle();
+
   // Check remaining for [CHL]
   const chainLast = rest.match(CHAIN_LAST);
-  if (chainLast) return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: true, hint: chainLast[1] };
+  if (chainLast) return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: true, hasRiddle, hint: chainLast[1] };
 
   // Check remaining for [CH:id]
   const chain = rest.match(CHAIN_RE);
-  if (chain) return { isPrivate, target, campaignId: null, chainNextId: chain[1], isChainLast: false, hint: chain[2] };
+  if (chain) return { isPrivate, target, campaignId: null, chainNextId: chain[1], isChainLast: false, hasRiddle, hint: chain[2] };
 
   // Check remaining for [C:id] (campaigns are never private)
   if (!isPrivate) {
     const camp = rest.match(CAMPAIGN_RE);
-    if (camp) return { isPrivate: false, target: null, campaignId: camp[1], chainNextId: null, isChainLast: false, hint: camp[2] };
+    if (camp) return { isPrivate: false, target: null, campaignId: camp[1], chainNextId: null, isChainLast: false, hasRiddle, hint: camp[2] };
   }
 
-  return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: false, hint: rest };
+  return { isPrivate, target, campaignId: null, chainNextId: null, isChainLast: false, hasRiddle, hint: rest };
+}
+
+// Applied last, so [R] wraps whatever private/campaign/chain encoding is already there.
+export function buildRiddleHint(hint: string): string {
+  return `[R]${hint}`;
 }
 
 export function buildPrivateHint(hint: string, targetAddress: string): string {

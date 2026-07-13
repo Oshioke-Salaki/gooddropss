@@ -1,7 +1,7 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, useSignMessage } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { publicClient } from "@/lib/publicClient";
@@ -13,12 +13,16 @@ import {
 } from "@/lib/contracts";
 import {
   degToGps, formatG$,
-  buildPrivateHint, buildPrivateHintNoTarget, buildCampaignHint,
+  buildPrivateHint, buildPrivateHintNoTarget, buildCampaignHint, buildRiddleHint,
 } from "@/lib/utils";
+import {
+  RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
+  normalizeAnswer, riddleOwnershipMessage,
+} from "@/lib/riddles";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Check, Share2, Lock } from "lucide-react";
+import { Copy, Check, Share2, Lock, Puzzle } from "lucide-react";
 import { decodeEventLog } from "viem";
 import clsx from "clsx";
 
@@ -30,7 +34,35 @@ const DURATIONS = [
   { label: "30d", seconds: 2_592_000 },
 ];
 
-type Status = "idle" | "approving" | "dropping" | "done" | "error";
+type Status = "idle" | "approving" | "dropping" | "riddle" | "riddleFailed" | "done" | "error";
+
+// A riddle can only be attached AFTER createDrop is mined (dropId doesn't exist
+// before that). If the signature is rejected or the POST fails, the drop is
+// already on-chain and marked [R] — live, escrowed, and unclaimable until the
+// riddle lands. Retrying must therefore re-attach the riddle to THAT drop, never
+// re-run createDrop (which would hide a second drop and spend the G$ twice).
+//
+// Parked on disk so closing the sheet, or the whole app, doesn't strand the drop.
+const PENDING_KEY = "gd:pending-riddle";
+
+interface PendingRiddle {
+  dropId:   string;
+  question: string;
+  answer:   string;
+}
+
+function loadPending(): PendingRiddle | null {
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    return raw ? (JSON.parse(raw) as PendingRiddle) : null;
+  } catch { return null; }
+}
+function savePending(p: PendingRiddle) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch {}
+}
+function clearPending() {
+  try { localStorage.removeItem(PENDING_KEY); } catch {}
+}
 
 interface Props {
   open: boolean;
@@ -45,6 +77,7 @@ interface Props {
 export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campaignId, campaignName, campaignColor }: Props) {
   const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
 
   // ── Location (set via picker) ───────────────────────────────────────────────
@@ -65,6 +98,29 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const [createdDropId, setCreatedDropId] = useState<bigint | null>(null);
   const [privateToken,  setPrivateToken]  = useState<string | null>(null);
   const [linkCopied,    setLinkCopied]    = useState(false);
+  // ── Riddle lock (optional) ──────────────────────────────────────────────────
+  const [hasRiddle,      setHasRiddle]      = useState(false);
+  const [riddleQuestion, setRiddleQuestion] = useState("");
+  const [riddleAnswer,   setRiddleAnswer]   = useState("");
+  const [pending,        setPending]        = useState<PendingRiddle | null>(null);
+  // True only when we're recovering a drop stranded by an EARLIER session. The
+  // form's amount/location state is long gone by then, so we must not reuse the
+  // normal success screen — it would confidently show the default "10 G$".
+  const [resuming,       setResuming]       = useState(false);
+
+  // A drop stranded by an earlier failure (signature cancelled, app closed mid-flow)
+  // is live on-chain, escrowed and unclaimable. Surface it the moment the sheet
+  // opens so it can be finished, rather than silently leaving the G$ locked.
+  useEffect(() => {
+    if (!open) return;
+    const p = loadPending();
+    if (p) {
+      setPending(p);
+      setResuming(true);
+      setStatus("riddleFailed");
+      setErrMsg("");
+    }
+  }, [open]);
 
   const reset = useCallback(() => {
     setStatus("idle");
@@ -80,6 +136,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     setCreatedDropId(null);
     setPrivateToken(null);
     setLinkCopied(false);
+    setHasRiddle(false);
+    setRiddleQuestion("");
+    setRiddleAnswer("");
   }, []);
 
   const handleClose = () => { reset(); onClose(); };
@@ -95,9 +154,16 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   // ── On-chain drop ───────────────────────────────────────────────────────────
   async function handleDrop() {
     if (!address || lat === null || lng === null) return;
+    // Never create a second drop while one is stranded — that would escrow the
+    // user's G$ twice.
+    if (pending) return;
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum <= 0) { setErrMsg("Enter a valid amount."); return; }
-    if (hint.length > 200) { setErrMsg("Hint is too long (max 200 chars)."); return; }
+    // hintMaxLen already accounts for the [P:…] / [R] prefix overhead.
+    if (hint.length > hintMaxLen) {
+      setErrMsg(`Clue is too long (max ${hintMaxLen} chars).`);
+      return;
+    }
 
     const amountBig = parseUnits(amount, 18);
     if (amountBig > balance) {
@@ -126,13 +192,17 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
 
     // Build stored hint: campaign drops take priority over private encoding
-    const storedHint = campaignId
+    const baseHint = campaignId
       ? buildCampaignHint(hint, campaignId)
       : isPrivate
         ? (targetAddress.trim()
             ? buildPrivateHint(hint, targetAddress.trim())
             : buildPrivateHintNoTarget(hint))
         : hint;
+
+    // [R] goes outermost so the riddle lock is visible on-chain regardless of
+    // whatever private/campaign encoding sits underneath it.
+    const storedHint = riddleOn ? buildRiddleHint(baseHint) : baseHint;
 
     try {
       const allowance = await publicClient.readContract({
@@ -184,11 +254,67 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       }
 
       setCreatedDropId(newDropId);
+
+      // Attach the riddle. The drop is already on-chain and marked [R] at this
+      // point, so failure here is NOT recoverable by retrying handleDrop — park
+      // it and let attachRiddle() finish the job.
+      if (riddleOn && newDropId !== null) {
+        const pending: PendingRiddle = {
+          dropId:   newDropId.toString(),
+          question: riddleQuestion.trim(),
+          answer:   riddleAnswer,
+        };
+        savePending(pending);
+        setPending(pending);
+        const ok = await attachRiddle(pending);
+        if (!ok) return; // attachRiddle set status → "riddleFailed"
+      }
+
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
       setStatus("error");
+    }
+  }
+
+  // Signs proof-of-ownership and stores the riddle. Returns false (and leaves the
+  // sheet in "riddleFailed") if it couldn't — so the caller never falls through to
+  // a success screen for a drop that's still locked.
+  async function attachRiddle(p: PendingRiddle): Promise<boolean> {
+    setStatus("riddle");
+    setErrMsg("");
+    try {
+      const signature = await signMessageAsync({ message: riddleOwnershipMessage(p.dropId) });
+      const res = await fetch("/api/riddles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dropId:   p.dropId,
+          question: p.question,
+          answer:   p.answer,
+          signature,
+        }),
+      });
+
+      // 409 = a riddle is already stored for this drop. That means a previous
+      // attempt actually succeeded (the response was just lost), so we're done.
+      if (res.ok || res.status === 409) {
+        clearPending();
+        setCreatedDropId(BigInt(p.dropId));
+        return true;
+      }
+
+      const body = await res.json().catch(() => ({}));
+      setErrMsg(body.error ?? "Could not save the riddle.");
+      setStatus("riddleFailed");
+      return false;
+    } catch (e: unknown) {
+      const err = e as { shortMessage?: string; message?: string };
+      // Most common cause by far: the user dismissed the signature prompt.
+      setErrMsg(err.shortMessage ?? err.message ?? "Signature was cancelled.");
+      setStatus("riddleFailed");
+      return false;
     }
   }
 
@@ -201,21 +327,35 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     );
   }
 
-  const busy = status === "approving" || status === "dropping";
+  const busy = status === "approving" || status === "dropping" || status === "riddle";
   const amountNum = parseFloat(amount);
   const amountWei = !isNaN(amountNum) && amountNum > 0
     ? parseUnits(amount, 18)
     : 0n;
   const insufficientBalance = isConnected && !balanceFetching && amountWei > 0n && amountWei > balance;
   // Private prefix overhead: "[P:0x1234567890abcdef1234567890abcdef12345678]" = 46 chars
-  const hintMaxLen = isPrivate ? 154 : 200;
+  // Riddle prefix overhead: "[R]" = 3 chars
+  const hintMaxLen = (isPrivate ? 154 : 200) - (hasRiddle ? 3 : 0);
+
+  // A riddle only counts if it's actually usable: an answer that normalises to
+  // nothing (e.g. "???") could never be matched, and the server rejects it.
+  const riddleReady =
+    riddleQuestion.trim().length > 0 &&
+    riddleQuestion.trim().length <= RIDDLE_MAX_QUESTION &&
+    riddleAnswer.length <= RIDDLE_MAX_ANSWER &&
+    normalizeAnswer(riddleAnswer).length > 0;
+  const riddleOn = hasRiddle && riddleReady;
+
   const canDrop =
     isConnected && lat !== null && lng !== null &&
-    !isNaN(amountNum) && amountNum > 0 && hint.length <= hintMaxLen && !busy && !insufficientBalance;
+    !isNaN(amountNum) && amountNum > 0 && hint.length <= hintMaxLen &&
+    (!hasRiddle || riddleReady) &&
+    !busy && !insufficientBalance;
 
   const btnLabel =
     status === "approving" ? "One moment…" :
     status === "dropping"  ? "Hiding…" :
+    status === "riddle"    ? "Locking riddle…" :
     status === "error"     ? "Try again" :
     `Drop ${amount || "?"} G$`;
 
@@ -438,7 +578,83 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
             );
           })()}
 
-          {status !== "done" && (
+          {/* ── Stranded drop: on-chain and [R]-marked, but no riddle stored ──
+              The G$ is escrowed and nobody can claim it until the riddle lands.
+              This screen retries ONLY the attach — re-running the drop would hide
+              a second one and spend the balance twice. */}
+          {pending && (status === "riddleFailed" || (resuming && status === "riddle")) && (
+            <div style={{
+              background: "#fff8e6", border: "2.5px solid #111",
+              borderRadius: 18, boxShadow: "4px 4px 0 #111",
+              padding: "22px 20px",
+            }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 900, fontSize: 18 }}>
+                ⚠️ One step left
+              </p>
+              <p style={{ margin: "0 0 14px", fontSize: 13, color: "#5a5a5a", lineHeight: 1.6 }}>
+                Drop <strong>#{pending.dropId}</strong> is live and your G$ is safely escrowed —
+                but its riddle didn&apos;t save, so nobody can claim it yet.
+                Sign once to finish. This sends no transaction and costs nothing.
+              </p>
+
+              {errMsg && (
+                <p style={{
+                  margin: "0 0 12px", padding: "10px 12px",
+                  background: "#FFE5E5", border: "1.5px solid #FF3B3B",
+                  borderRadius: 10, color: "#C81E1E", fontSize: 12, fontWeight: 600,
+                }}>
+                  {errMsg}
+                </p>
+              )}
+
+              <button
+                onClick={async () => {
+                  const ok = await attachRiddle(pending);
+                  if (!ok) return;
+                  if (resuming) {
+                    // Recovered from an earlier session: the form's amount and
+                    // location are gone, so skip the success hero (it would show a
+                    // wrong, default amount) and just return to a refreshed map.
+                    setPending(null);
+                    setResuming(false);
+                    onSuccess();
+                    reset();
+                  } else {
+                    setPending(null);
+                    setStatus("done");
+                  }
+                }}
+                disabled={status === "riddle"}
+                className="btn-brutal w-full py-3.5 rounded-xl font-black text-base bg-lime text-ink"
+                style={status === "riddle" ? { opacity: 0.6, cursor: "wait" } : undefined}
+              >
+                {status === "riddle" ? "Signing…" : "Finish setting the riddle"}
+              </button>
+
+              <button
+                onClick={() => {
+                  // Escape hatch. The drop stays [R]-marked and unclaimable, so the
+                  // G$ comes back via reclaim once it expires — say so plainly
+                  // rather than pretending this is a clean cancel.
+                  clearPending();
+                  setPending(null);
+                  setResuming(false);
+                  reset();
+                }}
+                disabled={status === "riddle"}
+                style={{
+                  width: "100%", marginTop: 10, padding: 10,
+                  background: "transparent", border: "none",
+                  fontWeight: 700, fontSize: 12, color: "#888",
+                  cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Skip — I&apos;ll reclaim the G$ when it expires
+              </button>
+            </div>
+          )}
+
+          {status !== "done" && status !== "riddleFailed" && !resuming && (
             <>
               {/* ── Location picker row ────────────────────────────────────── */}
               <div className="space-y-1.5">
@@ -598,6 +814,95 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                   </div>
                 )}
               </div>}
+
+              {/* ── Riddle lock (optional) ─────────────────────────────────── */}
+              <div className="border-2 border-ink rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setHasRiddle((r) => !r)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-cream hover:bg-border transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Puzzle size={15} strokeWidth={2.5} className={hasRiddle ? "text-ink" : "text-muted"} />
+                    <div className="text-left">
+                      <p className={clsx("text-sm font-bold", hasRiddle ? "text-ink" : "text-muted")}>
+                        Lock with a riddle
+                      </p>
+                      <p className="text-xs text-muted">
+                        Hunters must answer correctly to claim
+                      </p>
+                    </div>
+                  </div>
+                  <div className={clsx(
+                    "w-10 h-6 rounded-full border-2 border-ink relative shrink-0 transition-colors",
+                    hasRiddle ? "bg-lime" : "bg-border"
+                  )}>
+                    <div className={clsx(
+                      "absolute top-0.5 w-4 h-4 rounded-full bg-ink transition-all",
+                      hasRiddle ? "left-4" : "left-0.5"
+                    )} />
+                  </div>
+                </button>
+
+                {hasRiddle && (
+                  <div className="px-4 pb-4 pt-3 border-t-2 border-ink bg-cream space-y-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold uppercase tracking-wider text-muted">
+                          Question
+                        </label>
+                        <span className={clsx(
+                          "text-xs font-semibold",
+                          riddleQuestion.length > RIDDLE_MAX_QUESTION - 20 ? "text-danger" : "text-muted"
+                        )}>
+                          {riddleQuestion.length}/{RIDDLE_MAX_QUESTION}
+                        </span>
+                      </div>
+                      <textarea
+                        value={riddleQuestion}
+                        onChange={(e) => setRiddleQuestion(e.target.value)}
+                        placeholder="e.g. What colour is the bench I'm hiding under?"
+                        maxLength={RIDDLE_MAX_QUESTION}
+                        rows={2}
+                        className="w-full border-2 border-ink rounded-xl px-4 py-2.5 text-sm bg-white outline-none resize-none placeholder:text-muted"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold uppercase tracking-wider text-muted block">
+                        Answer
+                      </label>
+                      <input
+                        type="text"
+                        value={riddleAnswer}
+                        onChange={(e) => setRiddleAnswer(e.target.value)}
+                        placeholder="red"
+                        maxLength={RIDDLE_MAX_ANSWER}
+                        className="w-full border-2 border-ink rounded-xl px-4 py-2.5 text-sm bg-white outline-none placeholder:text-muted"
+                      />
+                      <p className="text-xs text-muted">
+                        Capitals, spaces and punctuation are ignored — &ldquo;The Red Bench!&rdquo; matches
+                        &ldquo;red bench&rdquo;. Never put the answer in the clue above.
+                      </p>
+                    </div>
+
+                    <div className="bg-white border-2 border-ink rounded-xl px-3 py-2.5 flex gap-2.5">
+                      <span className="text-sm shrink-0">🥇</span>
+                      <p className="text-xs text-ink/70 leading-relaxed">
+                        The first hunter to answer correctly gets{" "}
+                        <span className="font-bold text-ink">10 minutes of exclusive access</span> to
+                        claim it — no sniping.
+                      </p>
+                    </div>
+
+                    {hasRiddle && !riddleReady && (
+                      <p className="text-xs text-muted">
+                        Add a question and an answer to continue.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* ── Error ────────────────────────────────────────────────────── */}
               {(status === "error" || errMsg) && (

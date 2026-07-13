@@ -4,7 +4,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import Supercluster from "supercluster";
 import { Navigation, MapPin, Plus, Minus } from "lucide-react";
-import { formatG$, gpsToDeg, getDropRarity, RARITY, isFlashDrop, haversineDistance } from "@/lib/utils";
+import { formatG$, gpsToDeg, getDropRarity, RARITY, isFlashDrop, haversineDistance, parseDropHint } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
 import type { Drop, LatLng, Spot } from "@/types";
 import { DROP_STATUS } from "@/types";
@@ -40,12 +40,31 @@ function makeDropElement(drop: Drop): HTMLDivElement {
     return el;
   }
 
-  const flash      = isFlashDrop(drop);
-  const isCampaign = /^\[C:[^\]]+\]/.test(drop.hint);
-  const isChain    = /^\[CH:[^\]]+\]/.test(drop.hint);
+  const flash = isFlashDrop(drop);
+  // Parse properly rather than prefix-testing the raw hint: a riddle-locked
+  // campaign drop is "[R][C:id]…", so /^\[C:/ would miss it and silently
+  // downgrade the pin.
+  const parsed     = parseDropHint(drop.hint);
+  const isCampaign = parsed.campaignId !== null;
+  const isChain    = parsed.chainNextId !== null || parsed.isChainLast;
+  const hasRiddle  = parsed.hasRiddle;
   const rarity     = getDropRarity(drop.amount);
   const r          = RARITY[rarity];
   const label      = formatG$(drop.amount);
+
+  // Riddle drops get a puzzle tag so a hunter knows there's a question waiting
+  // before they walk a kilometre to find out.
+  const riddleTag = hasRiddle
+    ? `<div style="
+        position:absolute;top:-4px;right:-4px;
+        width:19px;height:19px;border-radius:50%;
+        background:#111;border:1.5px solid #BFFD00;
+        display:flex;align-items:center;justify-content:center;
+        font-size:10px;line-height:1;
+        pointer-events:none;
+      ">🧩</div>`
+    : "";
+  if (hasRiddle) el.style.position = "relative";
 
   if (flash) {
     el.className = "pin-flash";
@@ -59,7 +78,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
       cursor:pointer;
       font-family:'Space Grotesk',sans-serif;
       user-select:none;gap:1px;
-    "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>`;
+    "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>${riddleTag}`;
     return el;
   }
 
@@ -77,7 +96,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
       font-family:'Space Grotesk',sans-serif;
       user-select:none;gap:1px;
       box-shadow:0 0 0 3px rgba(255,255,255,0.4);
-    "><span style="font-size:13px;line-height:1;">🔗</span><span>${label}</span></div>`;
+    "><span style="font-size:13px;line-height:1;">🔗</span><span>${label}</span></div>${riddleTag}`;
     return el;
   }
 
@@ -95,7 +114,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
       font-family:'Space Grotesk',sans-serif;
       user-select:none;gap:1px;
       box-shadow:0 0 0 3px rgba(255,255,255,0.6);
-    "><span style="font-size:11px;line-height:1;">⭐</span><span>${label}</span></div>`;
+    "><span style="font-size:11px;line-height:1;">⭐</span><span>${label}</span></div>${riddleTag}`;
     return el;
   }
 
@@ -121,7 +140,7 @@ function makeDropElement(drop: Drop): HTMLDivElement {
     font-family:'Space Grotesk',sans-serif;
     user-select:none;
     box-shadow:${s.ring};
-  ">${label}</div>`;
+  ">${label}</div>${riddleTag}`;
   return el;
 }
 

@@ -25,6 +25,11 @@ export const keys = {
   streak:           (address: string) => `gd:streak:${address.toLowerCase()}`,
   privateDrop:      (token: string)   => `gd:privdrop:${token}`,
   velocity:         (address: string) => `gd:velocity:${address.toLowerCase()}`,
+  // Riddle-locked drops
+  riddle:           (dropId: string)  => `gd:riddle:${dropId}`,
+  riddleLock:       (dropId: string)  => `gd:riddle:lock:${dropId}`,
+  riddleTries:      (dropId: string, address: string) =>
+    `gd:riddle:tries:${dropId}:${address.toLowerCase()}`,
   // GoodSpots — merchants that accept G$ at a physical location
   spot:             (id: string)      => `gd:spot:${id}`,
   spotsAll:         ()                => `gd:spots:all`,
