@@ -165,40 +165,11 @@ export function ShareableClaimCard({ amount, rarity, place, handle, dropId, site
       {/* Hidden canvas used for image generation */}
       <canvas ref={canvasRef} width={CARD_W} height={CARD_H} style={{ display: "none" }} />
 
-      {/* Visible preview mini-card */}
-      <div
-        style={{
-          background: "#0a0b12",
-          borderRadius: 16,
-          border: "2px solid #111",
-          padding: "18px 16px",
-          textAlign: "center",
-          marginBottom: 12,
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute", inset: 0,
-            background: `radial-gradient(circle at 50% 40%, ${r.color}33, transparent 60%)`,
-            pointerEvents: "none",
-          }}
-        />
-        <p style={{ margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", color: r.color, position: "relative" }}>
-          {r.label.toUpperCase()}
-        </p>
-        <p style={{ margin: "6px 0 0", fontSize: 12, fontWeight: 700, color: "#7c7f92", position: "relative" }}>
-          I JUST FOUND
-        </p>
-        <p style={{ margin: "2px 0 0", position: "relative" }}>
-          <span style={{ fontSize: 44, fontWeight: 900, color: "#fff" }}>{formatG$(amount)}</span>
-          <span style={{ fontSize: 24, fontWeight: 900, color: r.color }}> G$</span>
-        </p>
-        <p style={{ margin: "6px 0 0", fontSize: 11, fontWeight: 700, color: "#7c7f92", position: "relative" }}>
-          Real money. Real places. · gooddrops.xyz
-        </p>
-      </div>
+      {/* No preview mini-card here on purpose. It used to restate "I JUST FOUND
+          40 G$" directly beneath the success hero's "You found it! 40 G$" — the
+          same number twice, ~200px apart, in two different styles. The 1080×1080
+          image is still drawn on the hidden canvas above and attached by Share /
+          Download, so nothing is lost by not mocking it up on screen. */}
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 10 }}>
@@ -232,6 +203,14 @@ export function ShareableClaimCard({ amount, rarity, place, handle, dropId, site
           {copied ? <Check size={16} /> : <Download size={16} />}
         </button>
       </div>
+
+      {/* The preview is gone, so say plainly that an image goes with the share. */}
+      <p style={{
+        margin: "8px 0 0", fontSize: 11, color: "#666",
+        textAlign: "center", fontFamily: "inherit",
+      }}>
+        Shares a card image of your {formatG$(amount)} G$ find
+      </p>
     </div>
   );
 }
