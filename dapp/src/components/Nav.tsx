@@ -274,7 +274,7 @@ function WalletButton({
 // Three genuinely different situations, three different messages. Collapsing
 // them into one "verification required" is what made a user who HAD verified
 // think the app was broken.
-export type VerifyBannerMode = "none" | "lapsed" | "expiring";
+export type VerifyBannerMode = "none" | "lapsed" | "expiring" | "blacklisted";
 
 interface VerifyBannerProps {
   mode: VerifyBannerMode | null;   // null ⇒ nothing to say
@@ -284,9 +284,11 @@ interface VerifyBannerProps {
   onGetVerified: () => void;
 }
 
+const day = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
 const BANNER_COPY: Record<
   VerifyBannerMode,
-  (p: { isProbation: boolean; daysLeft: number }) => { accent: string; text: string; cta: string }
+  (p: { isProbation: boolean; daysLeft: number }) => { accent: string; text: string; cta: string | null }
 > = {
   none: () => ({
     accent: "#bffd00",
@@ -295,19 +297,27 @@ const BANNER_COPY: Record<
   }),
   lapsed: ({ isProbation }) => ({
     accent: "#FF3B3B",
+    // They DID verify. Say so — otherwise they assume we lost it and that the
+    // app is broken. Note the short window RECURS (authCount cycles), so this is
+    // never phrased as "your first verification".
     text: isProbation
-      // The 3-day probation rung. They DID verify — say so, or they'll assume
-      // we lost it and that the whole thing is broken.
-      ? "🔄 You're face-verified, but GoodDollar needs one more check — first-time verifications only last 3 days. Re-verify once and you're set for 6 months."
+      ? "🔄 You're face-verified — GoodDollar just needs a re-check. New verifications only stay active for 3 days; re-verify once and it lasts 6 months."
       : "🔄 Your GoodDollar verification has expired. Re-verify to keep claiming.",
     cta: "Re-verify →",
   }),
   expiring: ({ isProbation, daysLeft }) => ({
     accent: "#FFB020",
     text: isProbation
-      ? `⏳ Almost there — re-verify within ${daysLeft} day${daysLeft === 1 ? "" : "s"} to lock in 6 months of claiming.`
-      : `⏳ Your GoodDollar verification expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+      ? `⏳ Your verification is only active for ${day(daysLeft)}. Re-verify now to lock in 6 months of claiming.`
+      : `⏳ Your GoodDollar verification expires in ${day(daysLeft)}.`,
     cta: "Re-verify →",
+  }),
+  blacklisted: () => ({
+    accent: "#FF3B3B",
+    // Nothing the user can do in-app — don't dangle a "verify" button that
+    // would only fail.
+    text: "🚫 This wallet has been blocked by GoodDollar and can't claim drops. Contact GoodDollar support.",
+    cta: null,
   }),
 };
 
@@ -370,23 +380,27 @@ export function VerifyBanner({
       <span style={{ color: "#fff", fontWeight: 600, textAlign: "center", lineHeight: 1.45 }}>
         {copy.text}
       </span>
-      <button
-        onClick={onGetVerified}
-        style={{
-          background: copy.accent,
-          color: "#111111",
-          border: `1.5px solid ${copy.accent}`,
-          borderRadius: "6px",
-          padding: "3px 10px",
-          fontWeight: 800,
-          fontSize: "12px",
-          cursor: "pointer",
-          fontFamily: "inherit",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {copy.cta}
-      </button>
+      {/* Blacklisted has no CTA — there is nothing the user can do here, and a
+          button that only fails is worse than no button. */}
+      {copy.cta && (
+        <button
+          onClick={onGetVerified}
+          style={{
+            background: copy.accent,
+            color: "#111111",
+            border: `1.5px solid ${copy.accent}`,
+            borderRadius: "6px",
+            padding: "3px 10px",
+            fontWeight: 800,
+            fontSize: "12px",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {copy.cta}
+        </button>
+      )}
       <button
         onClick={() => setDismissed(true)}
         // A lapsed wallet genuinely cannot claim. Letting it be dismissed would
@@ -425,6 +439,7 @@ export function Nav() {
   const {
     status: idStatus,
     isLapsed,
+    isBlacklisted,
     expiringSoon,
     neverVerified,
     isLoading: idLoading,
@@ -432,9 +447,10 @@ export function Nav() {
   } = useIdentityStatus();
 
   const bannerMode: VerifyBannerMode | null =
-    idLoading      ? null
-    : isLapsed     ? "lapsed"
-    : expiringSoon ? "expiring"
+    idLoading       ? null
+    : isBlacklisted ? "blacklisted"
+    : isLapsed      ? "lapsed"
+    : expiringSoon  ? "expiring"
     : neverVerified ? "none"
     : null;
 

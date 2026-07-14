@@ -18,6 +18,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
 import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { VerificationModal } from "@/components/VerificationModal";
 import { HuntingMode } from "@/components/HuntingMode";
 import { Celebration } from "@/components/Celebration";
@@ -57,7 +58,12 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const { login, authenticated } = useAuth();
   const { address }              = useAccount();
   const isConnected              = authenticated && !!address;
-  const { isVerified }           = useGoodDollarProfile();
+  // Same three-state identity check as ClaimSheet. A bare getWhitelistedRoot()
+  // can't tell "never verified" from "verified but lapsed", and this is the page
+  // behind every QR code and share link — the first thing a migrating user sees.
+  const {
+    status: identity, isVerified, isLapsed, expiringSoon,
+  } = useIdentityStatus();
   const verificationOk           = isVerified;
   const { writeContractAsync }   = useWriteContract();
 
@@ -279,6 +285,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     if (status === "claiming") return "Claiming…";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
+    if (isLapsed)              return "Re-verify to claim";
     if (!verificationOk)       return "Verification required";
     if (isSelf)                return "This is your own drop";
     if (!userLoc)              return "Enable GPS to claim";
@@ -662,20 +669,27 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </>
           )}
 
-          {/* Verify to claim — GoodDollar-verified humans only */}
+          {/* Verification — never tell someone who already did the face scan that
+              they aren't verified. Lapsed and never-verified are different things. */}
           {isConnected && !isVerified && (
             <div style={{
-              marginTop: 12, background: "#fff8e6",
-              border: "2px solid #111", borderRadius: 14,
+              marginTop: 12,
+              background: isLapsed ? "#FFE5E5" : "#fff8e6",
+              border: `2px solid ${isLapsed ? "#FF3B3B" : "#111"}`,
+              borderRadius: 14,
               padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
             }}>
-              <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>{isLapsed ? "🔄" : "🪪"}</span>
               <div style={{ flex: 1 }}>
                 <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                  Verify to claim
+                  {isLapsed ? "Re-verify to claim" : "Verify to claim"}
                 </p>
-                <p style={{ margin: "3px 0 0", fontSize: 11, color: "#888" }}>
-                  One-time GoodDollar face check confirms you&apos;re a real human. Takes a minute.
+                <p style={{ margin: "3px 0 0", fontSize: 11, color: isLapsed ? "#C81E1E" : "#888", lineHeight: 1.5 }}>
+                  {isLapsed
+                    ? (identity.isProbation
+                        ? "You're face-verified — GoodDollar just needs a re-check. New verifications only stay active for 3 days; re-verify once and it lasts 6 months."
+                        : "Your GoodDollar verification has expired. Re-verify to start claiming again.")
+                    : "One-time GoodDollar face check confirms you're a real human. Takes a minute."}
                 </p>
               </div>
               <button
@@ -688,7 +702,42 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
                   flexShrink: 0, whiteSpace: "nowrap",
                 }}
               >
-                Verify →
+                {isLapsed ? "Re-verify →" : "Verify →"}
+              </button>
+            </div>
+          )}
+
+          {/* Verified but running out — the 3-day rung gives almost no warning. */}
+          {isConnected && isVerified && expiringSoon && (
+            <div style={{
+              marginTop: 12, background: "#FFF4E0",
+              border: "2px solid #FFB020", borderRadius: 14,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <span style={{ fontSize: 22, flexShrink: 0 }}>⏳</span>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                  {identity.daysLeft === 0
+                    ? "Verification expires today"
+                    : `Verification expires in ${identity.daysLeft} day${identity.daysLeft === 1 ? "" : "s"}`}
+                </p>
+                <p style={{ margin: "3px 0 0", fontSize: 11, color: "#8a6500", lineHeight: 1.5 }}>
+                  {identity.isProbation
+                    ? "Re-verify once now to lock in 6 months of claiming."
+                    : "Re-verify to keep claiming without interruption."}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsVerifying(true)}
+                style={{
+                  background: "#111", color: "#FFB020",
+                  border: "none", borderRadius: 10,
+                  padding: "8px 14px", fontWeight: 900, fontSize: 12,
+                  cursor: "pointer", fontFamily: "inherit",
+                  flexShrink: 0, whiteSpace: "nowrap",
+                }}
+              >
+                Re-verify →
               </button>
             </div>
           )}

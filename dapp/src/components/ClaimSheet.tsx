@@ -726,7 +726,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                           <p style={{ margin: "2px 0 0", fontSize: 11, color: isLapsed ? "#C81E1E" : "#888", lineHeight: 1.5 }}>
                             {isLapsed
                               ? (identity.isProbation
-                                  ? "You're already face-verified — GoodDollar just needs one more check (first verifications only last 3 days). Do it once and you're set for 6 months."
+                                  ? "You're face-verified — GoodDollar just needs a re-check. New verifications only stay active for 3 days; re-verify once and it lasts 6 months."
                                   : "Your GoodDollar verification has expired. Re-verify to start claiming again.")
                               : "One-time GoodDollar face check confirms you're a real human. Takes a minute."}
                           </p>

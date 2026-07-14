@@ -5,17 +5,28 @@ export const IDENTITY_ADDRESS =
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-// GoodDollar IdentityV4 puts verification on a LADDER, not a single expiry:
+// GoodDollar IdentityV4 puts verification on a repeating LADDER, not a single
+// expiry:
 //
 //   reverifyDaysOptions = [3, 180]
 //
-// Your first face verification (authCount = 0) is only valid for THREE DAYS.
-// You must re-authenticate once inside that window — which bumps authCount to 1
-// — and only then do you get the full 180 days.
+// A wallet on rung 0 (authCount = 0) is only whitelisted for THREE DAYS. It must
+// re-authenticate inside that window — which bumps authCount to 1 — and only
+// then does it get the full 180 days.
 //
-// Anyone authenticated before TEMP_EXCLUSION_TS is grandfathered straight onto
+// And it CYCLES. authenticateWithTimestamp() does:
+//
+//     authCount += 1;
+//     if (authCount >= reverifyDaysOptions.length) authCount = 0;
+//
+// so after the 180 days elapse and the user re-authenticates, authCount wraps
+// back to 0 and they land on the 3-day rung AGAIN. The short window is therefore
+// a recurring state, not a one-time initiation — never write copy that calls it
+// "your first verification".
+//
+// Wallets authenticated before TEMP_EXCLUSION_TS are grandfathered straight onto
 // the final rung by the contract, which is why older wallets appear to "just
-// work" while every new user silently falls off a cliff after 3 days.
+// work" while newer ones silently fall off a cliff after 3 days.
 //
 // isWhitelisted() returns false the moment the current rung elapses, so
 // getWhitelistedRoot() goes to zero and the user looks like they never verified
@@ -128,9 +139,12 @@ export async function readIdentityStatus(
   };
 }
 
-// Verified, but the clock is about to run out. On the 3-day probation rung this
-// is the difference between a user who keeps their account and one who loses it.
+// Verified, but the clock is running out.
+//
+// On the SHORT rung we warn immediately and continuously — a 3-day window is too
+// tight for a "last 2 days" threshold to be any use, and the whole point is to
+// catch the user BEFORE the cliff rather than explain it afterwards.
 export function isExpiringSoon(s: IdentityStatus): boolean {
   if (s.state !== "verified") return false;
-  return s.isProbation ? s.daysLeft <= 2 : s.daysLeft <= 14;
+  return s.isProbation ? true : s.daysLeft <= 14;
 }

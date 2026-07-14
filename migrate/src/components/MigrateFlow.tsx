@@ -7,7 +7,9 @@ import {
   Mail, Wallet, ShieldCheck, ArrowRight, Loader2, Check, AlertCircle, ClipboardPaste, Coins,
   Copy, Fuel, X, BadgeCheck,
 } from "lucide-react";
-import { loginWeb3Auth, logoutWeb3Auth } from "@/lib/web3auth";
+import {
+  loginWeb3Auth, openWeb3AuthModal, prepareWeb3Auth, logoutWeb3Auth, PopupBlockedError,
+} from "@/lib/web3auth";
 import { NONE, type IdentityStatus } from "@/lib/identity";
 import {
   walletClientFromProvider, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
@@ -63,6 +65,7 @@ export function MigrateFlow() {
   const [identity, setIdentity]   = useState<IdentityStatus>(NONE);
   const [fvBusy, setFvBusy]       = useState(false);
   const [rechecking, setRechecking] = useState(false);
+  const [popupBlocked, setPopupBlocked] = useState(false);
 
   const oldProviderRef  = useRef<EIP1193Provider | null>(null);
   const privyHandledRef = useRef(false);
@@ -221,20 +224,52 @@ export function MigrateFlow() {
   const connectPrivy  = useCallback(() => startPrivy(false), [startPrivy]);
   const connectWallet = useCallback(() => startPrivy(true), [startPrivy]);
 
+  // Load + init the Web3Auth SDK the moment we know we'll need it. This MUST
+  // happen before the click: connectTo() opens a popup, and any `await` in front
+  // of it (like init) ends the user gesture and gets the popup blocked — which
+  // shows up as a spinner that never resolves.
+  useEffect(() => {
+    if (step === "connectOld" && authType === "web3auth") {
+      prepareWeb3Auth().catch(() => { /* click falls back to the modal */ });
+    }
+  }, [step, authType]);
+
   const connectWeb3Auth = useCallback(async () => {
+    setErr("");
+    setPopupBlocked(false);
+    setBusy(true);
+    try {
+      // No await before this call — the popup has to open inside the click.
+      // The email from step 1 is passed as loginHint so Web3Auth skips its own
+      // modal instead of asking for the same address a second time.
+      const { provider, address } = await loginWeb3Auth(email.trim());
+      await afterOldLogin(provider, address);
+    } catch (e) {
+      if (e instanceof PopupBlockedError) {
+        setPopupBlocked(true);
+        setErr(e.message);
+      } else {
+        setErr((e as Error).message || "Couldn't connect your Web3Auth wallet.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [afterOldLogin, email]);
+
+  // Escape hatch when a popup blocker eats the headless window. The modal opens
+  // its popup from its own click, so it always gets through.
+  const connectWeb3AuthModal = useCallback(async () => {
     setErr("");
     setBusy(true);
     try {
-      // Pass the email from step 1 so Web3Auth skips its own modal instead of
-      // asking the user to type the same address a second time.
-      const { provider, address } = await loginWeb3Auth(email.trim());
+      const { provider, address } = await openWeb3AuthModal();
       await afterOldLogin(provider, address);
     } catch (e) {
       setErr((e as Error).message || "Couldn't connect your Web3Auth wallet.");
     } finally {
       setBusy(false);
     }
-  }, [afterOldLogin, email]);
+  }, [afterOldLogin]);
 
   // Shared error mapping for on-chain failures.
   const toFriendlyError = (e: unknown) => {
@@ -465,10 +500,17 @@ export function MigrateFlow() {
                 <Mail size={18} /> {privyAuthed ? "Continue" : "Sign in with email"}
               </button>
             ) : (
-              <button onClick={connectWeb3Auth} disabled={busy} style={btn(!busy)}>
-                {busy ? <Loader2 size={18} className="spin" /> : <Wallet size={18} />}
-                {busy ? "Opening…" : "Sign in with Web3Auth"}
-              </button>
+              <>
+                <button onClick={connectWeb3Auth} disabled={busy} style={btn(!busy)}>
+                  {busy ? <Loader2 size={18} className="spin" /> : <Wallet size={18} />}
+                  {busy ? "Opening…" : "Sign in with Web3Auth"}
+                </button>
+                {popupBlocked && (
+                  <button onClick={connectWeb3AuthModal} disabled={busy} style={{ ...secondaryBtn, marginTop: 10 }}>
+                    <Wallet size={16} /> Open the Web3Auth window instead
+                  </button>
+                )}
+              </>
             )}
             <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Use a different email"}</button>
           </motion.div>
