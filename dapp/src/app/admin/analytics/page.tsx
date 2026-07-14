@@ -9,9 +9,9 @@ import { resolveRoots } from "@/lib/roots";
 import { formatG$ } from "@/lib/utils";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { DROP_STATUS, type Drop } from "@/types";
+import { isAdminAddress } from "@/lib/admins";
 
-// Only the contract owner / admin sees this. Same gate as /admin.
-const ADMIN = "0xb2914810724fe2fb871960eb200dea427854b1c7";
+// Admin wallets live in one shared allowlist — see lib/admins.ts.
 const ZERO  = "0x0000000000000000000000000000000000000000";
 
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
@@ -30,7 +30,7 @@ function Stat({ label, value, sub, accent }: { label: string; value: string; sub
 
 export default function AnalyticsPage() {
   const { address } = useAccount();
-  const isAdmin = address?.toLowerCase() === ADMIN;
+  const isAdmin = isAdminAddress(address);
 
   const [drops, setDrops]   = useState<Drop[] | null>(null);
   const [roots, setRoots]   = useState<Map<string, string>>(new Map());

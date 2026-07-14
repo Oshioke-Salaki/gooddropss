@@ -5,8 +5,8 @@ import { parseUnits, maxUint256 } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { degToGps } from "@/lib/utils";
+import { isAdminAddress } from "@/lib/admins";
 
-const ADMIN       = "0xb2914810724fe2fb871960eb200dea427854b1c7";
 const AMOUNT      = parseUnits("10", 18);
 const EXPIRY_S    = 7 * 24 * 60 * 60;
 const STORAGE_KEY = "gd_admin_seed_v3"; // bump version so old sessions don't conflict
@@ -141,7 +141,7 @@ type Phase = "idle" | "approving" | "dropping" | "done";
 export default function AdminPage() {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
-  const isAdmin = address?.toLowerCase() === ADMIN;
+  const isAdmin = isAdminAddress(address);
 
   const [session, setSession] = useState<Session | null>(null);
   const [phase,   setPhase]   = useState<Phase>("idle");
