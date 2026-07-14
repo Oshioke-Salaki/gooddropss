@@ -27,6 +27,7 @@ import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -56,8 +57,13 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const { authenticated } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
-  const { isVerified } = useGoodDollarProfile();
   const { writeContractAsync } = useWriteContract();
+
+  // Not useGoodDollarProfile().isVerified — that's a bare getWhitelistedRoot()
+  // check, which can't tell "never verified" from "verified but lapsed".
+  const {
+    status: identity, isVerified, isLapsed, expiringSoon,
+  } = useIdentityStatus();
 
   const verificationOk = isVerified;
   const [status, setStatus] = useState<Status>("idle");
@@ -164,6 +170,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     if (status === "claiming") return "⏳ Claiming…";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
+    if (isLapsed)              return "🔄 Re-verify to claim";
     if (!verificationOk)       return "🪪 Verification required";
     if (isSelfDrop)            return "Can't claim own drop";
     if (!userLocation)         return "Enable GPS to claim";
@@ -702,18 +709,26 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
                     <SafetyNote />
 
-                    {/* Verification required — GoodDollar-verified humans only */}
+                    {/* Verification — three states, three messages. A user who
+                        already did the face scan must never be told to "verify". */}
                     {isConnected && !isVerified && (
                       <div style={{
-                        background: "#fff8e6", border: "2px solid #111",
+                        background: isLapsed ? "#FFE5E5" : "#fff8e6",
+                        border: `2px solid ${isLapsed ? "#FF3B3B" : "#111"}`,
                         borderRadius: 12, padding: "12px 14px",
                         display: "flex", alignItems: "center", gap: 12,
                       }}>
-                        <span style={{ fontSize: 22, flexShrink: 0 }}>🪪</span>
+                        <span style={{ fontSize: 22, flexShrink: 0 }}>{isLapsed ? "🔄" : "🪪"}</span>
                         <div style={{ flex: 1 }}>
-                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>Verify to claim</p>
-                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                            One-time GoodDollar face check confirms you&apos;re a real human. Takes a minute.
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                            {isLapsed ? "Re-verify to claim" : "Verify to claim"}
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: isLapsed ? "#C81E1E" : "#888", lineHeight: 1.5 }}>
+                            {isLapsed
+                              ? (identity.isProbation
+                                  ? "You're already face-verified — GoodDollar just needs one more check (first verifications only last 3 days). Do it once and you're set for 6 months."
+                                  : "Your GoodDollar verification has expired. Re-verify to start claiming again.")
+                              : "One-time GoodDollar face check confirms you're a real human. Takes a minute."}
                           </p>
                         </div>
                         <button
@@ -725,7 +740,42 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                             cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
                           }}
                         >
-                          Verify →
+                          {isLapsed ? "Re-verify →" : "Verify →"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Verified, but the clock is running out — on the 3-day rung
+                        this is the last chance to keep the account alive. */}
+                    {isConnected && isVerified && expiringSoon && (
+                      <div style={{
+                        background: "#FFF4E0", border: "2px solid #FFB020",
+                        borderRadius: 12, padding: "12px 14px",
+                        display: "flex", alignItems: "center", gap: 12,
+                      }}>
+                        <span style={{ fontSize: 22, flexShrink: 0 }}>⏳</span>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
+                            {identity.daysLeft === 0
+                              ? "Verification expires today"
+                              : `Verification expires in ${identity.daysLeft} day${identity.daysLeft === 1 ? "" : "s"}`}
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#8a6500", lineHeight: 1.5 }}>
+                            {identity.isProbation
+                              ? "Re-verify once now to lock in 6 months of claiming."
+                              : "Re-verify to keep claiming without interruption."}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                          style={{
+                            background: "#111", color: "#FFB020",
+                            border: "none", borderRadius: 8,
+                            padding: "8px 12px", fontWeight: 900, fontSize: 11,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}
+                        >
+                          Re-verify →
                         </button>
                       </div>
                     )}

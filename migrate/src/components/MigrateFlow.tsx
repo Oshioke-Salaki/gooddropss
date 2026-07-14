@@ -7,9 +7,10 @@ import {
   Mail, Wallet, ShieldCheck, ArrowRight, Loader2, Check, AlertCircle, ClipboardPaste, Coins,
   Copy, Fuel, X, BadgeCheck,
 } from "lucide-react";
-import { loginWeb3Auth } from "@/lib/web3auth";
+import { loginWeb3Auth, logoutWeb3Auth } from "@/lib/web3auth";
+import { NONE, type IdentityStatus } from "@/lib/identity";
 import {
-  walletClientFromProvider, isVerifiedRoot, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
+  walletClientFromProvider, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
   celoBalance,
 } from "@/lib/identityLink";
 
@@ -19,10 +20,14 @@ const GAS_MIN_WEI = 8_000_000_000_000_000n; // 0.008 CELO
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 type Step =
-  | "email" | "connectOld" | "checkingWallet" | "pasteMagic"
+  | "email" | "connectOld" | "checkingWallet" | "reverify" | "pasteMagic"
   | "working" | "done" | "notfound" | "nothingToDo" | "error";
 type AuthType = "privy" | "web3auth" | "";
-type Mode = "link" | "rescue"; // link = verified (identity + G$); rescue = unverified with G$
+// link   = verified now → connectAccount + sweep
+// rescue = never verified → sweep only, no identity exists
+// (a LAPSED wallet gets the dedicated "reverify" step: it has an identity, but
+//  connectAccount is onlyWhitelisted so it cannot link until it re-verifies)
+type Mode = "link" | "rescue";
 
 function fmtG$(wei: bigint): string {
   const n = Number(wei) / 1e18;
@@ -55,6 +60,9 @@ export function MigrateFlow() {
   const [copied, setCopied]       = useState(false);
   const [verifiedRoot, setVerifiedRoot] = useState<string | null>(null); // recipient already verified
   const [preChecking, setPreChecking]   = useState(false);
+  const [identity, setIdentity]   = useState<IdentityStatus>(NONE);
+  const [fvBusy, setFvBusy]       = useState(false);
+  const [rechecking, setRechecking] = useState(false);
 
   const oldProviderRef  = useRef<EIP1193Provider | null>(null);
   const privyHandledRef = useRef(false);
@@ -102,19 +110,26 @@ export function MigrateFlow() {
     setStep("checkingWallet");
     setErr("");
     try {
-      const [verified, balance, celo] = await Promise.all([
-        isVerifiedRoot(address),
+      const [id, balance, celo] = await Promise.all([
+        identityStatus(address),
         gDollarBalance(address),
         celoBalance(address),
       ]);
       setOldBal(balance);
       setCeloBal(celo);
+      setIdentity(id);
 
-      if (verified) {
+      if (id.state === "verified") {
         setMode("link");
         setStep("pasteMagic");
         // No gas → surface the copy-address modal so they can request CELO.
         if (celo < GAS_MIN_WEI) setAddrOpen(true);
+      } else if (id.state === "lapsed") {
+        // They ARE face-verified — their whitelist just ran out (GoodDollar only
+        // gives first-time verifiers 3 days). connectAccount is onlyWhitelisted,
+        // so linking is impossible until they re-verify THIS wallet. Sending them
+        // to "rescue" would sweep the G$ and abandon a real, recoverable identity.
+        setStep("reverify");
       } else if (balance > 0n) {
         setMode("rescue");
         setStep("pasteMagic");
@@ -127,6 +142,47 @@ export function MigrateFlow() {
       setStep("error");
     }
   }, []);
+
+  // Re-check after the user returns from GoodDollar's face verification.
+  const recheckIdentity = useCallback(async () => {
+    if (!oldAddress) return;
+    setRechecking(true);
+    setErr("");
+    try {
+      const id = await identityStatus(oldAddress);
+      setIdentity(id);
+      if (id.state === "verified") {
+        setMode("link");
+        setStep("pasteMagic");
+        if (celoBal < GAS_MIN_WEI) setAddrOpen(true);
+      } else {
+        setErr("Not verified yet — GoodDollar can take a minute to confirm. Try again shortly.");
+      }
+    } catch {
+      setErr("Couldn't check your verification. Please try again.");
+    } finally {
+      setRechecking(false);
+    }
+  }, [oldAddress, celoBal]);
+
+  // Open GoodDollar's face-verification for the OLD wallet. It must be signed by
+  // that wallet — verifying the new one would mint a second identity instead of
+  // reviving this one.
+  const startReverify = useCallback(async () => {
+    const provider = oldProviderRef.current;
+    if (!provider || !oldAddress) return;
+    setFvBusy(true);
+    setErr("");
+    try {
+      const client = await walletClientFromProvider(provider, oldAddress);
+      const link = await generateReverifyLink(client, oldAddress, window.location.href);
+      window.open(link, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setErr((e as Error).message || "Couldn't open GoodDollar verification.");
+    } finally {
+      setFvBusy(false);
+    }
+  }, [oldAddress]);
 
   // Auto-continue once Privy finishes login and a wallet is available. Covers
   // both the email→Privy path and the "connect a wallet" path (Privy's modal
@@ -169,14 +225,16 @@ export function MigrateFlow() {
     setErr("");
     setBusy(true);
     try {
-      const { provider, address } = await loginWeb3Auth();
+      // Pass the email from step 1 so Web3Auth skips its own modal instead of
+      // asking the user to type the same address a second time.
+      const { provider, address } = await loginWeb3Auth(email.trim());
       await afterOldLogin(provider, address);
     } catch (e) {
       setErr((e as Error).message || "Couldn't connect your Web3Auth wallet.");
     } finally {
       setBusy(false);
     }
-  }, [afterOldLogin]);
+  }, [afterOldLogin, email]);
 
   // Shared error mapping for on-chain failures.
   const toFriendlyError = (e: unknown) => {
@@ -283,16 +341,36 @@ export function MigrateFlow() {
     }
   }, [magicInput, oldAddress, mode, runSweepOnly, runLinkAndSweep]);
 
-  function reset() {
-    setStep("email"); setErr(""); setBusy(false); setAuthType("");
-    setOldAddr(""); setMagicIn(""); setSwept(null); setWorkMsg("");
-    setMode("link"); setOldBal(0n); setSweep(true); setPrivyPending(false);
-    setCeloBal(0n); setAddrOpen(false); setCopied(false);
-    setVerifiedRoot(null); setPreChecking(false);
-    oldProviderRef.current = null;
-    privyHandledRef.current = false;
-    privyLogout().catch(() => {});
-  }
+  // "Start over" is a real SIGN-OUT, not just a form reset.
+  //
+  // This app handles other people's verified identities and their G$. If a shared
+  // or public device kept the old wallet's session alive after "start over", the
+  // next person to touch it could link THEIR wallet to the previous user's
+  // identity and sweep their balance. So: end the Privy session, end the Web3Auth
+  // session, drop the cached EIP-1193 provider, and clear every trace of the
+  // previous user from the page — including the email.
+  const [signingOut, setSigningOut] = useState(false);
+
+  const reset = useCallback(async () => {
+    setSigningOut(true);
+    try {
+      await Promise.allSettled([
+        privyLogout(),
+        logoutWeb3Auth(),
+      ]);
+    } finally {
+      setStep("email"); setErr(""); setBusy(false); setAuthType("");
+      setEmail("");                 // don't leave the last user's address in the field
+      setOldAddr(""); setOldHint(null); setMagicIn(""); setSwept(null); setWorkMsg("");
+      setMode("link"); setOldBal(0n); setSweep(true); setPrivyPending(false);
+      setCeloBal(0n); setAddrOpen(false); setCopied(false);
+      setVerifiedRoot(null); setPreChecking(false);
+      setIdentity(NONE); setFvBusy(false); setRechecking(false);
+      oldProviderRef.current = null;
+      privyHandledRef.current = false;
+      setSigningOut(false);
+    }
+  }, [privyLogout]);
 
   function copyOldAddress() {
     navigator.clipboard?.writeText(getAddress(oldAddress)).then(() => {
@@ -392,7 +470,7 @@ export function MigrateFlow() {
                 {busy ? "Opening…" : "Sign in with Web3Auth"}
               </button>
             )}
-            <button onClick={reset} style={ghostBtn}>Use a different email</button>
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Use a different email"}</button>
           </motion.div>
         )}
 
@@ -400,6 +478,82 @@ export function MigrateFlow() {
         {step === "checkingWallet" && (
           <motion.div key="checking" className="rise" style={card}>
             <Working title="Checking your wallet" msg="Reading your GoodDollar verification and G$ balance…" />
+          </motion.div>
+        )}
+
+        {/* STEP: lapsed verification — must re-verify BEFORE linking.
+            connectAccount() is onlyWhitelisted, so this is a hard gate, not a
+            nicety. The old copy ("not verified, here's a rescue") would have had
+            these users sweep their G$ and walk away from a real identity. */}
+        {step === "reverify" && (
+          <motion.div key="reverify" className="rise" style={card}>
+            <Badge icon={<ShieldCheck size={13} />}>One quick step</Badge>
+
+            <div style={{
+              display: "flex", gap: 10, alignItems: "flex-start",
+              background: "#FFF4E0", border: "2px solid #FFB020",
+              borderRadius: 14, padding: "12px 14px", marginTop: 14,
+            }}>
+              <BadgeCheck size={18} style={{ flexShrink: 0, marginTop: 1, color: "#8a6500" }} />
+              <span style={{ fontSize: 13, lineHeight: 1.55, color: "#7a5a00", textAlign: "left" }}>
+                <b>Good news — you are face-verified.</b> GoodDollar only keeps a
+                first-time verification active for <b>3 days</b>, and yours has since
+                lapsed. Re-verify once and it lasts <b>6 months</b>.
+              </span>
+            </div>
+
+            <h1 style={{ ...h1, marginTop: 16 }}>Re-verify to keep your identity</h1>
+            <p style={sub}>
+              Your identity lives on <Mono>{short(oldAddress)}</Mono>, so it has to be
+              this wallet that re-verifies — that&apos;s what lets us move it to your new one.
+              {oldBalance > 0n && <> Your <b>{fmtG$(oldBalance)} G$</b> is safe and comes with it.</>}
+            </p>
+
+            <ol style={{
+              margin: "14px 0 0", padding: "14px 16px 14px 32px",
+              background: "#F3FFD1", border: "2px solid #BFFD00", borderRadius: 14,
+              fontSize: 13, lineHeight: 1.7, textAlign: "left", color: "#111",
+            }}>
+              <li>Tap <b>Re-verify with GoodDollar</b> (opens in a new tab).</li>
+              <li>Complete the quick face check.</li>
+              <li>Come back here and tap <b>I&apos;ve re-verified</b>.</li>
+            </ol>
+
+            {err && <ErrorLine>{err}</ErrorLine>}
+
+            <button
+              onClick={startReverify}
+              disabled={fvBusy}
+              style={{ ...btn(!fvBusy), marginTop: 14 }}
+            >
+              {fvBusy
+                ? <><Loader2 size={17} className="spin" /> Opening…</>
+                : <><ShieldCheck size={17} /> Re-verify with GoodDollar</>}
+            </button>
+
+            <button
+              onClick={recheckIdentity}
+              disabled={rechecking}
+              style={{ ...secondaryBtn, marginTop: 10, boxShadow: "2px 2px 0 #111", cursor: rechecking ? "wait" : "pointer" }}
+            >
+              {rechecking
+                ? <><Loader2 size={16} className="spin" /> Checking…</>
+                : <><Check size={16} /> I&apos;ve re-verified — continue</>}
+            </button>
+
+            {/* Escape hatch. Deliberately understated and honest about the cost —
+                sweeping abandons a recoverable identity, so it must not look like
+                the easy default. */}
+            {oldBalance > 0n && (
+              <button
+                onClick={() => { setMode("rescue"); setStep("pasteMagic"); setErr(""); }}
+                style={{ ...ghostBtn, marginTop: 12 }}
+              >
+                Skip — just move my {fmtG$(oldBalance)} G$ (identity stays behind)
+              </button>
+            )}
+
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
           </motion.div>
         )}
 
@@ -422,12 +576,35 @@ export function MigrateFlow() {
                 <div style={rescueBox}>
                   <Coins size={18} style={{ flexShrink: 0 }} />
                   <span>
-                    This wallet isn&apos;t GoodDollar-verified, so there&apos;s no identity to link —
-                    but it holds <b>{fmtG$(oldBalance)} G$</b>. Paste your new wallet to move your G$ out.
+                    {identity.state === "lapsed" ? (
+                      // They got here by explicitly skipping the re-verify step. Do
+                      // NOT tell them they have no identity — they do, and it stays
+                      // recoverable. Say exactly what they're giving up, and that
+                      // they can come back.
+                      <>
+                        Moving your <b>{fmtG$(oldBalance)} G$</b> only. Your verified identity
+                        stays on <Mono>{short(oldAddress)}</Mono> — re-verify any time to link it
+                        to your new wallet.
+                      </>
+                    ) : (
+                      <>
+                        This wallet has never been GoodDollar-verified, so there&apos;s no identity
+                        to link — but it holds <b>{fmtG$(oldBalance)} G$</b>. Paste your new wallet
+                        to move your G$ out.
+                      </>
+                    )}
                   </span>
                 </div>
                 <h1 style={{ ...h1, marginTop: 16 }}>Rescue your G$</h1>
                 <p style={sub}>Enter the wallet you want your <b>{fmtG$(oldBalance)} G$</b> sent to.</p>
+                {identity.state === "lapsed" && (
+                  <button
+                    onClick={() => { setStep("reverify"); setErr(""); }}
+                    style={{ ...secondaryBtn, marginBottom: 4 }}
+                  >
+                    <ShieldCheck size={16} /> Actually — re-verify and keep my identity
+                  </button>
+                )}
               </>
             )}
             <div style={howBox}>
@@ -503,7 +680,7 @@ export function MigrateFlow() {
                       ? "Link & move my G$"
                       : "Link my account"} <ArrowRight size={18} /></>}
             </button>
-            <button onClick={reset} style={ghostBtn}>Start over</button>
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
           </motion.div>
         )}
 
@@ -550,7 +727,7 @@ export function MigrateFlow() {
               account, you&apos;re already good to go.
             </p>
             <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>Go to GoodDrops <ArrowRight size={18} /></a>
-            <button onClick={reset} style={ghostBtn}>Try another email</button>
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Try another email"}</button>
           </motion.div>
         )}
 
@@ -564,7 +741,7 @@ export function MigrateFlow() {
               to move. This tool is for verified accounts, or wallets with G$ to rescue.
             </p>
             <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>Go to GoodDrops <ArrowRight size={18} /></a>
-            <button onClick={reset} style={ghostBtn}>Try another email</button>
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Try another email"}</button>
           </motion.div>
         )}
 
@@ -577,7 +754,7 @@ export function MigrateFlow() {
             <button onClick={() => { setErr(""); setStep(oldAddress ? "pasteMagic" : "email"); }} style={btn(true)}>
               Try again <ArrowRight size={18} />
             </button>
-            <button onClick={reset} style={ghostBtn}>Start over</button>
+            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -642,7 +819,7 @@ export function MigrateFlow() {
                 <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>
                   Open GoodDrops <ArrowRight size={18} />
                 </a>
-                <button onClick={reset} style={ghostBtn}>Use a different wallet</button>
+                <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Use a different wallet"}</button>
               </>
             )}
           </div>

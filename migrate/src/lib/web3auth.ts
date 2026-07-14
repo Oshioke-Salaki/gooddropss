@@ -7,10 +7,28 @@ import type { EIP1193Provider } from "viem";
 // Web3Auth's modal SDK is browser-only and heavy, so it's dynamically imported
 // on demand — it never touches the initial bundle or the SSR pass.
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let instance: any = null;
 let cached: EIP1193Provider | null = null;
 
-export async function loginWeb3Auth(): Promise<{ provider: EIP1193Provider; address: string }> {
-  const { Web3Auth } = await import("@web3auth/modal");
+/**
+ * Log in to the legacy Web3Auth wallet.
+ *
+ * We already collected the email in step 1, so we drive the AUTH connector
+ * DIRECTLY with `connectTo(..., { authConnection: "email_passwordless", loginHint })`
+ * rather than calling `connect()`. `connect()` opens Web3Auth's own modal, which
+ * asks for the email a second time — the user has to type the same address twice
+ * and pick "email" from a wallet list they never asked for.
+ *
+ * `Web3Auth extends Web3AuthNoModal`, so connectTo() is available on the modal
+ * build; passing loginHint sends the OTP straight to the address we already have.
+ * If anything about the headless path fails we fall back to the modal rather than
+ * dead-ending the migration.
+ */
+export async function loginWeb3Auth(
+  email?: string,
+): Promise<{ provider: EIP1193Provider; address: string }> {
+  const { Web3Auth, WALLET_CONNECTORS, AUTH_CONNECTION } = await import("@web3auth/modal");
 
   const clientId = process.env.NEXT_PUBLIC_WEB3AUTH_CLIENT_ID;
   if (!clientId) throw new Error("Web3Auth client ID not configured");
@@ -23,8 +41,30 @@ export async function loginWeb3Auth(): Promise<{ provider: EIP1193Provider; addr
   } as ConstructorParameters<typeof Web3Auth>[0]);
 
   await web3auth.init();
-  const provider = (await web3auth.connect()) as unknown as EIP1193Provider | null;
+  instance = web3auth;
+
+  let provider: EIP1193Provider | null = null;
+
+  const trimmed = email?.trim();
+  if (trimmed) {
+    try {
+      provider = (await web3auth.connectTo(WALLET_CONNECTORS.AUTH, {
+        authConnection: AUTH_CONNECTION.EMAIL_PASSWORDLESS,
+        loginHint: trimmed,
+      })) as unknown as EIP1193Provider | null;
+    } catch (e) {
+      // Cancelled by the user, or the connector rejected the hint. Fall through
+      // to the modal so they always have a way in.
+      console.warn("[web3auth] headless email login failed, falling back to modal", e);
+      provider = null;
+    }
+  }
+
+  if (!provider) {
+    provider = (await web3auth.connect()) as unknown as EIP1193Provider | null;
+  }
   if (!provider) throw new Error("Web3Auth login was cancelled");
+
   cached = provider;
 
   const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
@@ -36,4 +76,16 @@ export async function loginWeb3Auth(): Promise<{ provider: EIP1193Provider; addr
 
 export function getCachedWeb3AuthProvider(): EIP1193Provider | null {
   return cached;
+}
+
+/** Full sign-out: ends the Web3Auth session and drops the cached provider. */
+export async function logoutWeb3Auth(): Promise<void> {
+  try {
+    if (instance?.connected) await instance.logout();
+  } catch {
+    /* already logged out, or never initialised */
+  } finally {
+    instance = null;
+    cached = null;
+  }
 }

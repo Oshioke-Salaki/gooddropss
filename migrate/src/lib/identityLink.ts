@@ -5,6 +5,9 @@ import {
 } from "viem";
 import { celo } from "viem/chains";
 import { IdentitySDK } from "@goodsdks/citizen-sdk";
+import { readIdentityStatus, NONE, type IdentityStatus } from "@/lib/identity";
+
+export type { IdentityStatus };
 
 const G_TOKEN = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;
 const ZERO    = "0x0000000000000000000000000000000000000000";
@@ -28,19 +31,46 @@ export async function walletClientFromProvider(
   });
 }
 
-/** True if `address` is the GoodDollar-verified root (self-resolves), i.e. can sign a link. */
-export async function isVerifiedRoot(address: string): Promise<boolean> {
+/**
+ * Full GoodDollar identity picture for the old wallet.
+ *
+ * A bare getWhitelistedRoot() != 0 check cannot tell "never verified" from
+ * "verified but lapsed" — and the second case is the COMMON one, because
+ * GoodDollar's IdentityV4 only gives first-time verifiers a 3-day window.
+ * That distinction matters here more than anywhere: connectAccount() is
+ * `onlyWhitelisted`, so a lapsed user physically CANNOT link a new wallet until
+ * they re-verify. Telling them "there's no identity to link" sends them down the
+ * rescue path and quietly loses their verified identity forever.
+ */
+export async function identityStatus(address: string): Promise<IdentityStatus> {
   try {
-    const root = (await publicClient.readContract({
-      address: "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42",
-      abi: parseAbi(["function getWhitelistedRoot(address) view returns (address)"]),
-      functionName: "getWhitelistedRoot",
-      args: [address as `0x${string}`],
-    })) as string;
-    return root.toLowerCase() !== ZERO;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await readIdentityStatus(publicClient as any, address);
   } catch {
-    return false;
+    return NONE;
   }
+}
+
+/**
+ * GoodDollar face-verification link for the OLD wallet, so a lapsed user can
+ * re-verify the very wallet that holds their identity (it must be that wallet —
+ * re-verifying the new one would create a second, separate identity).
+ */
+export async function generateReverifyLink(
+  oldWalletClient: WalletClient,
+  oldAddress: string,
+  callbackUrl: string,
+): Promise<string> {
+  const sdk = new IdentitySDK({
+    account: oldAddress as `0x${string}`,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    publicClient: publicClient as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    walletClient: oldWalletClient as any,
+    env: "production",
+  });
+  const link = await sdk.generateFVLink(false, callbackUrl, 42220);
+  return typeof link === "string" ? link : (link as unknown as { link: string }).link;
 }
 
 /** getWhitelistedRoot for the new wallet — non-zero means the link succeeded. */

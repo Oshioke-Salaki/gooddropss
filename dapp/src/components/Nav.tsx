@@ -10,6 +10,7 @@ import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { VerificationModal } from "@/components/VerificationModal";
 import { formatG$ } from "@/lib/utils";
 import clsx from "clsx";
@@ -270,18 +271,50 @@ function WalletButton({
 
 // ── Verify banner ──────────────────────────────────────────────────────────────
 
+// Three genuinely different situations, three different messages. Collapsing
+// them into one "verification required" is what made a user who HAD verified
+// think the app was broken.
+export type VerifyBannerMode = "none" | "lapsed" | "expiring";
+
 interface VerifyBannerProps {
-  isVerified: boolean;
-  isFetching: boolean;
-  isVerificationLoading: boolean;
+  mode: VerifyBannerMode | null;   // null ⇒ nothing to say
+  isProbation: boolean;
+  daysLeft: number;
   isConnected: boolean;
   onGetVerified: () => void;
 }
 
+const BANNER_COPY: Record<
+  VerifyBannerMode,
+  (p: { isProbation: boolean; daysLeft: number }) => { accent: string; text: string; cta: string }
+> = {
+  none: () => ({
+    accent: "#bffd00",
+    text: "⚡ Verification required to claim drops.",
+    cta: "Get Verified →",
+  }),
+  lapsed: ({ isProbation }) => ({
+    accent: "#FF3B3B",
+    text: isProbation
+      // The 3-day probation rung. They DID verify — say so, or they'll assume
+      // we lost it and that the whole thing is broken.
+      ? "🔄 You're face-verified, but GoodDollar needs one more check — first-time verifications only last 3 days. Re-verify once and you're set for 6 months."
+      : "🔄 Your GoodDollar verification has expired. Re-verify to keep claiming.",
+    cta: "Re-verify →",
+  }),
+  expiring: ({ isProbation, daysLeft }) => ({
+    accent: "#FFB020",
+    text: isProbation
+      ? `⏳ Almost there — re-verify within ${daysLeft} day${daysLeft === 1 ? "" : "s"} to lock in 6 months of claiming.`
+      : `⏳ Your GoodDollar verification expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`,
+    cta: "Re-verify →",
+  }),
+};
+
 export function VerifyBanner({
-  isVerified,
-  isFetching,
-  isVerificationLoading,
+  mode,
+  isProbation,
+  daysLeft,
   isConnected,
   onGetVerified,
 }: VerifyBannerProps) {
@@ -289,8 +322,10 @@ export function VerifyBanner({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const visible =
-    mounted && isConnected && !isFetching && !isVerificationLoading && !isVerified && !dismissed;
+  // A lapsed wallet cannot claim at all, so that one is not dismissible —
+  // dismissing it would leave the user stuck with no explanation.
+  const visible = mounted && isConnected && mode !== null && !(dismissed && mode !== "lapsed");
+  const copy = mode ? BANNER_COPY[mode]({ isProbation, daysLeft }) : null;
 
   // Publish the banner's height. It wraps to two lines on a phone, so anything
   // below it (the "N drops live" pill) has to be told how tall it actually is
@@ -309,7 +344,7 @@ export function VerifyBanner({
     return () => { ro.disconnect(); clear(); };
   }, [visible]);
 
-  if (!visible) return null;
+  if (!visible || !copy) return null;
 
   return (
     <div
@@ -321,8 +356,8 @@ export function VerifyBanner({
         right: 0,
         zIndex: 997,
         background: "#111111",
-        borderBottom: "2px solid #bffd00",
-        padding: "8px 16px",
+        borderBottom: `2px solid ${copy.accent}`,
+        padding: "8px 34px 8px 16px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -332,15 +367,15 @@ export function VerifyBanner({
         flexWrap: "wrap",
       }}
     >
-      <span style={{ color: "#fff", fontWeight: 600 }}>
-        ⚡ Verification required to claim drops.
+      <span style={{ color: "#fff", fontWeight: 600, textAlign: "center", lineHeight: 1.45 }}>
+        {copy.text}
       </span>
       <button
         onClick={onGetVerified}
         style={{
-          background: "#bffd00",
+          background: copy.accent,
           color: "#111111",
-          border: "1.5px solid #bffd00",
+          border: `1.5px solid ${copy.accent}`,
           borderRadius: "6px",
           padding: "3px 10px",
           fontWeight: 800,
@@ -350,10 +385,13 @@ export function VerifyBanner({
           whiteSpace: "nowrap",
         }}
       >
-        Get Verified →
+        {copy.cta}
       </button>
       <button
         onClick={() => setDismissed(true)}
+        // A lapsed wallet genuinely cannot claim. Letting it be dismissed would
+        // hide the only explanation the user is ever given.
+        hidden={mode === "lapsed"}
         style={{
           position: "absolute",
           right: "12px",
@@ -364,6 +402,7 @@ export function VerifyBanner({
           fontSize: "16px",
           lineHeight: 1,
           fontFamily: "inherit",
+          display: mode === "lapsed" ? "none" : "block",
         }}
       >
         ✕
@@ -377,19 +416,37 @@ export function VerifyBanner({
 export function Nav() {
   const path = usePathname();
   const { isConnected } = useAccount();
-  const { isFetching } = useGoodDollarProfile();
   const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh } =
     useVerification();
   const isVerificationLoading = status === "loading";
+
+  // The precise on-chain picture: never-verified vs. verified-but-lapsed vs.
+  // verified-and-about-to-lapse. useVerification only knows "can claim / can't".
+  const {
+    status: idStatus,
+    isLapsed,
+    expiringSoon,
+    neverVerified,
+    isLoading: idLoading,
+    refresh: refreshIdentity,
+  } = useIdentityStatus();
+
+  const bannerMode: VerifyBannerMode | null =
+    idLoading      ? null
+    : isLapsed     ? "lapsed"
+    : expiringSoon ? "expiring"
+    : neverVerified ? "none"
+    : null;
 
   // Broadcast verification so every useGoodDollarProfile instance refetches immediately
   const prevVerified = useRef(false);
   useEffect(() => {
     if (isVerified && !prevVerified.current) {
       window.dispatchEvent(new CustomEvent("gd:verified"));
+      refreshIdentity();
     }
     prevVerified.current = isVerified;
-  }, [isVerified]);
+  }, [isVerified, refreshIdentity]);
 
   // Listen for events dispatched by ClaimSheet / DropPageClient to open modals.
   // gd:openVerify — opens the GoodDollar face-verification flow.
@@ -446,9 +503,9 @@ export function Nav() {
       </nav>
 
       <VerifyBanner
-        isVerified={isVerified}
-        isFetching={isFetching}
-        isVerificationLoading={isVerificationLoading}
+        mode={bannerMode}
+        isProbation={idStatus.isProbation}
+        daysLeft={idStatus.daysLeft}
         isConnected={isConnected}
         onGetVerified={() => setIsVerifying(true)}
       />
