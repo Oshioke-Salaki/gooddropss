@@ -12,7 +12,7 @@ import {
 } from "@/lib/web3auth";
 import { NONE, type IdentityStatus } from "@/lib/identity";
 import {
-  walletClientFromProvider, ensureCelo, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
+  walletClientFromProvider, localCeloWalletClient, ensureCelo, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
   celoBalance,
 } from "@/lib/identityLink";
 
@@ -99,6 +99,9 @@ export function MigrateFlow() {
   }, [addrOpen, refreshBalances]);
 
   const oldProviderRef  = useRef<EIP1193Provider | null>(null);
+  // Web3Auth only: the embedded wallet key, used to sign Celo txs locally and
+  // bypass Web3Auth's Celo-incompatible transaction relayer. null for Privy.
+  const oldPkRef        = useRef<string | null>(null);
   const privyHandledRef = useRef(false);
   const lowGas = oldAddress !== "" && celoBal < GAS_MIN_WEI;
 
@@ -199,16 +202,29 @@ export function MigrateFlow() {
     }
   }, [oldAddress, celoBal]);
 
+  // Build the OLD wallet's signing client.
+  //   • Web3Auth (pk present): a LocalAccount client on Forno — signs Celo txs
+  //     locally, bypassing Web3Auth's Celo-incompatible transaction relayer.
+  //   • Privy/injected: the provider's client, first switched to Celo. `forTx`
+  //     gates the switch — message signing (the FV link) works on any chain.
+  const buildOldClient = useCallback(async (forTx: boolean) => {
+    const pk = oldPkRef.current;
+    if (pk) return localCeloWalletClient(pk);
+    const provider = oldProviderRef.current;
+    if (!provider) throw new Error("Your old wallet session was lost. Please start over.");
+    if (forTx) await ensureCelo(provider);
+    return walletClientFromProvider(provider, oldAddress);
+  }, [oldAddress]);
+
   // Open GoodDollar's face-verification for the OLD wallet. It must be signed by
   // that wallet — verifying the new one would mint a second identity instead of
   // reviving this one.
   const startReverify = useCallback(async () => {
-    const provider = oldProviderRef.current;
-    if (!provider || !oldAddress) return;
+    if (!oldAddress) return;
     setFvBusy(true);
     setErr("");
     try {
-      const client = await walletClientFromProvider(provider, oldAddress);
+      const client = await buildOldClient(false);
       const link = await generateReverifyLink(client, oldAddress, window.location.href);
       window.open(link, "_blank", "noopener,noreferrer");
     } catch (e) {
@@ -216,7 +232,7 @@ export function MigrateFlow() {
     } finally {
       setFvBusy(false);
     }
-  }, [oldAddress]);
+  }, [oldAddress, buildOldClient]);
 
   // Auto-continue once Privy finishes login and a wallet is available. Covers
   // both the email→Privy path and the "connect a wallet" path (Privy's modal
@@ -273,7 +289,8 @@ export function MigrateFlow() {
       // No await before this call — the popup has to open inside the click.
       // The email from step 1 is passed as loginHint so Web3Auth skips its own
       // modal instead of asking for the same address a second time.
-      const { provider, address } = await loginWeb3Auth(email.trim());
+      const { provider, address, privateKey } = await loginWeb3Auth(email.trim());
+      oldPkRef.current = privateKey;
       await afterOldLogin(provider, address);
     } catch (e) {
       if (e instanceof PopupBlockedError) {
@@ -293,7 +310,8 @@ export function MigrateFlow() {
     setErr("");
     setBusy(true);
     try {
-      const { provider, address } = await openWeb3AuthModal();
+      const { provider, address, privateKey } = await openWeb3AuthModal();
+      oldPkRef.current = privateKey;
       await afterOldLogin(provider, address);
     } catch (e) {
       setErr((e as Error).message || "Couldn't connect your Web3Auth wallet.");
@@ -340,15 +358,13 @@ export function MigrateFlow() {
 
   // Move G$ from old → new wallet, no identity linking.
   const runSweepOnly = useCallback(async (magic: string) => {
-    const provider = oldProviderRef.current;
-    if (!provider) return;
+    if (!oldPkRef.current && !oldProviderRef.current) return;
     setVerifiedRoot(null);
     setStep("working");
     setBusy(true);
     setErr("");
     try {
-      await ensureCelo(provider);
-      const oldClient = await walletClientFromProvider(provider, oldAddress);
+      const oldClient = await buildOldClient(true);
       setWorkMsg("Moving your G$ to your new wallet…");
       const bal = await gDollarBalance(oldAddress);
       if (bal > 0n) {
@@ -363,18 +379,16 @@ export function MigrateFlow() {
     } finally {
       setBusy(false);
     }
-  }, [oldAddress]);
+  }, [oldAddress, buildOldClient]);
 
   // Link the identity (link mode) then sweep G$ per the toggle.
   const runLinkAndSweep = useCallback(async (magic: string) => {
-    const provider = oldProviderRef.current;
-    if (!provider) return;
+    if (!oldPkRef.current && !oldProviderRef.current) return;
     setStep("working");
     setBusy(true);
     setErr("");
     try {
-      await ensureCelo(provider);
-      const oldClient = await walletClientFromProvider(provider, oldAddress);
+      const oldClient = await buildOldClient(true);
 
       if (mode === "link") {
         setWorkMsg("Linking your verified identity to your new wallet…");
@@ -403,7 +417,7 @@ export function MigrateFlow() {
     } finally {
       setBusy(false);
     }
-  }, [oldAddress, mode, sweepEnabled]);
+  }, [oldAddress, mode, sweepEnabled, buildOldClient]);
 
   // ── Step 3: submit → check recipient, then link/sweep ──────────────────────
   const onSubmit = useCallback(async () => {
@@ -463,6 +477,7 @@ export function MigrateFlow() {
       setVerifiedRoot(null); setPreChecking(false);
       setIdentity(NONE); setFvBusy(false); setRechecking(false);
       oldProviderRef.current = null;
+      oldPkRef.current = null;
       privyHandledRef.current = false;
       setSigningOut(false);
     }

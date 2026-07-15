@@ -3,8 +3,9 @@ import {
   createPublicClient, createWalletClient, custom, http, getAddress,
   parseAbi, type EIP1193Provider, type WalletClient,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
-import { IdentitySDK } from "@goodsdks/citizen-sdk";
+import { IdentitySDK, IdentityCustodialSDK } from "@goodsdks/citizen-sdk";
 import { readIdentityStatus, NONE, type IdentityStatus } from "@/lib/identity";
 
 export type { IdentityStatus };
@@ -85,6 +86,43 @@ export async function walletClientFromProvider(
 }
 
 /**
+ * A LocalAccount wallet client on Celo, signing with a raw private key and
+ * broadcasting through Forno directly.
+ *
+ * This is the Web3Auth path. Web3Auth's EIP-1193 provider routes transactions
+ * through its own wallet-services relayer (api-wallet.web3auth.io), which isn't
+ * configured for Celo and 400s every send. Signing locally sidesteps the relayer
+ * entirely — the key stays in the browser and the transaction goes straight to
+ * Celo. Pair with IdentityCustodialSDK, which is built to sign+broadcast for
+ * exactly this kind of LocalAccount signer.
+ */
+export function localCeloWalletClient(privateKey: string): WalletClient {
+  const account = privateKeyToAccount(
+    (privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`) as `0x${string}`,
+  );
+  return createWalletClient({ account, chain: celo, transport: http("https://forno.celo.org") });
+}
+
+// A LocalAccount (private-key) signer needs the custodial SDK, which simulates +
+// writeContracts through the public client rather than the provider's relayer.
+// A json-rpc account (Privy / injected) uses the normal SDK.
+function isLocalSigner(wc: WalletClient): boolean {
+  return wc.account?.type === "local";
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeIdentitySDK(account: `0x${string}`, walletClient: WalletClient): any {
+  const Ctor = isLocalSigner(walletClient) ? IdentityCustodialSDK : IdentitySDK;
+  return new Ctor({
+    account,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    publicClient: publicClient as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    walletClient: walletClient as any,
+    env: "production",
+  });
+}
+
+/**
  * Full GoodDollar identity picture for the old wallet.
  *
  * A bare getWhitelistedRoot() != 0 check cannot tell "never verified" from
@@ -114,17 +152,12 @@ export async function generateReverifyLink(
   oldAddress: string,
   callbackUrl: string,
 ): Promise<string> {
-  const sdk = new IdentitySDK({
-    // Checksummed: generateFVLink embeds THIS value in the message the wallet
-    // signs and in the link's `account` param. A lowercase address here recovers
-    // to the wrong signer on GoodDollar's side → "Login information is missing".
-    account: getAddress(oldAddress),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    publicClient: publicClient as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    walletClient: oldWalletClient as any,
-    env: "production",
-  });
+  // Checksummed account: generateFVLink embeds it in the message the wallet signs
+  // and in the link's `account` param. A lowercase address here recovers to the
+  // wrong signer on GoodDollar's side → "Login information is missing".
+  // makeIdentitySDK picks the custodial SDK for a local (Web3Auth) signer, whose
+  // generateFVLink override handles LocalAccount message signing correctly.
+  const sdk = makeIdentitySDK(getAddress(oldAddress), oldWalletClient);
   const link = await sdk.generateFVLink(false, callbackUrl, 42220);
   return typeof link === "string" ? link : (link as unknown as { link: string }).link;
 }
@@ -151,17 +184,9 @@ export async function linkNewWallet(
   newMagicAddress: string,
   onHash?: (hash: `0x${string}`) => void,
 ): Promise<void> {
-  // citizen-sdk bundles its own copy of viem, so its PublicClient/WalletClient
-  // types are nominally different from ours even though they're runtime-identical.
-  // Cast at this single boundary (the main dapp does the same).
-  const sdk = new IdentitySDK({
-    account: oldAddress as `0x${string}`,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    publicClient: publicClient as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    walletClient: oldWalletClient as any,
-    env: "production",
-  });
+  // Local (Web3Auth) signers go through IdentityCustodialSDK so connectAccount is
+  // simulated + broadcast via Forno instead of Web3Auth's Celo-incompatible relayer.
+  const sdk = makeIdentitySDK(getAddress(oldAddress), oldWalletClient);
 
   await sdk.connectAccount(newMagicAddress as `0x${string}`, {
     // Headless: this is a deliberate, user-initiated migration action.
@@ -183,10 +208,14 @@ export async function sweepGDollar(
 
   if (balance === 0n) return { swept: 0n };
 
+  // Use the wallet client's own account. For a LocalAccount (Web3Auth) client the
+  // account object is the signer; passing a bare address string would drop the
+  // local signer and viem would try to sign through a (Celo-incompatible) relayer.
+  const account = oldWalletClient.account ?? getAddress(oldAddress);
   const tx = await oldWalletClient.writeContract({
     address: G_TOKEN, abi: ERC20, functionName: "transfer",
     args: [newMagicAddress as `0x${string}`, balance],
-    account: oldAddress as `0x${string}`,
+    account,
     chain: celo,
   });
   await publicClient.waitForTransactionReceipt({ hash: tx });

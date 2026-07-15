@@ -41,9 +41,21 @@ export function prepareWeb3Auth(): Promise<void> {
     const clientId = process.env.NEXT_PUBLIC_WEB3AUTH_CLIENT_ID;
     if (!clientId) throw new Error("Web3Auth client ID not configured");
 
+    // MUST match the network the legacy Focus-Pet client ID was registered under.
+    // It's not just an init check: Web3Auth derives the wallet address from
+    // (clientId, network, login), so the wrong network would (a) refuse to boot —
+    // "Network mismatch … does not match project network sapphire_devnet" — and
+    // (b) if it did boot, derive a DIFFERENT address than the user's real wallet.
+    // The Focus-Pet project lives on sapphire_devnet; keep it overridable in case
+    // the project is ever migrated.
+    const web3AuthNetwork =
+      (process.env.NEXT_PUBLIC_WEB3AUTH_NETWORK as
+        | "sapphire_devnet" | "sapphire_mainnet"
+        | undefined) ?? "sapphire_devnet";
+
     const w3a = new mod.Web3Auth({
       clientId,
-      web3AuthNetwork: "sapphire_mainnet",
+      web3AuthNetwork,
       // Chain config is managed in the Web3Auth dashboard for this client ID.
     } as ConstructorParameters<typeof mod.Web3Auth>[0]);
 
@@ -65,7 +77,27 @@ async function providerToAccount(provider: EIP1193Provider) {
   const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
   const address = accounts?.[0];
   if (!address) throw new Error("Web3Auth returned no wallet");
-  return { provider, address: address.toLowerCase() };
+
+  // Web3Auth exposes the embedded wallet's raw key. We use it to sign Celo
+  // transactions LOCALLY and broadcast them via Forno, instead of routing through
+  // Web3Auth's wallet-services relayer (api-wallet.web3auth.io) — that relayer
+  // isn't configured for Celo and 400s every transaction. The key never leaves
+  // the browser; it's the user's own wallet, for a migration they initiated.
+  // eth_private_key / private_key are Web3Auth-specific RPC methods, not part of
+  // viem's typed EIP-1193 surface — call through an untyped request.
+  const rawRequest = (provider as unknown as {
+    request: (a: { method: string }) => Promise<unknown>;
+  }).request;
+
+  let privateKey: string | null = null;
+  for (const method of ["eth_private_key", "private_key"]) {
+    try {
+      const pk = (await rawRequest({ method })) as string;
+      if (pk) { privateKey = pk.startsWith("0x") ? pk : `0x${pk}`; break; }
+    } catch { /* try the next method; caller handles a null key */ }
+  }
+
+  return { provider, address: address.toLowerCase(), privateKey };
 }
 
 export class PopupBlockedError extends Error {
@@ -81,7 +113,7 @@ export class PopupBlockedError extends Error {
  */
 export async function loginWeb3Auth(
   email?: string,
-): Promise<{ provider: EIP1193Provider; address: string }> {
+): Promise<{ provider: EIP1193Provider; address: string; privateKey: string | null }> {
   const trimmed = email?.trim();
 
   // Not prepared yet (user clicked faster than init, or prepare failed). We can't
@@ -119,7 +151,7 @@ export async function loginWeb3Auth(
  * Fallback: Web3Auth's own modal. Costs the user an extra email entry, but its
  * popup is opened by a click inside the modal, so it survives popup blockers.
  */
-export async function openWeb3AuthModal(): Promise<{ provider: EIP1193Provider; address: string }> {
+export async function openWeb3AuthModal(): Promise<{ provider: EIP1193Provider; address: string; privateKey: string | null }> {
   await prepareWeb3Auth();
   if (instance.connected && instance.provider) {
     return providerToAccount(instance.provider as EIP1193Provider);
