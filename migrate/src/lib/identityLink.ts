@@ -1,6 +1,6 @@
 "use client";
 import {
-  createPublicClient, createWalletClient, custom, http,
+  createPublicClient, createWalletClient, custom, http, getAddress,
   parseAbi, type EIP1193Provider, type WalletClient,
 } from "viem";
 import { celo } from "viem/chains";
@@ -19,13 +19,21 @@ const ERC20 = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
 ]);
 
-/** Build a viem WalletClient on Celo from any legacy provider's EIP-1193 interface. */
+/** Build a viem WalletClient on Celo from any legacy provider's EIP-1193 interface.
+ *
+ * The account is CHECKSUMMED here, and it matters for more than tidiness: the
+ * GoodDollar FV link embeds this address inside the message the wallet signs
+ * (FV_IDENTIFIER_MSG2). GoodDollar's verification page reconstructs that message
+ * with the checksummed address before recovering the signer — so signing a
+ * message that embeds a lowercase address recovers a *different* address and the
+ * page dead-ends with "Login information is missing". Checksumming once, here,
+ * keeps every downstream signer (re-verify link, connectAccount, sweep) aligned. */
 export async function walletClientFromProvider(
   provider: EIP1193Provider,
   address: string,
 ): Promise<WalletClient> {
   return createWalletClient({
-    account: address as `0x${string}`,
+    account: getAddress(address),
     chain: celo,
     transport: custom(provider),
   });
@@ -62,7 +70,10 @@ export async function generateReverifyLink(
   callbackUrl: string,
 ): Promise<string> {
   const sdk = new IdentitySDK({
-    account: oldAddress as `0x${string}`,
+    // Checksummed: generateFVLink embeds THIS value in the message the wallet
+    // signs and in the link's `account` param. A lowercase address here recovers
+    // to the wrong signer on GoodDollar's side → "Login information is missing".
+    account: getAddress(oldAddress),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     publicClient: publicClient as any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
