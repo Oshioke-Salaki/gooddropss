@@ -19,6 +19,51 @@ const ERC20 = parseAbi([
   "function transfer(address to, uint256 value) returns (bool)",
 ]);
 
+const CELO_HEX = "0xa4ec"; // 42220
+
+/**
+ * Make sure the legacy provider is actually on Celo before we send a transaction.
+ *
+ * Re-verification only needed a message SIGNATURE, which works on any chain — so a
+ * wallet can re-verify successfully and still have its provider pointed at the
+ * wrong network. connectAccount() and the G$ sweep are real transactions and must
+ * go out on Celo. The Privy path calls switchChain() already; Web3Auth's embedded
+ * provider does not, which is how a funded wallet ends up failing to send. This
+ * asks the provider to switch (adding Celo if it doesn't know it), and is a no-op
+ * for a provider that's already there.
+ */
+export async function ensureCelo(provider: EIP1193Provider): Promise<void> {
+  try {
+    const current = (await provider.request({ method: "eth_chainId" })) as string;
+    if (current?.toLowerCase() === CELO_HEX) return;
+  } catch {
+    /* some embedded providers don't implement eth_chainId — try switching anyway */
+  }
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CELO_HEX }],
+    });
+  } catch (e) {
+    // 4902 = chain unknown to the wallet; add it, then it's selected.
+    const code = (e as { code?: number })?.code;
+    if (code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: CELO_HEX,
+          chainName: "Celo",
+          nativeCurrency: { name: "CELO", symbol: "CELO", decimals: 18 },
+          rpcUrls: ["https://forno.celo.org"],
+          blockExplorerUrls: ["https://celoscan.io"],
+        }],
+      });
+    }
+    // Any other error: don't block. viem still passes chain: celo to the tx, and
+    // if the network is genuinely wrong the tx error surfaces the real reason.
+  }
+}
+
 /** Build a viem WalletClient on Celo from any legacy provider's EIP-1193 interface.
  *
  * The account is CHECKSUMMED here, and it matters for more than tidiness: the

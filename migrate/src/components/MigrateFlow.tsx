@@ -5,14 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { isAddress, getAddress, type EIP1193Provider } from "viem";
 import {
   Mail, Wallet, ShieldCheck, ArrowRight, Loader2, Check, AlertCircle, ClipboardPaste, Coins,
-  Copy, Fuel, X, BadgeCheck,
+  Copy, Fuel, X, BadgeCheck, RefreshCw,
 } from "lucide-react";
 import {
   loginWeb3Auth, openWeb3AuthModal, prepareWeb3Auth, logoutWeb3Auth, PopupBlockedError,
 } from "@/lib/web3auth";
 import { NONE, type IdentityStatus } from "@/lib/identity";
 import {
-  walletClientFromProvider, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
+  walletClientFromProvider, ensureCelo, identityStatus, generateReverifyLink, rootOf, linkNewWallet, sweepGDollar, gDollarBalance,
   celoBalance,
 } from "@/lib/identityLink";
 
@@ -35,6 +35,12 @@ function fmtG$(wei: bigint): string {
   const n = Number(wei) / 1e18;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
+}
+function fmtCelo(wei: bigint): string {
+  const n = Number(wei) / 1e18;
+  if (n === 0) return "0";
+  if (n < 0.0001) return "<0.0001";
+  return n.toFixed(4);
 }
 function short(a: string) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : ""; }
 
@@ -66,6 +72,31 @@ export function MigrateFlow() {
   const [fvBusy, setFvBusy]       = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
+  const [balLoading, setBalLoading] = useState(false);
+
+  // Re-read both balances on-chain. Called when the wallet modal opens so the
+  // numbers are current — e.g. G$ reads 0 right after a sweep, and CELO drops
+  // once the user has sent gas in.
+  const refreshBalances = useCallback(async () => {
+    if (!oldAddress) return;
+    setBalLoading(true);
+    try {
+      const [g, celo] = await Promise.all([
+        gDollarBalance(oldAddress),
+        celoBalance(oldAddress),
+      ]);
+      setOldBal(g);
+      setCeloBal(celo);
+    } catch {
+      /* leave the last known values in place */
+    } finally {
+      setBalLoading(false);
+    }
+  }, [oldAddress]);
+
+  useEffect(() => {
+    if (addrOpen) refreshBalances();
+  }, [addrOpen, refreshBalances]);
 
   const oldProviderRef  = useRef<EIP1193Provider | null>(null);
   const privyHandledRef = useRef(false);
@@ -272,11 +303,39 @@ export function MigrateFlow() {
   }, [afterOldLogin]);
 
   // Shared error mapping for on-chain failures.
+  //
+  // IMPORTANT: do NOT match on the bare word "gas". When a contract call reverts,
+  // viem throws an *EstimateGasExecutionError* — whose name contains "gas" — so a
+  // broad /gas/ match labels EVERY revert as "out of gas", even when the wallet
+  // is funded. That's how a wallet with 1.6 CELO ended up being told it needs gas.
+  // Only a genuine "insufficient funds" is a funding problem; everything else
+  // must surface its real reason (and we log the full error to the console).
   const toFriendlyError = (e: unknown) => {
-    const msg = (e as Error).message || "";
-    return /insufficient|gas|funds/i.test(msg)
-      ? "Your old wallet needs a tiny amount of CELO for gas. Copy your address, send a little CELO, and try again."
-      : msg || "Something went wrong. Please try again.";
+    const err = e as { shortMessage?: string; details?: string; message?: string };
+    const msg = (err.shortMessage || err.details || err.message || "").toString();
+    console.error("[migrate] on-chain action failed:", e);
+
+    if (/insufficient funds/i.test(msg)) {
+      return "Your old wallet needs a tiny amount of CELO for gas. Copy your address, send a little CELO, and try again.";
+    }
+    if (/user rejected|denied|cancell?ed/i.test(msg)) {
+      return "You cancelled the transaction. Try again when you're ready.";
+    }
+    // Known GoodDollar connectAccount reverts — say what's actually wrong.
+    if (/already connected/i.test(msg)) {
+      return "That new wallet is already linked to a GoodDollar identity. Use a fresh wallet, or move your G$ instead.";
+    }
+    if (/invalid account/i.test(msg)) {
+      return "That new wallet can't be linked (it's already verified or blocked). Use a different wallet.";
+    }
+    if (/not whitelisted|onlyWhitelisted/i.test(msg)) {
+      return "Your re-verification hasn't finished confirming on-chain yet. Give it a minute and try again.";
+    }
+    if (/chain|network mismatch|wrong network/i.test(msg)) {
+      return "Your wallet is on the wrong network. Switch it to Celo and try again.";
+    }
+    // Unknown: show the real short message so we're never lying about the cause.
+    return msg || "Something went wrong. Please try again.";
   };
 
   // Move G$ from old → new wallet, no identity linking.
@@ -288,6 +347,7 @@ export function MigrateFlow() {
     setBusy(true);
     setErr("");
     try {
+      await ensureCelo(provider);
       const oldClient = await walletClientFromProvider(provider, oldAddress);
       setWorkMsg("Moving your G$ to your new wallet…");
       const bal = await gDollarBalance(oldAddress);
@@ -313,6 +373,7 @@ export function MigrateFlow() {
     setBusy(true);
     setErr("");
     try {
+      await ensureCelo(provider);
       const oldClient = await walletClientFromProvider(provider, oldAddress);
 
       if (mode === "link") {
@@ -434,7 +495,12 @@ export function MigrateFlow() {
         >
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
           <span style={{ fontFamily: "ui-monospace, monospace" }}>{short(oldAddress)}</span>
-          <Copy size={14} color="#888" />
+          <span style={{
+            marginLeft: 2, padding: "2px 7px", background: "#111", color: "#BFFD00",
+            borderRadius: 100, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
+          }}>
+            {fmtG$(oldBalance)} G$
+          </span>
         </button>
       )}
 
@@ -806,27 +872,82 @@ export function MigrateFlow() {
         <div onClick={() => setAddrOpen(false)} style={modalScrim}>
           <div onClick={(e) => e.stopPropagation()} className="rise" style={modalCard}>
             <button onClick={() => setAddrOpen(false)} aria-label="Close" style={modalClose}><X size={16} /></button>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <Fuel size={18} color="#111" />
-              <p style={{ margin: 0, fontWeight: 900, fontSize: 18 }}>Need gas for the link?</p>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <Wallet size={18} color="#111" />
+              <p style={{ margin: 0, fontWeight: 900, fontSize: 18 }}>Your wallet</p>
+              <button
+                onClick={refreshBalances}
+                disabled={balLoading}
+                aria-label="Refresh balances"
+                title="Refresh balances"
+                style={{
+                  marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 30, height: 30, borderRadius: 8, border: "2px solid #111",
+                  background: "#fff", cursor: balLoading ? "wait" : "pointer",
+                }}
+              >
+                <RefreshCw size={14} className={balLoading ? "spin" : undefined} />
+              </button>
             </div>
-            <p style={{ ...sub, margin: "0 0 14px" }}>
-              Linking your identity is one on-chain transaction, so your wallet needs a little{" "}
-              <b>CELO</b> for gas. Send some CELO to this address, then come back and continue.
-              {celoBal > 0n && <> You currently have <b>{(Number(celoBal) / 1e18).toFixed(4)} CELO</b>.</>}
-            </p>
+
+            {/* Address + copy */}
             <div style={{
-              display: "flex", alignItems: "center", gap: 8,
-              background: "#f5f4f0", border: "2px solid #111", borderRadius: 12, padding: "12px 14px",
+              display: "flex", alignItems: "center", gap: 8, marginTop: 10,
+              background: "#f5f4f0", border: "2px solid #111", borderRadius: 12, padding: "10px 12px",
             }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
               <span style={{ flex: 1, fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 700, wordBreak: "break-all" }}>
                 {getAddress(oldAddress)}
               </span>
+              <button
+                onClick={copyOldAddress}
+                aria-label="Copy address"
+                style={{
+                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+                  background: copied ? "#BFFD00" : "#111", color: copied ? "#111" : "#BFFD00",
+                  border: "none", borderRadius: 8, padding: "6px 10px",
+                  fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
+              </button>
             </div>
-            <button onClick={copyOldAddress} style={{ ...btn(true), marginTop: 12 }}>
-              {copied ? <><Check size={18} /> Copied!</> : <><Copy size={18} /> Copy address</>}
-            </button>
-            <p style={fine}>Only a tiny amount is needed — Celo gas is a fraction of a cent.</p>
+
+            {/* Balances */}
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <div style={balanceTile}>
+                <p style={balanceLabel}>G$ balance</p>
+                <p style={balanceValue}>
+                  {balLoading && oldBalance === 0n ? "…" : fmtG$(oldBalance)}
+                  <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>G$</span>
+                </p>
+              </div>
+              <div style={balanceTile}>
+                <p style={balanceLabel}>Gas (CELO)</p>
+                <p style={{ ...balanceValue, color: lowGas ? "#d97706" : "#111" }}>
+                  {balLoading && celoBal === 0n ? "…" : fmtCelo(celoBal)}
+                  <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>CELO</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Gas guidance — only when it's actually low enough to block the link tx */}
+            {lowGas ? (
+              <div style={{
+                display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12,
+                background: "#FFF4E0", border: "2px solid #FFB020", borderRadius: 12, padding: "11px 13px",
+              }}>
+                <Fuel size={16} color="#8a6500" style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "#7a5a00", textAlign: "left" }}>
+                  Linking your identity is one on-chain transaction, so this wallet needs a little{" "}
+                  <b>CELO</b> for gas. Copy the address above, send a small amount, then tap refresh.
+                  It&apos;s a fraction of a cent.
+                </span>
+              </div>
+            ) : (
+              <p style={fine}>Send CELO or G$ to the address above. Tap refresh to update.</p>
+            )}
           </div>
         </div>
       )}
@@ -953,6 +1074,15 @@ const secondaryBtn: React.CSSProperties = {
 const ghostBtn: React.CSSProperties = {
   width: "100%", padding: "10px", marginTop: 10, background: "transparent", border: "none",
   color: "#888", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+};
+const balanceTile: React.CSSProperties = {
+  flex: 1, background: "#f5f4f0", border: "2px solid #111", borderRadius: 12, padding: "11px 13px",
+};
+const balanceLabel: React.CSSProperties = {
+  margin: 0, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888",
+};
+const balanceValue: React.CSSProperties = {
+  margin: "3px 0 0", fontSize: 22, fontWeight: 900, color: "#111", lineHeight: 1.1,
 };
 const dividerRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, margin: "14px 0" };
 const dividerLine: React.CSSProperties = { flex: 1, height: 1.5, background: "#e8e6e0" };
