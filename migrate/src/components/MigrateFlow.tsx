@@ -208,22 +208,20 @@ export function MigrateFlow() {
   //   • Privy/injected: the provider's client, first switched to Celo. `forTx`
   //     gates the switch — message signing (the FV link) works on any chain.
   const buildOldClient = useCallback(async (forTx: boolean) => {
+    // Preferred path: if the embedded key is available, sign locally and broadcast
+    // via Forno — no relayer involved.
     const pk = oldPkRef.current;
     if (pk) return localCeloWalletClient(pk);
+    // The @web3auth/modal SDK doesn't expose eth_private_key on this plan, so sign
+    // and broadcast through the provider itself. This requires Celo to be a
+    // configured chain in the Web3Auth project (Chains & Networks); otherwise the
+    // provider's transaction service rejects the send. ensureCelo switches the
+    // provider onto Celo first (message signing, forTx = false, needs no switch).
     const provider = oldProviderRef.current;
     if (!provider) throw new Error("Your old wallet session was lost. Please start over.");
-    // A Web3Auth transaction MUST be signed locally with the exported key. Its
-    // provider sends through a relayer that isn't configured for Celo and fails
-    // with a misleading "insufficient funds". If we have no key here for a
-    // Web3Auth wallet doing a transaction, key export is off on the project —
-    // don't touch the relayer; report the true cause. (Message signing, forTx =
-    // false, is fine over the provider on any chain.)
-    if (forTx && authType === "web3auth") {
-      throw new Error("WEB3AUTH_NO_KEY");
-    }
     if (forTx) await ensureCelo(provider);
     return walletClientFromProvider(provider, oldAddress);
-  }, [oldAddress, authType]);
+  }, [oldAddress]);
 
   // Open GoodDollar's face-verification for the OLD wallet. It must be signed by
   // that wallet — verifying the new one would mint a second identity instead of
@@ -342,9 +340,6 @@ export function MigrateFlow() {
     const msg = (err.shortMessage || err.details || err.message || "").toString();
     console.error("[migrate] on-chain action failed:", e);
 
-    if (/WEB3AUTH_NO_KEY/.test(msg)) {
-      return "We couldn't access your wallet's signing key, so the transaction can't be sent on Celo. This happens when key export is turned off for the Web3Auth project. Turn it on (Web3Auth dashboard → Wallet Services → Key Export) and try again.";
-    }
     if (/insufficient funds/i.test(msg)) {
       return "Your old wallet needs a tiny amount of CELO for gas. Copy your address, send a little CELO, and try again.";
     }
