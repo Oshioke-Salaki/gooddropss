@@ -44,14 +44,15 @@ export function prepareWeb3Auth(): Promise<void> {
     // MUST match the network the legacy Focus-Pet client ID was registered under.
     // It's not just an init check: Web3Auth derives the wallet address from
     // (clientId, network, login), so the wrong network would (a) refuse to boot —
-    // "Network mismatch … does not match project network sapphire_devnet" — and
+    // "Network mismatch … does not match project network sapphire_mainnet" — and
     // (b) if it did boot, derive a DIFFERENT address than the user's real wallet.
-    // The Focus-Pet project lives on sapphire_devnet; keep it overridable in case
-    // the project is ever migrated.
+    // The Focus-Pet project lives on sapphire_mainnet (confirmed in the Web3Auth /
+    // MetaMask developer dashboard, client ID BBsmG9D18eB6…); keep it overridable
+    // in case the project is ever migrated.
     const web3AuthNetwork =
       (process.env.NEXT_PUBLIC_WEB3AUTH_NETWORK as
         | "sapphire_devnet" | "sapphire_mainnet"
-        | undefined) ?? "sapphire_devnet";
+        | undefined) ?? "sapphire_mainnet";
 
     const w3a = new mod.Web3Auth({
       clientId,
