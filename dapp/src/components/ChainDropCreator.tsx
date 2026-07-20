@@ -129,7 +129,14 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
       setStatus("deploying");
       setProgress({ current: 0, total: stops.length });
 
-      const expiry = Math.floor(Date.now() / 1000) + duration + 120;
+      // Keep expiry safely inside the contract window [now+minExpiryDuration,
+      // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
+      // lower bound (the "1h" option sits on the floor) and cap under the ceiling.
+      // See CreateDropSheet for the full rationale (a naive "+120" overflowed 30d).
+      const SKEW = 300;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
+      const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
       let nextDropId: string | null = null;
 
       // Deploy REVERSE: last stop first → get its ID → use it in the previous stop's hint

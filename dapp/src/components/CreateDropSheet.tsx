@@ -172,7 +172,19 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       setErrMsg(`Insufficient balance — you have ${formatG$(balance)} G$, need ${formatG$(amountBig)} G$.`);
       return;
     }
-    const expiry = Math.floor(Date.now() / 1000) + duration + 120;
+    // The contract requires expiry ∈ [now + minExpiryDuration, now + maxExpiryDuration],
+    // checked against the BLOCK timestamp at mining time — which drifts from the
+    // device clock by mining latency and any device-clock skew. Two guards:
+    //   • pad the lower bound so latency/skew can't drop us under now+minDuration
+    //     (the "1h" option sits exactly on that floor);
+    //   • cap the upper bound below now+maxDuration so neither the pad nor a device
+    //     clock running ahead can push the "30d" option over the ceiling.
+    // A naive fixed "+120" buffer made every "30d" drop revert with InvalidExpiry,
+    // because 30d equals maxExpiryDuration exactly and the buffer overflowed it.
+    const SKEW = 300; // absorb ±5 min of clock skew + mining latency on either bound
+    const nowSec = Math.floor(Date.now() / 1000);
+    const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds)); // == on-chain maxExpiryDuration
+    const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
 
     // For private drops: store real coordinates server-side and pass (0,0) on-chain
     // so GPS coordinates are never readable from the blockchain or events.

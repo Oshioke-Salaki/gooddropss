@@ -1,5 +1,6 @@
 "use client";
 import type { EIP1193Provider } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 // Legacy Focus-Pet Web3Auth login. Returns the OLD verified wallet's EIP-1193
 // provider so it can sign the account-link transaction and sweep its G$.
@@ -96,6 +97,36 @@ async function providerToAccount(provider: EIP1193Provider) {
       const pk = (await rawRequest({ method })) as string;
       if (pk) { privateKey = pk.startsWith("0x") ? pk : `0x${pk}`; break; }
     } catch { /* try the next method; caller handles a null key */ }
+  }
+
+  // Only trust a key that actually derives the funded address. Two ways it can
+  // fail to:
+  //   • Key export is disabled on the project (common on MAINNET projects) —
+  //     eth_private_key throws/returns empty, so privateKey stays null.
+  //   • Account abstraction — eth_accounts is a smart-account address while the
+  //     key is its EOA signer, so the derived address differs.
+  // In either case, signing locally with this key would send from the WRONG
+  // (empty) address and fail with a misleading "insufficient funds". Drop it so
+  // the caller can report the real problem instead of guessing about gas.
+  if (privateKey) {
+    try {
+      const derived = privateKeyToAccount(privateKey as `0x${string}`).address.toLowerCase();
+      if (derived !== address.toLowerCase()) {
+        console.error("[web3auth] exported key does not control the wallet address", {
+          walletAddress: address.toLowerCase(), derivedFromKey: derived,
+        });
+        privateKey = null;
+      }
+    } catch (e) {
+      console.error("[web3auth] exported key is not a valid private key", e);
+      privateKey = null;
+    }
+  } else {
+    console.error(
+      "[web3auth] no private key available for this wallet — key export is likely " +
+      "disabled on the Web3Auth project (Wallet Services → Key Export). Local Celo " +
+      "signing needs it; the transaction relayer is not Celo-compatible.",
+    );
   }
 
   return { provider, address: address.toLowerCase(), privateKey };
