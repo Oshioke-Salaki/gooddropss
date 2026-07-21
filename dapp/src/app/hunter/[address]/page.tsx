@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
+import clsx from "clsx";
 import { fetchHunterProfile } from "@/lib/subgraph";
 import { getUsername } from "@/lib/serverProfile";
 import { UserHandle } from "@/components/UserHandle";
-import { formatG$, shortAddr, getDropRarity, RARITY } from "@/lib/utils";
-import { DROP_STATUS, type Drop } from "@/types";
+import { formatG$, shortAddr, getDropRarity, RARITY, type DropRarity } from "@/lib/utils";
+import { type Drop } from "@/types";
 import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucide-react";
 
 interface PageProps { params: Promise<{ address: string }> }
@@ -49,62 +50,26 @@ function computeAchievements(created: Drop[], claimed: Drop[]): Achievement[] {
   const legendary = claimed.some((d) => getDropRarity(d.amount) === "legendary");
 
   return [
-    {
-      id: "first_hunt", name: "First Hunt",   desc: "Claimed your first drop",
-      Icon: Target,  color: "#00CFFF", earned: claimed.length > 0,
-    },
-    {
-      id: "first_drop", name: "Drop Maker",  desc: "Created your first drop",
-      Icon: Coins,   color: "#BFFD00", earned: created.length > 0,
-    },
-    {
-      id: "speed",      name: "Speed Demon", desc: "Claimed within 5 minutes of creation",
-      Icon: Zap,     color: "#FFD700", earned: fastClaim,
-    },
-    {
-      id: "whale",      name: "Whale",       desc: "Dropped 200+ G$ in one go",
-      Icon: Star,    color: "#FF6B6B", earned: whale,
-    },
-    {
-      id: "legendary",  name: "Legend",      desc: "Claimed a Legendary drop",
-      Icon: Crown,   color: "#FFD700", earned: legendary,
-    },
-    {
-      id: "collector",  name: "Collector",   desc: "Claimed 5 or more drops",
-      Icon: Shield,  color: "#BFFD00", earned: claimed.length >= 5,
-    },
-    {
-      id: "pioneer",    name: "Pioneer",     desc: "Created 10+ drops",
-      Icon: Award,   color: "#00CFFF", earned: created.length >= 10,
-    },
+    { id: "first_hunt", name: "First Hunt",   desc: "Claimed your first drop",         Icon: Target, color: "#00CFFF", earned: claimed.length > 0 },
+    { id: "first_drop", name: "Drop Maker",   desc: "Created your first drop",          Icon: Coins,  color: "#BFFD00", earned: created.length > 0 },
+    { id: "speed",      name: "Speed Demon",  desc: "Claimed within 5 min of creation", Icon: Zap,    color: "#FFB800", earned: fastClaim },
+    { id: "whale",      name: "Whale",        desc: "Dropped 200+ G$ in one go",        Icon: Star,   color: "#FF6B6B", earned: whale },
+    { id: "legendary",  name: "Legend",       desc: "Claimed a Legendary drop",         Icon: Crown,  color: "#FFB800", earned: legendary },
+    { id: "collector",  name: "Collector",    desc: "Claimed 5 or more drops",          Icon: Shield, color: "#00CFFF", earned: claimed.length >= 5 },
+    { id: "pioneer",    name: "Pioneer",      desc: "Created 10+ drops",                Icon: Award,  color: "#BFFD00", earned: created.length >= 10 },
   ];
 }
 
 // ── Avatar ────────────────────────────────────────────────────────────────────
 
 function avatarColor(address: string): string {
-  const hash = address.slice(2, 8);
-  const n = parseInt(hash, 16);
-  const hue = n % 360;
-  return `hsl(${hue}, 70%, 55%)`;
-}
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div style={{
-      background: accent ? "#BFFD0014" : "#0e0f1a",
-      border: `1.5px solid ${accent ? "#BFFD0033" : "#1e1e2e"}`,
-      borderRadius: 16, padding: "16px 20px", textAlign: "center",
-    }}>
-      <p style={{ margin: 0, fontSize: 26, fontWeight: 900, color: accent ? "#BFFD00" : "#fff" }}>{value}</p>
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: "#444", fontWeight: 600 }}>{label}</p>
-    </div>
-  );
+  const hue = parseInt(address.slice(2, 8), 16) % 360;
+  return `hsl(${hue}, 80%, 62%)`;
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+const RARITY_ORDER: DropRarity[] = ["legendary", "rare", "uncommon", "common"];
 
 export default async function HunterPage({ params }: PageProps) {
   const { address } = await params;
@@ -114,116 +79,132 @@ export default async function HunterPage({ params }: PageProps) {
   const { dropsCreated, dropsClaimed } = profile;
   const totalDropped = dropsCreated.reduce((s, d) => s + d.amount, 0n);
   const totalClaimed = dropsClaimed.reduce((s, d) => s + d.amount, 0n);
+
+  // Richer stats
+  const netWei    = totalClaimed - totalDropped;
+  const netPos    = netWei >= 0n;
+  const biggest   = dropsClaimed.reduce((m, d) => (d.amount > m ? d.amount : m), 0n);
+  const avgWei    = dropsClaimed.length ? totalClaimed / BigInt(dropsClaimed.length) : 0n;
+  const firstHunt = dropsClaimed.reduce(
+    (min, d) => (d.claimedAt > 0 && (min === 0 || d.claimedAt < min) ? d.claimedAt : min),
+    0,
+  );
+  const rarityCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 } as Record<DropRarity, number>;
+  for (const d of dropsClaimed) rarityCounts[getDropRarity(d.amount)]++;
+
   const achievements = computeAchievements(dropsCreated, dropsClaimed);
-  const earned       = achievements.filter((a) => a.earned);
-  const locked       = achievements.filter((a) => !a.earned);
+  const earned = achievements.filter((a) => a.earned);
+  const locked = achievements.filter((a) => !a.earned);
+  const avColor = avatarColor(address);
 
   return (
-    <div style={{
-      minHeight: "100dvh",
-      background: "#08090f",
-      color: "#fff",
-      fontFamily: "'Space Grotesk', sans-serif",
-      paddingBottom: 40,
-    }}>
+    <div className="min-h-[100dvh] bg-cream text-ink pb-16" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
       {/* Header */}
-      <div style={{
-        padding: "16px 20px",
-        display: "flex", alignItems: "center", gap: 12,
-        borderBottom: "1px solid #1e1e2e",
-        position: "sticky", top: 0,
-        background: "#0a0b12", zIndex: 10,
-      }}>
-        <Link href="/leaderboard" style={{
-          background: "#1a1a2e", border: "1px solid #333", borderRadius: 10,
-          width: 38, height: 38, display: "flex", alignItems: "center",
-          justifyContent: "center", color: "#888", textDecoration: "none",
-        }}>
-          <ArrowLeft size={18} />
-        </Link>
-        <span style={{ color: "#555", fontSize: 14, fontWeight: 600 }}>Hunter Profile</span>
+      <div className="sticky top-0 z-10 bg-cream/95 backdrop-blur border-b-2 border-ink">
+        <div className="max-w-[480px] mx-auto flex items-center gap-3 px-4 h-14">
+          <Link
+            href="/leaderboard"
+            className="w-9 h-9 flex items-center justify-center bg-card border-2 border-ink rounded-xl shadow-brutal-sm hover:opacity-90"
+            aria-label="Back to rankings"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+          <Link href="/" className="font-black text-lg tracking-tight">
+            good<span className="bg-ink text-lime px-1.5 py-0.5 rounded-md ml-0.5">drops.</span>
+          </Link>
+        </div>
       </div>
 
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 16px" }}>
+      <div className="max-w-[480px] mx-auto px-4">
 
-        {/* Avatar + address */}
-        <div style={{
-          display: "flex", flexDirection: "column", alignItems: "center",
-          padding: "36px 0 28px", gap: 12,
-        }}>
-          <div style={{
-            width: 80, height: 80, borderRadius: "50%",
-            background: avatarColor(address),
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 32, fontWeight: 900, color: "#111",
-            boxShadow: `0 0 32px ${avatarColor(address)}60`,
-          }}>
+        {/* Identity */}
+        <div className="flex flex-col items-center text-center pt-9 pb-7 gap-3">
+          <div
+            className="w-20 h-20 rounded-full border-2 border-ink shadow-brutal flex items-center justify-center text-3xl font-black text-ink"
+            style={{ background: avColor }}
+          >
             {address.slice(2, 4).toUpperCase()}
           </div>
-          <div style={{ textAlign: "center" }}>
-            <UserHandle address={address} style={{ display: "block", fontWeight: 900, fontSize: 20 }} />
-            <p style={{ margin: "4px 0 0", color: "#444", fontSize: 12, fontFamily: "monospace" }}>
-              {address.toLowerCase()}
-            </p>
+          <div>
+            <UserHandle address={address} className="block font-black text-2xl leading-tight" />
+            <p className="mt-1 text-xs font-mono text-muted break-all px-4">{address.toLowerCase()}</p>
           </div>
-          {earned.length > 0 && (
-            <div style={{
-              background: "#BFFD0014", border: "1px solid #BFFD0033",
-              borderRadius: 100, padding: "4px 14px",
-              fontSize: 12, fontWeight: 700, color: "#BFFD00",
-            }}>
-              {earned.length} / {achievements.length} achievements
-            </div>
-          )}
+          <div className="bg-lime border-2 border-ink rounded-full px-3.5 py-1 text-xs font-black shadow-brutal-sm">
+            🏆 {earned.length} / {achievements.length} achievements
+          </div>
         </div>
 
-        {/* Stats grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 28 }}>
-          <Stat label="Drops Created" value={String(dropsCreated.length)} />
+        {/* Core stats */}
+        <div className="grid grid-cols-2 gap-2.5">
           <Stat label="Drops Claimed" value={String(dropsClaimed.length)} />
-          <Stat label="G$ Dropped"  value={formatG$(totalDropped)} accent />
-          <Stat label="G$ Claimed"  value={formatG$(totalClaimed)} accent />
+          <Stat label="Drops Created" value={String(dropsCreated.length)} />
+          <Stat label="G$ Claimed" value={formatG$(totalClaimed)} accent />
+          <Stat label="G$ Dropped" value={formatG$(totalDropped)} />
         </div>
+
+        {/* Highlights */}
+        {dropsClaimed.length > 0 && (
+          <div className="grid grid-cols-2 gap-2.5 mt-2.5">
+            <Stat
+              label="Biggest Find"
+              value={`${formatG$(biggest)} G$`}
+              sub={RARITY[getDropRarity(biggest)].label}
+              subColor={RARITY[getDropRarity(biggest)].color}
+            />
+            <Stat
+              label="Net G$"
+              value={`${netPos ? "+" : "−"}${formatG$(netPos ? netWei : -netWei)}`}
+              sub={netPos ? "net earner" : "net giver"}
+            />
+            <Stat label="Avg Find" value={`${formatG$(avgWei)} G$`} />
+            <Stat
+              label="Hunting Since"
+              value={firstHunt ? new Date(firstHunt * 1000).toLocaleDateString("en", { month: "short", year: "numeric" }) : "—"}
+            />
+          </div>
+        )}
+
+        {/* Rarity breakdown */}
+        {dropsClaimed.length > 0 && (
+          <Section title="Finds by rarity">
+            <div className="flex flex-wrap gap-2">
+              {RARITY_ORDER.filter((r) => rarityCounts[r] > 0).map((r) => (
+                <div
+                  key={r}
+                  className="flex items-center gap-2 bg-card border-2 border-ink rounded-full pl-2.5 pr-3 py-1.5 shadow-brutal-sm"
+                >
+                  <span className="w-3 h-3 rounded-full border border-ink" style={{ background: RARITY[r].color }} />
+                  <span className="text-xs font-bold">{RARITY[r].label}</span>
+                  <span className="text-xs font-black tabular-nums">×{rarityCounts[r]}</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Achievements */}
         <Section title="Achievements">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <div className="grid grid-cols-2 gap-2.5">
             {earned.map(({ id, name, desc, Icon, color }) => (
-              <div key={id} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                background: "#0e0f1a", border: `1.5px solid ${color}33`,
-                borderRadius: 12, padding: "10px 14px",
-                flex: "1 1 calc(50% - 5px)", minWidth: 130,
-              }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                  background: `${color}20`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <Icon size={16} color={color} />
+              <div key={id} className="flex items-center gap-2.5 bg-card border-2 border-ink rounded-xl p-3 shadow-brutal-sm">
+                <div
+                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border-2 border-ink"
+                  style={{ background: color }}
+                >
+                  <Icon size={17} color="#111" />
                 </div>
-                <div>
-                  <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#fff" }}>{name}</p>
-                  <p style={{ margin: 0, fontSize: 10, color: "#444", lineHeight: 1.3 }}>{desc}</p>
+                <div className="min-w-0">
+                  <p className="text-xs font-black truncate">{name}</p>
+                  <p className="text-[10px] text-muted leading-tight">{desc}</p>
                 </div>
               </div>
             ))}
             {locked.map(({ id, name, Icon }) => (
-              <div key={id} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                background: "#080910", border: "1.5px solid #151520",
-                borderRadius: 12, padding: "10px 14px",
-                flex: "1 1 calc(50% - 5px)", minWidth: 130,
-                opacity: 0.4,
-              }}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                  background: "#1a1a2e",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <Icon size={16} color="#333" />
+              <div key={id} className="flex items-center gap-2.5 bg-border/40 border-2 border-dashed border-ink/25 rounded-xl p-3">
+                <div className="w-9 h-9 rounded-lg bg-border flex items-center justify-center shrink-0">
+                  <Icon size={17} className="text-muted opacity-50" />
                 </div>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#333" }}>{name}</p>
+                <p className="text-xs font-bold text-muted opacity-70 truncate">{name}</p>
               </div>
             ))}
           </div>
@@ -232,32 +213,23 @@ export default async function HunterPage({ params }: PageProps) {
         {/* Recent claims */}
         {dropsClaimed.length > 0 && (
           <Section title="Recent Claims">
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {dropsClaimed.slice(0, 5).map((d) => {
+            <div className="flex flex-col gap-2">
+              {dropsClaimed.slice(0, 6).map((d) => {
                 const r = RARITY[getDropRarity(d.amount)];
                 return (
-                  <div key={String(d.id)} style={{
-                    display: "flex", alignItems: "center", gap: 12,
-                    background: "#0e0f1a", border: "1px solid #1e1e2e",
-                    borderRadius: 14, padding: "12px 14px",
-                  }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-                      background: `${r.color}20`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <Target size={18} color={r.color} />
+                  <div key={String(d.id)} className="flex items-center gap-3 bg-card border-2 border-ink rounded-xl p-3 shadow-brutal-sm">
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border-2 border-ink"
+                      style={{ background: r.color }}
+                    >
+                      <Target size={17} color="#111" />
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>
-                        {formatG$(d.amount)} G$
-                      </p>
-                      <p style={{ margin: 0, fontSize: 11, color: "#444" }}>
-                        Drop #{String(d.id)} · {r.label}
-                      </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black leading-none">{formatG$(d.amount)} G$</p>
+                      <p className="text-[11px] text-muted mt-1">Drop #{String(d.id)} · {r.label}</p>
                     </div>
                     {d.claimedAt > 0 && (
-                      <p style={{ margin: 0, fontSize: 11, color: "#333" }}>
+                      <p className="text-[11px] font-semibold text-muted shrink-0">
                         {new Date(d.claimedAt * 1000).toLocaleDateString("en", { month: "short", day: "numeric" })}
                       </p>
                     )}
@@ -272,15 +244,39 @@ export default async function HunterPage({ params }: PageProps) {
   );
 }
 
+// ── Building blocks ─────────────────────────────────────────────────────────────
+
+function Stat({
+  label, value, accent, sub, subColor,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  sub?: string;
+  subColor?: string;
+}) {
+  return (
+    <div className={clsx(
+      "border-2 border-ink rounded-2xl p-4 text-center shadow-brutal",
+      accent ? "bg-lime" : "bg-card",
+    )}>
+      <p className="text-2xl font-black leading-none truncate">{value}</p>
+      {sub && (
+        <p className="text-[10px] font-black uppercase tracking-wide mt-1" style={{ color: subColor ?? "#5a5a5a" }}>
+          {sub}
+        </p>
+      )}
+      <p className={clsx("text-[11px] font-bold uppercase tracking-wide mt-1.5", accent ? "text-ink/70" : "text-muted")}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 28 }}>
-      <p style={{
-        margin: "0 0 12px", fontSize: 11, fontWeight: 800,
-        color: "#444", letterSpacing: "0.1em", textTransform: "uppercase",
-      }}>
-        {title}
-      </p>
+    <div className="mt-7">
+      <p className="text-[11px] font-black uppercase tracking-[0.1em] text-muted mb-3">{title}</p>
       {children}
     </div>
   );
