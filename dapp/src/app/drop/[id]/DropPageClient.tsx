@@ -39,7 +39,8 @@ function useCampaign(campaignId: string | null) {
   return campaign;
 }
 
-type ClaimStatus = "idle" | "claiming" | "done" | "error";
+// "gone" = a claim that can't be retried (someone else solved/claimed it).
+type ClaimStatus = "idle" | "claiming" | "done" | "error" | "gone";
 
 export default function DropPageClient({ dropId }: { dropId: string }) {
   const [drop,       setDrop]       = useState<Drop | null | undefined>(undefined);
@@ -207,8 +208,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
       }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
-      setStatus("error");
+      const msg = err.shortMessage ?? err.message ?? "Something went wrong — try again.";
+      setErrMsg(msg);
+      const lost = /already claimed|already been claimed|solved (this|the) riddle first|someone else|being claimed|no longer active|not active|reserved/i.test(msg);
+      setStatus(lost ? "gone" : "error");
     }
     // userLoc and privateToken were missing here: GPS resolves asynchronously, so
     // a callback frozen before the first fix would post userLat: undefined and the
@@ -274,14 +277,17 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const needsAnswer   = hasRiddle && !riddle?.lockedByMe;
   const answerFilled  = !needsAnswer || answer.trim().length > 0;
   const riddleBlocked = !!riddle?.lockedByOther;
+  // Someone else has it (won the riddle window, or already claimed) — retrying
+  // can't help, so the button sends them back to the map.
+  const terminal = status === "gone" || riddleBlocked || isClaimed;
 
   const canClaim =
     isConnected && verificationOk && isActive && !isSelf && isClose &&
     answerFilled && !riddleBlocked && status === "idle";
 
-  // "Active" button: can claim, offering an error retry, or offering to re-run a
-  // failed verification read.
-  const btnActive = canClaim || status === "error" || identityCheckFailed;
+  // "Active" button: can claim, retry an error, re-run a failed verification read,
+  // or navigate back to the map when the drop is gone.
+  const btnActive = canClaim || status === "error" || identityCheckFailed || terminal;
 
   const rarity = getDropRarity(drop.amount);
   const r      = RARITY[rarity];
@@ -289,6 +295,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
   function claimLabel() {
     if (status === "claiming") return "Claiming…";
+    if (terminal)              return "← Back to the map";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
     // Don't show verify/re-verify until the on-chain check resolves — the slow
@@ -301,7 +308,6 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     if (isSelf)                return "This is your own drop";
     if (!userLoc)              return "Enable GPS to claim";
     if (!isClose)              return `Get closer — ${Math.round(distance ?? 0)}m away`;
-    if (riddleBlocked)         return "🔒 Someone solved it first";
     if (!answerFilled)         return "🧩 Answer the riddle to claim";
     return `Claim ${formatG$(drop!.amount)} G$`;
   }
@@ -663,7 +669,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
               ) : (
                 <button
                   onClick={
-                    status === "error" ? () => { setStatus("idle"); setErrMsg(""); }
+                    terminal ? () => { window.location.href = "/"; }
+                    : status === "error" ? () => { setStatus("idle"); setErrMsg(""); }
                     : identityCheckFailed ? () => refreshIdentity()
                     : handleClaim
                   }

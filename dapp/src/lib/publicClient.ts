@@ -1,22 +1,15 @@
-import { createPublicClient, fallback, http } from "viem";
+import { createPublicClient, http } from "viem";
 import { celo } from "viem/chains";
 
-// The identity/verification check fans out into several eth_calls. Two things keep
-// it fast and reliable on the claim screen:
-//   • multicall batching — concurrent reads collapse into ONE round-trip instead
-//     of one-per-call against a slow public RPC.
-//   • a ranked fallback — forno.celo.org rate-limits and slows down under load;
-//     `rank` periodically measures latency and prefers the fastest healthy RPC,
-//     and any hard error falls through to the next.
+// Multicall batching is the real speed win for the identity/verification checks —
+// concurrent eth_call reads collapse into ONE round-trip. We deliberately use a
+// SINGLE reliable transport (forno) rather than a ranked fallback: the drpc/ankr
+// public endpoints intermittently return HTTP 400 on real methods, and with a
+// ranked fallback viem would pick a "fast-pinging but broken" endpoint and blow up
+// waitForTransactionReceipt (and every other write). Forno is stable; transient
+// blips are handled by per-query retries where it matters (see useIdentityStatus).
 export const publicClient = createPublicClient({
   chain: celo,
-  transport: fallback(
-    [
-      http("https://forno.celo.org"),
-      http("https://celo.drpc.org"),
-      http("https://rpc.ankr.com/celo"),
-    ],
-    { rank: { interval: 60_000, sampleCount: 3 } },
-  ),
+  transport: http("https://forno.celo.org"),
   batch: { multicall: { wait: 16 } },
 });

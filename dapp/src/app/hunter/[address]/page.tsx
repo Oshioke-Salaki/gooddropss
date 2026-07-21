@@ -8,7 +8,8 @@ import { UserHandle } from "@/components/UserHandle";
 import { HunterStreakBadge } from "@/components/HunterStreakBadge";
 import { HunterRank } from "@/components/HunterRank";
 import { ShareableHunterCard } from "@/components/ShareableHunterCard";
-import { formatG$, shortAddr, getDropRarity, RARITY, type DropRarity } from "@/lib/utils";
+import { formatG$, shortAddr, getDropRarity, RARITY, gpsToDeg, type DropRarity } from "@/lib/utils";
+import { HunterFindsMap, type FindPoint } from "@/components/HunterFindsMap";
 import { type Drop } from "@/types";
 import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucide-react";
 
@@ -97,6 +98,17 @@ export default async function HunterPage({ params }: PageProps) {
   );
   const rarityCounts = { common: 0, uncommon: 0, rare: 0, legendary: 0 } as Record<DropRarity, number>;
   for (const d of dropsClaimed) rarityCounts[getDropRarity(d.amount)]++;
+
+  // Map of public finds — private drops are stored on-chain as (0,0), so drop them.
+  const findPoints: FindPoint[] = dropsClaimed
+    .filter((d) => !(d.lat === 0 && d.lng === 0))
+    .map((d) => ({
+      lat: gpsToDeg(d.lat),
+      lng: gpsToDeg(d.lng),
+      amount: formatG$(d.amount),
+      color: RARITY[getDropRarity(d.amount)].color,
+    }))
+    .filter((p) => Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180 && !(p.lat === 0 && p.lng === 0));
 
   const achievements = computeAchievements(dropsCreated, dropsClaimed);
   const earned = achievements.filter((a) => a.earned);
@@ -195,6 +207,13 @@ export default async function HunterPage({ params }: PageProps) {
                 </div>
               ))}
             </div>
+          </Section>
+        )}
+
+        {/* Map of finds */}
+        {findPoints.length > 0 && (
+          <Section title="Where they've hunted">
+            <HunterFindsMap points={findPoints} />
           </Section>
         )}
 

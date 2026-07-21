@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
-import { Map, Package, Trophy } from "lucide-react";
+import { Map, Package, Trophy, User } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -20,6 +20,7 @@ const links = [
   { href: "/", label: "Map" },
   { href: "/my-drops", label: "My Drops" },
   { href: "/leaderboard", label: "Rankings" },
+  { href: "/me", label: "Profile" },
   { href: "/merchant", label: "Spots 🏪" },
   { href: "/sponsor", label: "Sponsor ⭐" },
 ];
@@ -587,6 +588,7 @@ export function BottomNav() {
     { href: "/", label: "Map", Icon: Map },
     { href: "/my-drops", label: "My Drops", Icon: Package },
     { href: "/leaderboard", label: "Rankings", Icon: Trophy },
+    { href: "/me", label: "Profile", Icon: User },
   ];
 
   return (
@@ -594,7 +596,7 @@ export function BottomNav() {
       className="sm:hidden fixed bottom-0 left-0 right-0 bg-cream border-t-2 border-ink"
       style={{ zIndex: 1000 }}
     >
-      <div className="grid grid-cols-3 h-16">
+      <div className="grid grid-cols-4 h-16">
         {items.map(({ href, label, Icon }) => {
           const active = path === href;
           return (

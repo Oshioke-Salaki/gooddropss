@@ -43,7 +43,9 @@ function useCampaign(campaignId: string | null) {
   return { campaign, claims };
 }
 
-type Status = "idle" | "claiming" | "done" | "error";
+// "gone" = the claim failed for a reason retrying can't fix (someone else solved
+// the riddle / already claimed it) — the button becomes "back to the map".
+type Status = "idle" | "claiming" | "done" | "error" | "gone";
 
 interface Props {
   drop: Drop | null;
@@ -117,6 +119,11 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const needsAnswer  = !!parsed?.hasRiddle && !riddle?.lockedByMe;
   const answerFilled = !needsAnswer || answer.trim().length > 0;
   const riddleBlocked = !!riddle?.lockedByOther;
+  // Someone else has this drop (won the riddle window, or already claimed it):
+  // retrying can't help, so the button should send them back to the map.
+  const alreadyClaimed = drop ? drop.status === DROP_STATUS.Claimed : false;
+  const takenByOther   = riddleBlocked || alreadyClaimed;
+  const terminal       = status === "gone" || takenByOther;
 
   const canClaim =
     isConnected && verificationOk && isActive && !isSelfDrop && isClose &&
@@ -125,7 +132,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // The claim button is "active" (tappable, styled) when it can claim, when it's
   // offering a retry after an error, or when the verification read failed and the
   // tap should re-run that read.
-  const btnActive = canClaim || status === "error" || identityCheckFailed;
+  const btnActive = canClaim || status === "error" || identityCheckFailed || terminal;
 
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
@@ -173,13 +180,18 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       }
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
-      setStatus("error");
+      const msg = err.shortMessage ?? err.message ?? "Something went wrong — try again.";
+      setErrMsg(msg);
+      // Terminal reasons (someone else got it) — retrying can't win, so mark "gone"
+      // and the button switches to "back to the map" instead of "try again".
+      const lost = /already claimed|already been claimed|solved (this|the) riddle first|someone else|being claimed|no longer active|not active|reserved/i.test(msg);
+      setStatus(lost ? "gone" : "error");
     }
   }
 
   function claimLabel() {
     if (status === "claiming") return "⏳ Claiming…";
+    if (terminal)              return "← Back to the map";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
     // Don't accuse a (possibly verified) user of needing to verify until the
@@ -194,7 +206,6 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     if (isSelfDrop)            return "Can't claim own drop";
     if (!userLocation)         return "Enable GPS to claim";
     if (!isClose)              return `${Math.round(distance ?? 0)}m away — get closer`;
-    if (riddleBlocked)         return "🔒 Someone solved it first";
     if (!answerFilled)         return "🧩 Answer the riddle to claim";
     return `Claim ${formatG$(drop!.amount)} G$ →`;
   }
@@ -731,7 +742,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     {/* ── CLAIM BUTTON ── */}
                     <button
                       onClick={
-                        status === "error" ? () => setStatus("idle")
+                        terminal ? onClose
+                        : status === "error" ? () => setStatus("idle")
                         : identityCheckFailed ? () => refreshIdentity()
                         : handleClaim
                       }

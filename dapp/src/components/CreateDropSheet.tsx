@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useWriteContract, useSignMessage } from "wagmi";
+import { useWriteContract, useSignMessage, useReadContract } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { publicClient } from "@/lib/publicClient";
@@ -81,6 +81,19 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
+
+  // Live drop limits from the contract, so the UI can't drift if they're ever
+  // changed on-chain. Fall back to the known 1–500 G$ while the reads resolve.
+  const { data: maxDropWei } = useReadContract({
+    address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount",
+  });
+  const { data: minDropWei } = useReadContract({
+    address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "minDropAmount",
+  });
+  const maxDrop = (maxDropWei as bigint | undefined) ?? parseUnits("500", 18);
+  const minDrop = (minDropWei as bigint | undefined) ?? parseUnits("1", 18);
+  const maxG = Number(maxDrop / 10n ** 18n);
+  const minG = Number(minDrop / 10n ** 18n) || 1;
 
   // ── Location (set via picker) ───────────────────────────────────────────────
   const [lat, setLat]           = useState<number | null>(null);
@@ -168,6 +181,14 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
 
     const amountBig = parseUnits(amount, 18);
+    if (amountBig > maxDrop) {
+      setErrMsg(`Maximum drop is ${formatG$(maxDrop)} G$ — lower the amount.`);
+      return;
+    }
+    if (amountBig < minDrop) {
+      setErrMsg(`Minimum drop is ${formatG$(minDrop)} G$.`);
+      return;
+    }
     if (amountBig > balance) {
       setErrMsg(`Insufficient balance — you have ${formatG$(balance)} G$, need ${formatG$(amountBig)} G$.`);
       return;
@@ -347,6 +368,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     ? parseUnits(amount, 18)
     : 0n;
   const insufficientBalance = isConnected && !balanceFetching && amountWei > 0n && amountWei > balance;
+  const overMax  = amountWei > 0n && amountWei > maxDrop;
+  const underMin = amountWei > 0n && amountWei < minDrop;
   // Private prefix overhead: "[P:0x1234567890abcdef1234567890abcdef12345678]" = 46 chars
   // Riddle prefix overhead: "[R]" = 3 chars
   const hintMaxLen = (isPrivate ? 154 : 200) - (hasRiddle ? 3 : 0);
@@ -374,7 +397,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     isConnected && lat !== null && lng !== null &&
     !isNaN(amountNum) && amountNum > 0 && hint.length <= hintMaxLen &&
     (!hasRiddle || riddleReady) &&
-    !busy && !insufficientBalance;
+    !busy && !insufficientBalance && !overMax && !underMin;
 
   const btnLabel =
     status === "approving" ? "One moment…" :
@@ -737,23 +760,31 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 </div>
                 <div className={clsx(
                   "flex items-center border-2 rounded-xl overflow-hidden transition-colors",
-                  insufficientBalance ? "border-danger" : "border-ink"
+                  (insufficientBalance || overMax || underMin) ? "border-danger" : "border-ink"
                 )}>
                   <input
                     type="number"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    min="1" max="500" step="1" placeholder="10"
+                    min={minG} max={maxG} step="1" placeholder="10"
                     className="flex-1 px-4 py-3 text-xl font-black bg-transparent outline-none"
                   />
                   <div className="pr-4 text-xl font-black text-muted">G$</div>
                 </div>
-                {insufficientBalance ? (
+                {overMax ? (
+                  <p className="text-xs text-danger font-semibold">
+                    Max drop is {formatG$(maxDrop)} G$ — try {formatG$(maxDrop)} G$ or less.
+                  </p>
+                ) : underMin ? (
+                  <p className="text-xs text-danger font-semibold">
+                    Min drop is {formatG$(minDrop)} G$.
+                  </p>
+                ) : insufficientBalance ? (
                   <p className="text-xs text-danger font-semibold">
                     You only have {formatG$(balance)} G$ — reduce the amount.
                   </p>
                 ) : (
-                  <p className="text-xs text-muted">Min 1 G$ · Max 500 G$</p>
+                  <p className="text-xs text-muted">Min {formatG$(minDrop)} G$ · Max {formatG$(maxDrop)} G$</p>
                 )}
               </div>
 
