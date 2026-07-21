@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useDrops } from "@/hooks/useDrops";
 import { formatG$ } from "@/lib/utils";
 import { resolveRoots } from "@/lib/roots";
 import { UserHandle } from "@/components/UserHandle";
+import { useProfile } from "@/hooks/useProfile";
 import { DROP_STATUS } from "@/types";
 import type { HunterStreak } from "@/types";
 import clsx from "clsx";
@@ -27,63 +29,81 @@ function RankRow({
   entry,
   label,
   streak,
+  showNameNudge,
 }: {
   rank: number;
   entry: Rank;
   label?: string;
   streak?: HunterStreak | null;
+  showNameNudge?: boolean;
 }) {
   const isTop3 = rank <= 3;
   return (
     <div
       className={clsx(
-        "flex items-center gap-3 border-2 border-ink rounded-2xl px-3 py-3 min-w-0",
+        "border-2 border-ink rounded-2xl px-3 py-3 min-w-0",
         isTop3 ? RANK_STYLES[rank - 1] : "bg-card"
       )}
     >
-      <div
-        className={clsx(
-          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shrink-0",
-          rank === 1 && "bg-ink text-lime",
-          rank === 2 && "bg-lime text-ink",
-          rank >= 3 && !isTop3
-            ? "bg-border text-muted"
-            : rank === 3
-            ? "bg-cream text-ink border border-ink"
-            : ""
-        )}
-      >
-        {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}
-      </div>
-      <Link href={`/hunter/${entry.address}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
-        <div className="font-bold text-sm truncate flex items-center gap-1.5">
-          <UserHandle address={entry.address} />
-          {streak && streak.current >= 2 && (
-            <span
-              title={`${streak.current}-day streak`}
-              className={clsx(
-                "text-xs font-black px-1.5 py-0.5 rounded-full border leading-none shrink-0",
-                streak.current >= 7
-                  ? "bg-orange-500 border-orange-700 text-white"
-                  : "bg-cream border-ink text-ink"
-              )}
-            >
-              🔥{streak.current}
-            </span>
+      <div className="flex items-center gap-3 min-w-0">
+        <div
+          className={clsx(
+            "w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shrink-0",
+            rank === 1 && "bg-ink text-lime",
+            rank === 2 && "bg-lime text-ink",
+            rank >= 3 && !isTop3
+              ? "bg-border text-muted"
+              : rank === 3
+              ? "bg-cream text-ink border border-ink"
+              : ""
           )}
+        >
+          {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}
         </div>
-        <div className="text-xs opacity-70 font-medium">{entry.count} {label}</div>
-      </Link>
-      <div className="text-right shrink-0">
-        <div className="font-black text-lg leading-none">{formatG$(entry.totalWei)}</div>
-        <div className="text-xs opacity-70 font-semibold">G$</div>
+        <Link href={`/hunter/${entry.address}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
+          <div className="font-bold text-sm truncate flex items-center gap-1.5">
+            <UserHandle address={entry.address} />
+            {streak && streak.current >= 2 && (
+              <span
+                title={`${streak.current}-day streak`}
+                className={clsx(
+                  "text-xs font-black px-1.5 py-0.5 rounded-full border leading-none shrink-0",
+                  streak.current >= 7
+                    ? "bg-orange-500 border-orange-700 text-white"
+                    : "bg-cream border-ink text-ink"
+                )}
+              >
+                🔥{streak.current}
+              </span>
+            )}
+          </div>
+          <div className="text-xs opacity-70 font-medium">{entry.count} {label}</div>
+        </Link>
+        <div className="text-right shrink-0">
+          <div className="font-black text-lg leading-none">{formatG$(entry.totalWei)}</div>
+          <div className="text-xs opacity-70 font-semibold">G$</div>
+        </div>
       </div>
+
+      {showNameNudge && (
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+          className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full bg-lime border-2 border-ink text-ink shadow-brutal-sm hover:opacity-90 transition-opacity"
+        >
+          👋 That&apos;s you — claim your name →
+        </button>
+      )}
     </div>
   );
 }
 
 export default function LeaderboardPage() {
   const { drops, loading, fetchDrops } = useDrops();
+  const { address: me } = useAccount();
+  const myProfile = useProfile(me);
+  // Show the "that's you — claim your name" nudge only once we've confirmed the
+  // connected user has no username yet.
+  const iNeedName = !!me && myProfile !== undefined && !myProfile?.username;
   const [tab, setTab] = useState<"hunters" | "droppers">("hunters");
   const [streaks, setStreaks] = useState<Record<string, HunterStreak>>({});
   // Map each wallet → its identity root, so a person's linked wallets collapse
@@ -240,6 +260,7 @@ export default function LeaderboardPage() {
                   entry={entry}
                   label={tab === "hunters" ? "claims" : "drops"}
                   streak={tab === "hunters" ? (streaks[entry.address.toLowerCase()] ?? null) : null}
+                  showNameNudge={iNeedName && entry.address.toLowerCase() === me?.toLowerCase()}
                 />
               ))
             )}

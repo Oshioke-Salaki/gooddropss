@@ -11,6 +11,7 @@ import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useVerification } from "@/hooks/useVerification";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { useProfile } from "@/hooks/useProfile";
 import { VerificationModal } from "@/components/VerificationModal";
 import { formatG$ } from "@/lib/utils";
 import clsx from "clsx";
@@ -131,6 +132,11 @@ function WalletButton({
   }
 
   const shortAddress = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  const profile   = useProfile(address);
+  const username  = profile?.username ?? null;
+  // Only nudge once we've confirmed there's no name (never while loading).
+  const needsName = profile !== undefined && !profile?.username;
+  const pillLabel = username ? `@${username}` : shortAddress;
 
   const gdBadge = isVerificationLoading ? (
     <span
@@ -235,9 +241,42 @@ function WalletButton({
             whiteSpace: "nowrap",
           }}
         >
-          {shortAddress}
+          {pillLabel}
         </span>
-        {!isNarrow && (
+        {needsName ? (
+          <span
+            role="button"
+            tabIndex={0}
+            title="Set your hunter name"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent("gd:setName"));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                e.preventDefault();
+                window.dispatchEvent(new CustomEvent("gd:setName"));
+              }
+            }}
+            style={{
+              marginLeft: "2px",
+              padding: "2px 8px",
+              background: "#bffd00",
+              color: "#111111",
+              border: "1.5px solid #111111",
+              borderRadius: "6px",
+              fontSize: "11px",
+              fontWeight: 900,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              cursor: "pointer",
+              animation: "pulse 2s ease-in-out infinite",
+            }}
+          >
+            ＋ Name
+          </span>
+        ) : !isNarrow ? (
           <span
             style={{
               marginLeft: "2px",
@@ -253,7 +292,7 @@ function WalletButton({
           >
             {formatG$(balance)} G$
           </span>
-        )}
+        ) : null}
       </button>
 
       {showModal && (

@@ -28,6 +28,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { useProfile } from "@/hooks/useProfile";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -54,6 +55,10 @@ interface Props {
 
 export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: Props) {
   const { address } = useAccount();
+  const profile     = useProfile(address);
+  const myUsername  = profile?.username ?? null;
+  // Nudge to set a name after a win — only once we've confirmed there isn't one.
+  const needsName   = !!address && profile !== undefined && !profile?.username;
   const { authenticated } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
@@ -498,9 +503,36 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                           amount={drop.amount}
                           rarity={getDropRarity(drop.amount)}
                           place={parsed?.hint || null}
-                          handle={address ? shortAddr(address) : "a hunter"}
+                          handle={myUsername ? `@${myUsername}` : address ? shortAddr(address) : "a hunter"}
                           dropId={drop.id.toString()}
                         />
+
+                        {/* Post-win nudge — peak moment to claim a name, since the
+                            share card & leaderboard are about to show it. */}
+                        {needsName && (
+                          <button
+                            onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+                            style={{
+                              marginTop: 12, width: "100%",
+                              display: "flex", alignItems: "center", gap: 12, textAlign: "left",
+                              padding: "13px 16px", borderRadius: 12, cursor: "pointer",
+                              background: "rgba(191,253,0,0.12)",
+                              border: "1.5px solid rgba(191,253,0,0.5)",
+                              fontFamily: "inherit",
+                            }}
+                          >
+                            <span style={{ fontSize: 22, flexShrink: 0 }}>🏷️</span>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ display: "block", fontWeight: 800, fontSize: 14, color: "#BFFD00" }}>
+                                Claim your hunter name
+                              </span>
+                              <span style={{ display: "block", fontSize: 11.5, color: "#9a9db0", marginTop: 2 }}>
+                                You shared as {address ? shortAddr(address) : "a hunter"} — set a name so people know it&apos;s you.
+                              </span>
+                            </span>
+                            <span style={{ fontSize: 18, color: "#BFFD00", flexShrink: 0 }}>→</span>
+                          </button>
+                        )}
 
                         <div style={{ marginTop: 12 }}>{ubiPrompt}</div>
 
