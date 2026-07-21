@@ -45,6 +45,9 @@ function WalletButton({
   const handleDisconnect = logout;
 
   const { balance } = useGoodDollarProfile();
+  // NB: must stay ABOVE the early returns below — hooks can't be called
+  // conditionally. useProfile handles an undefined address safely.
+  const profile = useProfile(address);
   const [isNarrow, setIsNarrow] = useState(false);
   const [showModal, setShowModal] = useState(false);
 
@@ -132,7 +135,6 @@ function WalletButton({
   }
 
   const shortAddress = `${address.slice(0, 6)}…${address.slice(-4)}`;
-  const profile   = useProfile(address);
   const username  = profile?.username ?? null;
   // Only nudge once we've confirmed there's no name (never while loading).
   const needsName = profile !== undefined && !profile?.username;
