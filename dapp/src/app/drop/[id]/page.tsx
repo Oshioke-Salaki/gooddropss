@@ -10,7 +10,7 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const drop = await fetchDropByDropId(id);
-  if (!drop) return { title: "Drop not found — GoodDrops" };
+  if (!drop) return { title: "Drop not found" };
 
   const { hint } = parseDropHint(drop.hint);
   const amount = `${formatG$(drop.amount)} G$`;

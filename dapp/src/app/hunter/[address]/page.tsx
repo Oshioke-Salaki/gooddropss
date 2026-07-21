@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { fetchHunterProfile } from "@/lib/subgraph";
+import { getUsername } from "@/lib/serverProfile";
+import { UserHandle } from "@/components/UserHandle";
 import { formatG$, shortAddr, getDropRarity, RARITY } from "@/lib/utils";
 import { DROP_STATUS, type Drop } from "@/types";
 import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucide-react";
@@ -12,10 +14,19 @@ interface PageProps { params: Promise<{ address: string }> }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { address } = await params;
-  const short = shortAddr(address);
+  const username = await getUsername(address);
+  const name = username ? `@${username}` : shortAddr(address);
+  const canonical = `/hunter/${address.toLowerCase()}`;
   return {
-    title: `${short} — GoodDrops Hunter`,
-    description: `View ${short}'s GoodDrops stats, achievements and claim history.`,
+    title: `${name} — Hunter`,
+    description: `See ${name}'s GoodDrops stats, achievements and claim history — real G$ found in the wild.`,
+    alternates: { canonical },
+    openGraph: {
+      title: `${name} — GoodDrops Hunter`,
+      description: `${name}'s GoodDrops stats, achievements and claim history.`,
+      url: canonical,
+      type: "profile",
+    },
   };
 }
 
@@ -150,7 +161,7 @@ export default async function HunterPage({ params }: PageProps) {
             {address.slice(2, 4).toUpperCase()}
           </div>
           <div style={{ textAlign: "center" }}>
-            <p style={{ margin: 0, fontWeight: 900, fontSize: 20 }}>{shortAddr(address)}</p>
+            <UserHandle address={address} style={{ display: "block", fontWeight: 900, fontSize: 20 }} />
             <p style={{ margin: "4px 0 0", color: "#444", fontSize: 12, fontFamily: "monospace" }}>
               {address.toLowerCase()}
             </p>
