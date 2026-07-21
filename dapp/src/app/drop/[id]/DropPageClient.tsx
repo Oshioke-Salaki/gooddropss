@@ -63,6 +63,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // behind every QR code and share link — the first thing a migrating user sees.
   const {
     status: identity, isVerified, isLapsed, expiringSoon,
+    isLoading: identityLoading,
   } = useIdentityStatus();
   const verificationOk           = isVerified;
   const { writeContractAsync }   = useWriteContract();
@@ -285,6 +286,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     if (status === "claiming") return "Claiming…";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
+    // Don't show verify/re-verify until the on-chain check resolves — the slow
+    // read was flashing a false "Verification required" for verified hunters.
+    if (identityLoading)       return "Checking verification…";
     if (isLapsed)              return "Re-verify to claim";
     if (!verificationOk)       return "Verification required";
     if (isSelf)                return "This is your own drop";
@@ -670,8 +674,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           )}
 
           {/* Verification — never tell someone who already did the face scan that
-              they aren't verified. Lapsed and never-verified are different things. */}
-          {isConnected && !isVerified && (
+              they aren't verified. Lapsed and never-verified are different things.
+              Hidden while the check loads so verified hunters don't see it flash. */}
+          {isConnected && !isVerified && !identityLoading && (
             <div style={{
               marginTop: 12,
               background: isLapsed ? "#FFE5E5" : "#fff8e6",

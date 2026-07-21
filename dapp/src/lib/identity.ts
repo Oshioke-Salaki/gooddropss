@@ -68,17 +68,23 @@ export const NONE: IdentityStatus = {
 let rungsCache: number[] | null = null;
 async function readRungs(client: PublicClient): Promise<number[]> {
   if (rungsCache) return rungsCache;
-  const rungs: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    try {
-      const d = await client.readContract({
+  // The ladder is short ([3, 180]). Probe a small fixed range in PARALLEL — with
+  // multicall batching these collapse into a single round-trip — then keep the
+  // contiguous run starting at index 0 (the first out-of-bounds index reverts).
+  // The old version awaited up to 8 reads sequentially, which was the single
+  // biggest source of latency on the claim screen's verification check.
+  const probes = await Promise.allSettled(
+    [0, 1, 2, 3].map((i) =>
+      client.readContract({
         address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
         functionName: "reverifyDaysOptions", args: [BigInt(i)],
-      });
-      rungs.push(Number(d));
-    } catch {
-      break; // out of bounds — that's the whole ladder
-    }
+      }),
+    ),
+  );
+  const rungs: number[] = [];
+  for (const p of probes) {
+    if (p.status === "fulfilled") rungs.push(Number(p.value));
+    else break; // out of bounds — that's the whole ladder
   }
   // Defensive: never let an RPC hiccup produce an empty ladder.
   rungsCache = rungs.length ? rungs : [3, 180];
@@ -89,25 +95,34 @@ export async function readIdentityStatus(
   client: PublicClient,
   address: string,
 ): Promise<IdentityStatus> {
-  const root = (await client.readContract({
-    address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
-    functionName: "getWhitelistedRoot", args: [address as `0x${string}`],
-  })) as `0x${string}`;
+  const addr = address as `0x${string}`;
 
-  const isWhitelisted = root.toLowerCase() !== ZERO;
-
-  // A wallet linked via connectAccount has an EMPTY identity record of its own —
-  // its dates live on the root. Always read the rung data from whoever actually
-  // holds the identity.
-  const subject = (isWhitelisted ? root : address) as `0x${string}`;
-
-  const [id, rungs] = await Promise.all([
+  // Fire the reads we always need together — with multicall batching they collapse
+  // into a SINGLE round-trip instead of getWhitelistedRoot-then-identities. The
+  // self record covers the common self-verified wallet; a wallet linked via
+  // connectAccount has an empty record of its own, so we re-read from its
+  // whitelisted root below (rare, one extra call only for linked wallets).
+  const [root, idSelf, rungs] = await Promise.all([
     client.readContract({
       address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
-      functionName: "identities", args: [subject],
+      functionName: "getWhitelistedRoot", args: [addr],
+    }) as Promise<`0x${string}`>,
+    client.readContract({
+      address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
+      functionName: "identities", args: [addr],
     }),
     readRungs(client),
   ]);
+
+  const isWhitelisted = root.toLowerCase() !== ZERO;
+
+  let id = idSelf;
+  if (isWhitelisted && root.toLowerCase() !== addr.toLowerCase()) {
+    id = await client.readContract({
+      address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
+      functionName: "identities", args: [root],
+    });
+  }
 
   const [dateAuthenticated, , , , status, authCount] = id as unknown as [
     bigint, bigint, string, bigint, number, number,

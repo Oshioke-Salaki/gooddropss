@@ -63,6 +63,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // check, which can't tell "never verified" from "verified but lapsed".
   const {
     status: identity, isVerified, isLapsed, expiringSoon,
+    isLoading: identityLoading,
   } = useIdentityStatus();
 
   const verificationOk = isVerified;
@@ -170,6 +171,10 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     if (status === "claiming") return "⏳ Claiming…";
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
+    // Don't accuse a (possibly verified) user of needing to verify until the
+    // on-chain check has actually resolved — otherwise the slow read shows a false
+    // "Verification required" / "Re-verify" on the button for verified hunters.
+    if (identityLoading)       return "⏳ Checking verification…";
     if (isLapsed)              return "🔄 Re-verify to claim";
     if (!verificationOk)       return "🪪 Verification required";
     if (isSelfDrop)            return "Can't claim own drop";
@@ -710,8 +715,10 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     <SafetyNote />
 
                     {/* Verification — three states, three messages. A user who
-                        already did the face scan must never be told to "verify". */}
-                    {isConnected && !isVerified && (
+                        already did the face scan must never be told to "verify".
+                        Hidden while the check is still loading so verified hunters
+                        don't see a false verify card during the on-chain read. */}
+                    {isConnected && !isVerified && !identityLoading && (
                       <div style={{
                         background: isLapsed ? "#FFE5E5" : "#fff8e6",
                         border: `2px solid ${isLapsed ? "#FF3B3B" : "#111"}`,
