@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, useReadContract } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { decodeEventLog } from "viem";
@@ -47,6 +47,12 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const { address, isConnected }  = useSignedInAccount();
   const { writeContractAsync }    = useWriteContract();
   const { balance, isFetching }   = useGoodDollarProfile();
+
+  // Per-drop limits from the contract (each stop must be in range, not just the total).
+  const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
+  const { data: minDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "minDropAmount" });
+  const maxDrop = (maxDropWei as bigint | undefined) ?? parseUnits("500", 18);
+  const minDrop = (minDropWei as bigint | undefined) ?? parseUnits("1", 18);
 
   const [stops, setStops]         = useState<ChainStop[]>([makeEmptyStop(), makeEmptyStop()]);
   const [duration, setDuration]   = useState(86_400);
@@ -99,10 +105,20 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
 
   const insufficientBalance = isConnected && !isFetching && totalWei > 0n && totalWei > balance;
 
+  const amtInRange = (amt: string): boolean => {
+    const n = parseFloat(amt);
+    if (isNaN(n) || n <= 0) return false;
+    try { const w = parseUnits(amt, 18); return w >= minDrop && w <= maxDrop; } catch { return false; }
+  };
+  const outOfRange = stops.some((s) => {
+    const n = parseFloat(s.amount);
+    return !isNaN(n) && n > 0 && !amtInRange(s.amount);
+  });
+
   const canDeploy =
     isConnected &&
     stops.length >= 2 &&
-    stops.every((s) => s.lat !== null && s.lng !== null && !isNaN(parseFloat(s.amount)) && parseFloat(s.amount) > 0) &&
+    stops.every((s) => s.lat !== null && s.lng !== null && amtInRange(s.amount)) &&
     !insufficientBalance &&
     status === "idle";
 
@@ -425,6 +441,13 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
                       {insufficientBalance ? `Only ${formatG$(balance)} G$ available` : `Balance: ${formatG$(balance)} G$`}
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* Amount out of range */}
+              {outOfRange && (
+                <div className="bg-danger/10 border-2 border-danger rounded-xl px-4 py-3 text-sm text-danger font-semibold">
+                  Each stop must be between {formatG$(minDrop)} and {formatG$(maxDrop)} G$.
                 </div>
               )}
 

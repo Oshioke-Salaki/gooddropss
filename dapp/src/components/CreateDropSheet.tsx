@@ -129,8 +129,10 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   useEffect(() => {
     if (!open) return;
     const p = loadPending();
+    // Always reflect storage — setting null clears any stale in-memory pending so a
+    // finished riddle drop can't leave the next drop's button silently blocked.
+    setPending(p);
     if (p) {
-      setPending(p);
       setResuming(true);
       setStatus("riddleFailed");
       setErrMsg("");
@@ -154,6 +156,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     setHasRiddle(false);
     setRiddleQuestion("");
     setRiddleAnswer("");
+    setPending(null);
+    setResuming(false);
   }, []);
 
   const handleClose = () => { reset(); onClose(); };
@@ -336,6 +340,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       // attempt actually succeeded (the response was just lost), so we're done.
       if (res.ok || res.status === 409) {
         clearPending();
+        setPending(null); // clear the STATE too, or the next drop is silently blocked
         setCreatedDropId(BigInt(p.dropId));
         return true;
       }

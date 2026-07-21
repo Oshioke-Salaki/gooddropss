@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import dynamic from "next/dynamic";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, useReadContract } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { X, Trash2, Loader2, Navigation, ChevronUp, ChevronDown } from "lucide-react";
@@ -188,6 +188,12 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
   const { writeContractAsync }   = useWriteContract();
   const { balance, isFetching }  = useGoodDollarProfile();
 
+  // Per-drop limits from the contract (each drop must be in range, not just the total).
+  const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
+  const { data: minDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "minDropAmount" });
+  const maxDrop = (maxDropWei as bigint | undefined) ?? parseUnits("500", 18);
+  const minDrop = (minDropWei as bigint | undefined) ?? parseUnits("1", 18);
+
   const [drops,         setDrops]         = useState<QueuedDrop[]>([]);
   const [defaultAmount, setDefaultAmount] = useState("10");
   const [defaultHint,   setDefaultHint]   = useState("");
@@ -259,8 +265,17 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
   }, 0n);
 
   const insufficientBalance = isConnected && !isFetching && totalWei > 0n && totalWei > balance;
+  const amtInRange = (amt: string): boolean => {
+    const n = parseFloat(amt);
+    if (isNaN(n) || n <= 0) return false;
+    try { const w = parseUnits(amt, 18); return w >= minDrop && w <= maxDrop; } catch { return false; }
+  };
+  const outOfRange = drops.some((d) => {
+    const n = parseFloat(d.amount);
+    return !isNaN(n) && n > 0 && !amtInRange(d.amount);
+  });
   const canDeploy = isConnected && drops.length > 0 && !insufficientBalance &&
-    drops.every((d) => { const n = parseFloat(d.amount); return !isNaN(n) && n > 0; }) && status === "idle";
+    drops.every((d) => amtInRange(d.amount)) && status === "idle";
 
   async function handleDeploy() {
     if (!address || !canDeploy) return;
@@ -467,6 +482,11 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
             )}
             {insufficientBalance && (
               <span style={{ fontSize: 11, color: "#FF3B3B", fontWeight: 700 }}>Insufficient balance</span>
+            )}
+            {outOfRange && (
+              <span style={{ fontSize: 11, color: "#FF3B3B", fontWeight: 700 }}>
+                Each drop must be {formatG$(minDrop)}–{formatG$(maxDrop)} G$
+              </span>
             )}
           </div>
           {panelOpen ? <ChevronDown size={16} color="#888" /> : <ChevronUp size={16} color="#888" />}
