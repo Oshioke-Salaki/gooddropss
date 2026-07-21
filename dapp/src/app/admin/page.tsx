@@ -1,10 +1,10 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount, useWriteContract, useReadContract } from "wagmi";
 import { parseUnits, maxUint256 } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
-import { degToGps } from "@/lib/utils";
+import { degToGps, formatG$ } from "@/lib/utils";
 import { isAdminAddress } from "@/lib/admins";
 
 const AMOUNT      = parseUnits("10", 18);
@@ -142,6 +142,32 @@ export default function AdminPage() {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const isAdmin = isAdminAddress(address);
+
+  // ── Owner: max drop limit ───────────────────────────────────────────────────
+  const { data: maxDropWei, refetch: refetchMax } = useReadContract({
+    address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount",
+  });
+  const [newMax, setNewMax]         = useState("10000");
+  const [limitPhase, setLimitPhase] = useState<"idle" | "saving" | "done" | "error">("idle");
+  const [limitErr, setLimitErr]     = useState("");
+  async function updateMaxDrop() {
+    const n = parseFloat(newMax);
+    if (isNaN(n) || n <= 0) { setLimitErr("Enter a valid amount."); setLimitPhase("error"); return; }
+    setLimitPhase("saving"); setLimitErr("");
+    try {
+      const tx = await writeContractAsync({
+        address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI,
+        functionName: "setMaxDropAmount", args: [parseUnits(newMax.trim(), 18)],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      await refetchMax();
+      setLimitPhase("done");
+    } catch (e: unknown) {
+      const err = e as { shortMessage?: string; message?: string };
+      setLimitErr(err.shortMessage ?? err.message ?? "Failed — are you the contract owner?");
+      setLimitPhase("error");
+    }
+  }
 
   const [session, setSession] = useState<Session | null>(null);
   const [phase,   setPhase]   = useState<Phase>("idle");
@@ -287,6 +313,49 @@ export default function AdminPage() {
           20 drops across Nairobi · 30 drops across southern Kaduna (Barnawa, Narayi High Cost, NAFDAC Road).
           Fresh random coordinates each run.
         </p>
+
+        {/* Max drop limit (owner) */}
+        <div style={{
+          background: "#181818", border: "2px solid #333",
+          borderRadius: 14, padding: "16px 18px", marginBottom: 20,
+        }}>
+          <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 15, color: "#fff" }}>Max drop limit</p>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#888" }}>
+            Current: <b style={{ color: "#BFFD00" }}>{maxDropWei !== undefined ? `${formatG$(maxDropWei as bigint)} G$` : "…"}</b> per drop.
+            Owner only — the drop form reflects this automatically.
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number" min="1" value={newMax}
+              onChange={(e) => { setNewMax(e.target.value); setLimitPhase("idle"); }}
+              style={{
+                flex: 1, padding: "11px 12px", background: "#111",
+                border: "2px solid #333", borderRadius: 10, color: "#fff",
+                fontWeight: 800, fontSize: 15, outline: "none", fontFamily: "inherit",
+              }}
+            />
+            <button
+              onClick={updateMaxDrop}
+              disabled={limitPhase === "saving"}
+              style={{
+                padding: "11px 16px", background: "#BFFD00", color: "#111",
+                border: "2px solid #BFFD00", borderRadius: 10, fontWeight: 900,
+                fontSize: 14, cursor: limitPhase === "saving" ? "wait" : "pointer",
+                fontFamily: "inherit", whiteSpace: "nowrap",
+              }}
+            >
+              {limitPhase === "saving" ? "Setting…" : "Set max G$"}
+            </button>
+          </div>
+          {limitPhase === "done" && (
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: "#BFFD00", fontWeight: 700 }}>
+              ✓ Updated — the drop form now allows up to {formatG$((maxDropWei ?? 0n) as bigint)} G$.
+            </p>
+          )}
+          {limitPhase === "error" && (
+            <p style={{ margin: "8px 0 0", fontSize: 12, color: "#FF6B6B", fontWeight: 700 }}>{limitErr}</p>
+          )}
+        </div>
 
         {/* Resume banner */}
         {hasResume && (

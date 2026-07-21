@@ -36,6 +36,21 @@ export const GOOD_DROPS_ABI = [
     inputs: [],
     outputs: [{ type: "uint96" }],
   },
+  // ── Owner: drop limits ─────────────────────────────────────────────────────
+  {
+    name: "setMaxDropAmount",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newMax", type: "uint96" }],
+    outputs: [],
+  },
+  {
+    name: "setMinDropAmount",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newMin", type: "uint96" }],
+    outputs: [],
+  },
   {
     name: "identityRequired",
     type: "function",
