@@ -8,7 +8,12 @@ const redis = Redis.fromEnv({ retry: { retries: 1, backoff: () => 300 } });
 
 const USERNAME_RE  = /^[a-zA-Z0-9_-]{3,24}$/;
 const RESERVED     = new Set(["admin","gooddrops","gooddollar","celo","support","system"]);
-const SIG_WINDOW   = 5 * 60 * 1000; // 5 minutes
+// Generous window: the timestamp is compared against the CLIENT's clock, and phones
+// are routinely minutes-to-hours off. For a cosmetic username, the timestamp is only
+// anti-replay — and replaying a claim signature is harmless (it re-claims the same
+// name for the same wallet, which the signature already proves ownership of). So a
+// tight window just breaks real users with skewed clocks for no security gain.
+const SIG_WINDOW   = 24 * 60 * 60 * 1000; // 24 hours
 
 // ── GET /api/profile?address=0x... ─────────────────────────────────────────
 export async function GET(req: NextRequest) {

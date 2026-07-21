@@ -208,15 +208,35 @@ export async function sweepGDollar(
 
   if (balance === 0n) return { swept: 0n };
 
+  const from = getAddress(oldAddress);
   // Use the wallet client's own account. For a LocalAccount (Web3Auth) client the
   // account object is the signer; passing a bare address string would drop the
   // local signer and viem would try to sign through a (Celo-incompatible) relayer.
-  const account = oldWalletClient.account ?? getAddress(oldAddress);
+  const account = oldWalletClient.account ?? from;
+
+  // Set the gas limit EXPLICITLY. viem only auto-estimates gas for local accounts;
+  // for a json-rpc account (the Web3Auth provider path) it defers gas to the
+  // wallet, and Web3Auth's sequencer then submits with gas 0 →
+  // "intrinsic gas too low: gas 0". Estimating + buffering here makes both paths
+  // always carry a gas limit.
+  let gas: bigint;
+  try {
+    const est = await publicClient.estimateContractGas({
+      address: G_TOKEN, abi: ERC20, functionName: "transfer",
+      args: [newMagicAddress as `0x${string}`, balance],
+      account: from,
+    });
+    gas = (est * 13n) / 10n; // +30% headroom
+  } catch {
+    gas = 120_000n; // safe fallback for a G$ ERC20 transfer
+  }
+
   const tx = await oldWalletClient.writeContract({
     address: G_TOKEN, abi: ERC20, functionName: "transfer",
     args: [newMagicAddress as `0x${string}`, balance],
     account,
     chain: celo,
+    gas,
   });
   await publicClient.waitForTransactionReceipt({ hash: tx });
   return { swept: balance, tx };
