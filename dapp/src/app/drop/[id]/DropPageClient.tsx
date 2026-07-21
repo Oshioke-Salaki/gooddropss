@@ -62,8 +62,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // can't tell "never verified" from "verified but lapsed", and this is the page
   // behind every QR code and share link — the first thing a migrating user sees.
   const {
-    status: identity, isVerified, isLapsed, expiringSoon,
-    isLoading: identityLoading,
+    status: identity, isVerified, isLapsed, isBlacklisted, expiringSoon,
+    isLoading: identityLoading, checkFailed: identityCheckFailed,
+    refresh: refreshIdentity,
   } = useIdentityStatus();
   const verificationOk           = isVerified;
   const { writeContractAsync }   = useWriteContract();
@@ -278,6 +279,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     isConnected && verificationOk && isActive && !isSelf && isClose &&
     answerFilled && !riddleBlocked && status === "idle";
 
+  // "Active" button: can claim, offering an error retry, or offering to re-run a
+  // failed verification read.
+  const btnActive = canClaim || status === "error" || identityCheckFailed;
+
   const rarity = getDropRarity(drop.amount);
   const r      = RARITY[rarity];
   const flash  = isFlashDrop(drop);
@@ -289,6 +294,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     // Don't show verify/re-verify until the on-chain check resolves — the slow
     // read was flashing a false "Verification required" for verified hunters.
     if (identityLoading)       return "Checking verification…";
+    if (identityCheckFailed)   return "Couldn't check — tap to retry";
+    if (isBlacklisted)         return "Not eligible to claim";
     if (isLapsed)              return "Re-verify to claim";
     if (!verificationOk)       return "Verification required";
     if (isSelf)                return "This is your own drop";
@@ -655,12 +662,16 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
                 </button>
               ) : (
                 <button
-                  onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleClaim}
-                  disabled={status !== "error" && !canClaim}
+                  onClick={
+                    status === "error" ? () => { setStatus("idle"); setErrMsg(""); }
+                    : identityCheckFailed ? () => refreshIdentity()
+                    : handleClaim
+                  }
+                  disabled={status !== "error" && !btnActive}
                   style={primaryBtn(
-                    (canClaim || status === "error") ? "#BFFD00" : "#eee",
-                    (canClaim || status === "error") ? "#111" : "#aaa",
-                    (canClaim || status === "error"),
+                    btnActive ? "#BFFD00" : "#eee",
+                    btnActive ? "#111" : "#aaa",
+                    btnActive,
                   )}
                 >
                   {claimLabel()}
@@ -676,7 +687,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           {/* Verification — never tell someone who already did the face scan that
               they aren't verified. Lapsed and never-verified are different things.
               Hidden while the check loads so verified hunters don't see it flash. */}
-          {isConnected && !isVerified && !identityLoading && (
+          {isConnected && !isVerified && !isBlacklisted && !identityLoading && (
             <div style={{
               marginTop: 12,
               background: isLapsed ? "#FFE5E5" : "#fff8e6",

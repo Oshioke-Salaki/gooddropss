@@ -62,8 +62,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // Not useGoodDollarProfile().isVerified — that's a bare getWhitelistedRoot()
   // check, which can't tell "never verified" from "verified but lapsed".
   const {
-    status: identity, isVerified, isLapsed, expiringSoon,
-    isLoading: identityLoading,
+    status: identity, isVerified, isLapsed, isBlacklisted, expiringSoon,
+    isLoading: identityLoading, checkFailed: identityCheckFailed,
+    refresh: refreshIdentity,
   } = useIdentityStatus();
 
   const verificationOk = isVerified;
@@ -115,6 +116,11 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const canClaim =
     isConnected && verificationOk && isActive && !isSelfDrop && isClose &&
     answerFilled && !riddleBlocked && status === "idle";
+
+  // The claim button is "active" (tappable, styled) when it can claim, when it's
+  // offering a retry after an error, or when the verification read failed and the
+  // tap should re-run that read.
+  const btnActive = canClaim || status === "error" || identityCheckFailed;
 
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
@@ -175,6 +181,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     // on-chain check has actually resolved — otherwise the slow read shows a false
     // "Verification required" / "Re-verify" on the button for verified hunters.
     if (identityLoading)       return "⏳ Checking verification…";
+    if (identityCheckFailed)   return "⚠️ Couldn't check — tap to retry";
+    // Blacklisted by GoodDollar — verifying again won't help, so don't offer it.
+    if (isBlacklisted)         return "🚫 Not eligible to claim";
     if (isLapsed)              return "🔄 Re-verify to claim";
     if (!verificationOk)       return "🪪 Verification required";
     if (isSelfDrop)            return "Can't claim own drop";
@@ -689,18 +698,22 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
                     {/* ── CLAIM BUTTON ── */}
                     <button
-                      onClick={status === "error" ? () => setStatus("idle") : handleClaim}
-                      disabled={status === "claiming" || (status !== "error" && !canClaim)}
+                      onClick={
+                        status === "error" ? () => setStatus("idle")
+                        : identityCheckFailed ? () => refreshIdentity()
+                        : handleClaim
+                      }
+                      disabled={status === "claiming" || (status !== "error" && !btnActive)}
                       style={{
                         width: "100%", padding: "20px",
-                        background: (canClaim || status === "error") ? "#BFFD00" : "#eee",
-                        color: (canClaim || status === "error") ? "#111" : "#aaa",
+                        background: btnActive ? "#BFFD00" : "#eee",
+                        color: btnActive ? "#111" : "#aaa",
                         border: "2.5px solid",
-                        borderColor: (canClaim || status === "error") ? "#111" : "#ddd",
+                        borderColor: btnActive ? "#111" : "#ddd",
                         borderRadius: 16,
-                        boxShadow: (canClaim || status === "error") ? "4px 4px 0 #111" : "none",
+                        boxShadow: btnActive ? "4px 4px 0 #111" : "none",
                         fontWeight: 900, fontSize: 18,
-                        cursor: (canClaim || status === "error") ? "pointer" : "not-allowed",
+                        cursor: btnActive ? "pointer" : "not-allowed",
                         fontFamily: "inherit",
                         letterSpacing: "-0.01em",
                         animation: canClaim ? "pulse 2s ease-in-out infinite" : "none",
@@ -718,7 +731,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                         already did the face scan must never be told to "verify".
                         Hidden while the check is still loading so verified hunters
                         don't see a false verify card during the on-chain read. */}
-                    {isConnected && !isVerified && !identityLoading && (
+                    {isConnected && !isVerified && !isBlacklisted && !identityLoading && (
                       <div style={{
                         background: isLapsed ? "#FFE5E5" : "#fff8e6",
                         border: `2px solid ${isLapsed ? "#FF3B3B" : "#111"}`,

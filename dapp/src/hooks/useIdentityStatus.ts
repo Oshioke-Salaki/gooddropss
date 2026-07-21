@@ -1,5 +1,5 @@
 "use client";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { publicClient } from "@/lib/publicClient";
 import { readIdentityStatus, isExpiringSoon, NONE, type IdentityStatus } from "@/lib/identity";
@@ -16,7 +16,7 @@ import { readIdentityStatus, isExpiringSoon, NONE, type IdentityStatus } from "@
 export function useIdentityStatus() {
   const { address } = useAccount();
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["identity-status", address?.toLowerCase()],
     queryFn: async (): Promise<IdentityStatus> => {
       if (!address) return NONE;
@@ -31,20 +31,30 @@ export function useIdentityStatus() {
     // used to blank the status back to "unknown" mid-session).
     retry: 2,
     refetchOnWindowFocus: false,
-    // Keep the last known status visible while a refetch runs, so a verified user
-    // never flickers to "unknown" (which the UI renders as "verify required").
-    placeholderData: keepPreviousData,
+    // NB: deliberately NOT keepPreviousData. It would show the PREVIOUS wallet's
+    // status as a placeholder after an account switch, briefly presenting the old
+    // wallet's verified state on the new one. A same-address background refetch
+    // already keeps its cached data (isLoading stays false), so we lose no
+    // smoothness by omitting it — and we avoid the cross-wallet bleed.
   });
 
   const status = data ?? NONE;
 
-  // "We don't know yet" — no cached answer AND a read in flight. Callers use this
-  // to avoid telling a verified user to verify before the check has resolved.
-  const isChecking = !!address && (isLoading || (data === undefined && isFetching));
+  // "We don't know yet" for THIS address: no cached answer and a first read in
+  // flight (isLoading is true only when there's no cached data for the current
+  // query key — so switching to an uncached wallet counts, but a background
+  // refetch of an already-known wallet does not). Callers use this to avoid
+  // telling a possibly-verified user to verify before the check has resolved.
+  // On a hard failure (all RPCs down + retries exhausted) isLoading goes false
+  // with no data — isError then distinguishes "couldn't check" from "not verified".
+  const isChecking = !!address && isLoading;
 
   return {
     status,
     isLoading: isChecking,
+    // The on-chain read failed outright (not merely "not verified"). Lets the UI
+    // offer a retry instead of wrongly sending a verified user to re-verify.
+    checkFailed:   !!address && isError && data === undefined,
     isVerified:    status.state === "verified",
     isLapsed:      status.state === "lapsed",
     isBlacklisted: status.state === "blacklisted",

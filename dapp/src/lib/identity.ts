@@ -38,6 +38,10 @@ const IDENTITY_ABI = parseAbi([
   "function getWhitelistedRoot(address account) view returns (address)",
   "function identities(address) view returns (uint256 dateAuthenticated, uint256 dateAdded, string did, uint256 whitelistedOnChainId, uint8 status, uint32 authCount)",
   "function reverifyDaysOptions(uint256) view returns (uint256)",
+  // Persistent child -> root link set by connectAccount. Unlike getWhitelistedRoot,
+  // it does NOT go to zero when the root's whitelist window lapses — so it lets us
+  // tell "linked wallet whose root lapsed" (→ lapsed) from "never verified" (→ none).
+  "function connectedAccounts(address) view returns (address)",
 ]);
 
 export type IdentityState =
@@ -74,7 +78,7 @@ async function readRungs(client: PublicClient): Promise<number[]> {
   // The old version awaited up to 8 reads sequentially, which was the single
   // biggest source of latency on the claim screen's verification check.
   const probes = await Promise.allSettled(
-    [0, 1, 2, 3].map((i) =>
+    [0, 1, 2, 3, 4, 5, 6, 7].map((i) =>
       client.readContract({
         address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
         functionName: "reverifyDaysOptions", args: [BigInt(i)],
@@ -98,11 +102,9 @@ export async function readIdentityStatus(
   const addr = address as `0x${string}`;
 
   // Fire the reads we always need together — with multicall batching they collapse
-  // into a SINGLE round-trip instead of getWhitelistedRoot-then-identities. The
-  // self record covers the common self-verified wallet; a wallet linked via
-  // connectAccount has an empty record of its own, so we re-read from its
-  // whitelisted root below (rare, one extra call only for linked wallets).
-  const [root, idSelf, rungs] = await Promise.all([
+  // into a SINGLE round-trip. connectedAccounts is only load-bearing for the rare
+  // lapsed-linked case below, but batching it in costs nothing.
+  const [root, idSelf, linkedRoot, rungs] = await Promise.all([
     client.readContract({
       address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
       functionName: "getWhitelistedRoot", args: [addr],
@@ -111,16 +113,33 @@ export async function readIdentityStatus(
       address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
       functionName: "identities", args: [addr],
     }),
+    client.readContract({
+      address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
+      functionName: "connectedAccounts", args: [addr],
+    }) as Promise<`0x${string}`>,
     readRungs(client),
   ]);
 
   const isWhitelisted = root.toLowerCase() !== ZERO;
 
+  // Where the identity record actually lives:
+  //   • whitelisted             → the whitelisted root
+  //   • lapsed but LINKED        → the connected root. getWhitelistedRoot() returns
+  //     zero once the root's window elapses, but connectedAccounts() still holds the
+  //     child→root link, so we read the root's record and can report "lapsed" rather
+  //     than mislabelling a migrated user as "never verified".
+  //   • lapsed & self-verified   → this wallet's own record
+  const holder = (
+    isWhitelisted             ? root
+    : linkedRoot.toLowerCase() !== ZERO ? linkedRoot
+    : addr
+  );
+
   let id = idSelf;
-  if (isWhitelisted && root.toLowerCase() !== addr.toLowerCase()) {
+  if (holder.toLowerCase() !== addr.toLowerCase()) {
     id = await client.readContract({
       address: IDENTITY_ADDRESS, abi: IDENTITY_ABI,
-      functionName: "identities", args: [root],
+      functionName: "identities", args: [holder],
     });
   }
 
