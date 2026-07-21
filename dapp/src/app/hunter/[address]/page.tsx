@@ -5,6 +5,9 @@ import clsx from "clsx";
 import { fetchHunterProfile } from "@/lib/subgraph";
 import { getUsername } from "@/lib/serverProfile";
 import { UserHandle } from "@/components/UserHandle";
+import { HunterStreakBadge } from "@/components/HunterStreakBadge";
+import { HunterRank } from "@/components/HunterRank";
+import { ShareableHunterCard } from "@/components/ShareableHunterCard";
 import { formatG$, shortAddr, getDropRarity, RARITY, type DropRarity } from "@/lib/utils";
 import { type Drop } from "@/types";
 import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucide-react";
@@ -73,7 +76,10 @@ const RARITY_ORDER: DropRarity[] = ["legendary", "rare", "uncommon", "common"];
 
 export default async function HunterPage({ params }: PageProps) {
   const { address } = await params;
-  const profile = await fetchHunterProfile(address);
+  const [profile, username] = await Promise.all([
+    fetchHunterProfile(address),
+    getUsername(address),
+  ]);
   if (!profile) notFound();
 
   const { dropsCreated, dropsClaimed } = profile;
@@ -129,8 +135,11 @@ export default async function HunterPage({ params }: PageProps) {
             <UserHandle address={address} className="block font-black text-2xl leading-tight" />
             <p className="mt-1 text-xs font-mono text-muted break-all px-4">{address.toLowerCase()}</p>
           </div>
-          <div className="bg-lime border-2 border-ink rounded-full px-3.5 py-1 text-xs font-black shadow-brutal-sm">
-            🏆 {earned.length} / {achievements.length} achievements
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="bg-lime border-2 border-ink rounded-full px-3.5 py-1 text-xs font-black shadow-brutal-sm">
+              🏆 {earned.length} / {achievements.length} achievements
+            </div>
+            <HunterStreakBadge address={address} />
           </div>
         </div>
 
@@ -141,6 +150,13 @@ export default async function HunterPage({ params }: PageProps) {
           <Stat label="G$ Claimed" value={formatG$(totalClaimed)} accent />
           <Stat label="G$ Dropped" value={formatG$(totalDropped)} />
         </div>
+
+        {/* Global rank — pops in client-side once the subgraph responds */}
+        {dropsClaimed.length > 0 && (
+          <div className="mt-2.5">
+            <HunterRank address={address} />
+          </div>
+        )}
 
         {/* Highlights */}
         {dropsClaimed.length > 0 && (
@@ -239,6 +255,17 @@ export default async function HunterPage({ params }: PageProps) {
             </div>
           </Section>
         )}
+
+        {/* Shareable hunter card */}
+        <Section title="Show off your hunts">
+          <ShareableHunterCard
+            handle={username ? `@${username}` : shortAddr(address)}
+            gClaimed={formatG$(totalClaimed)}
+            claims={dropsClaimed.length}
+            achievements={earned.length}
+            totalAch={achievements.length}
+          />
+        </Section>
       </div>
     </div>
   );

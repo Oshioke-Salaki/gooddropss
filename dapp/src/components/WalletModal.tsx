@@ -1,8 +1,9 @@
 "use client";
+import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { useBalance, useSignMessage, usePublicClient, useWalletClient } from "wagmi";
 import { formatUnits } from "viem";
-import { Copy, Check, LogOut, Pencil, X, Loader2, Zap } from "lucide-react";
+import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { formatG$ } from "@/lib/utils";
@@ -516,8 +517,24 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
             </div>
           )}
 
-          {/* ── Disconnect ───────────────────────────────────────────────────── */}
-          <div style={{ padding: "12px 14px 14px", borderTop: "2px solid #111" }}>
+          {/* ── Profile + Disconnect ─────────────────────────────────────────── */}
+          <div style={{ padding: "12px 14px 14px", borderTop: "2px solid #111", display: "flex", flexDirection: "column", gap: 8 }}>
+            <Link
+              href={`/hunter/${address.toLowerCase()}`}
+              onClick={onClose}
+              style={{
+                width: "100%", padding: "11px",
+                background: "#BFFD00", color: "#111",
+                border: "2px solid #111", borderRadius: 12,
+                boxShadow: "2px 2px 0 #111",
+                fontWeight: 800, fontSize: 14, textDecoration: "none",
+                cursor: "pointer", fontFamily: "inherit",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}
+            >
+              <User size={15} />
+              View my profile
+            </Link>
             <button
               onClick={() => { onDisconnect(); onClose(); }}
               style={{

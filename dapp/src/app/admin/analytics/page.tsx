@@ -14,6 +14,16 @@ import { isAdminAddress } from "@/lib/admins";
 // Admin wallets live in one shared allowlist — see lib/admins.ts.
 const ZERO  = "0x0000000000000000000000000000000000000000";
 
+function fmtDuration(sec: number): string {
+  if (sec <= 0) return "—";
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const mn = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${mn}m`;
+  return `${mn}m`;
+}
+
 function Stat({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
   return (
     <div style={{
@@ -68,6 +78,10 @@ export default function AnalyticsPage() {
     const hunters  = new Set<string>();
     const humans   = new Set<string>();
     const perDay: Record<string, number> = {};
+    const claimedWeiPerDay: Record<string, bigint> = {};
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const activeToday = new Set<string>();
+    let ttcSum = 0, ttcCount = 0;
 
     for (const d of drops) {
       droppers.add(rootOf(d.dropper));
@@ -78,6 +92,14 @@ export default function AnalyticsPage() {
       if (d.status === DROP_STATUS.Claimed) {
         claimed++; claimedWei += d.amount;
         if (d.claimer !== ZERO) { hunters.add(rootOf(d.claimer)); humans.add(rootOf(d.claimer)); }
+        if (d.claimedAt > 0 && d.createdAt > 0 && d.claimedAt >= d.createdAt) {
+          ttcSum += d.claimedAt - d.createdAt; ttcCount++;
+        }
+        if (d.claimedAt > 0) {
+          const cday = new Date(d.claimedAt * 1000).toISOString().slice(0, 10);
+          claimedWeiPerDay[cday] = (claimedWeiPerDay[cday] ?? 0n) + d.amount;
+          if (cday === todayStr && d.claimer !== ZERO) activeToday.add(rootOf(d.claimer));
+        }
       } else if (d.status === DROP_STATUS.Reclaimed) {
         reclaimed++; reclaimedWei += d.amount;
       } else {
@@ -97,11 +119,21 @@ export default function AnalyticsPage() {
     }
     const maxDay = Math.max(1, ...days.map((x) => x.n));
 
+    // Last 14 days of G$ CLAIMED (velocity), and average time from drop → find.
+    const claimedDays: { day: string; wei: bigint }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      claimedDays.push({ day, wei: claimedWeiPerDay[day] ?? 0n });
+    }
+    const maxClaimedWei = claimedDays.reduce((mx, x) => (x.wei > mx ? x.wei : mx), 1n);
+    const avgTtcSec = ttcCount ? Math.round(ttcSum / ttcCount) : 0;
+
     return {
       total: drops.length, active, claimed, reclaimed, expiredUnclaimed,
       claimedWei, reclaimedWei, activeWei,
       droppers: droppers.size, hunters: hunters.size, humans: humans.size,
       claimRate, days, maxDay,
+      activeToday: activeToday.size, avgTtcSec, claimedDays, maxClaimedWei,
     };
   }, [drops, roots]);
 
@@ -181,6 +213,11 @@ export default function AnalyticsPage() {
               <Stat label="G$ reclaimed" value={formatG$(m.reclaimedWei)} sub="returned to droppers" />
             </div>
 
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 24 }}>
+              <Stat label="Active today" value={String(m.activeToday)} sub="hunters who claimed today" accent />
+              <Stat label="Avg time-to-claim" value={fmtDuration(m.avgTtcSec)} sub="drop created → found" />
+            </div>
+
             {/* Drops created — last 14 days */}
             <div style={{ background: "#fff", border: "2.5px solid #111", borderRadius: 16, boxShadow: "3px 3px 0 #111", padding: "18px 20px" }}>
               <p style={{ margin: "0 0 14px", fontWeight: 900, fontSize: 15 }}>Drops created — last 14 days</p>
@@ -197,6 +234,28 @@ export default function AnalyticsPage() {
                     <div style={{ fontSize: 9, color: "#aaa" }}>{day.slice(8)}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* G$ claimed — last 14 days (velocity) */}
+            <div style={{ background: "#fff", border: "2.5px solid #111", borderRadius: 16, boxShadow: "3px 3px 0 #111", padding: "18px 20px", marginTop: 16 }}>
+              <p style={{ margin: "0 0 14px", fontWeight: 900, fontSize: 15 }}>G$ claimed — last 14 days</p>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
+                {m.claimedDays.map(({ day, wei }) => {
+                  const h = Number((wei * 92n) / m.maxClaimedWei);
+                  return (
+                    <div key={day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }} title={`${day}: ${formatG$(wei)} G$`}>
+                      <div style={{ fontSize: 9, fontWeight: 800, color: "#888" }}>{wei > 0n ? formatG$(wei) : ""}</div>
+                      <div style={{
+                        width: "100%", borderRadius: "4px 4px 0 0",
+                        background: wei > 0n ? "#00CFFF" : "#eee",
+                        border: wei > 0n ? "1.5px solid #111" : "1.5px solid #e0e0e0",
+                        height: `${Math.max(3, h)}px`,
+                      }} />
+                      <div style={{ fontSize: 9, color: "#aaa" }}>{day.slice(8)}</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </>
