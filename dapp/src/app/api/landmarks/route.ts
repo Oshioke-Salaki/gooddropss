@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { recoverMessageAddress } from "viem";
 import { getRedis, keys } from "@/lib/redis";
 import { isAdminAddress } from "@/lib/admins";
+import { isVerifiedHuman } from "@/lib/identityRoot";
 import {
   cleanLandmarkName, isLandmarkCategory, landmarkCreateMessage,
   LANDMARK_ID_RE, LANDMARK_NAME_MIN, LANDMARK_NAME_MAX, LANDMARK_NOTE_MAX,
@@ -10,9 +11,11 @@ import type { Landmark } from "@/types";
 
 export const runtime = "nodejs";
 
-// Admin-only, low-harm, idempotent-by-id → a generous window tolerates device
-// clock skew (see the username-signature reasoning) without any real risk.
+// Idempotent-by-id → a generous window tolerates device clock skew (see the
+// username-signature reasoning) without any real risk.
 const SIG_WINDOW = 24 * 60 * 60 * 1000;
+// How many suggestions one human may have awaiting review at once.
+const MAX_PENDING_PER_WALLET = 20;
 
 function parseLandmark(raw: string | Landmark | null): Landmark | null {
   if (raw == null) return null;
@@ -81,8 +84,11 @@ export async function POST(req: NextRequest) {
     ? cleanLandmarkName(body.note).slice(0, LANDMARK_NOTE_MAX)
     : undefined;
 
-  // ── Auth: recover signer, must be an admin. The signed message is rebuilt from
-  // the SAME validated fields, so a signature can't be reused for other data. ──
+  // ── Auth: recover signer. The signed message is rebuilt from the SAME validated
+  // fields, so a signature can't be reused for other data. Two paths:
+  //   • admin        → landmark goes live immediately (status "active")
+  //   • verified human → it becomes a SUGGESTION for admin review (status "pending")
+  //   • anyone else  → rejected. ──
   let signer: string;
   try {
     signer = (await recoverMessageAddress({
@@ -92,14 +98,44 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Bad signature" }, { status: 401 });
   }
-  if (!isAdminAddress(signer)) return NextResponse.json({ error: "Not authorised" }, { status: 403 });
 
   const redis = getRedis();
   if (!redis) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
 
+  const isAdmin = isAdminAddress(signer);
+
+  // The SERVER decides the status — a suggester can't smuggle in "active".
+  let status: "active" | "pending" = "active";
+  if (!isAdmin) {
+    if (!(await isVerifiedHuman(signer)))
+      return NextResponse.json(
+        { error: "Verify with GoodDollar first to suggest a place." },
+        { status: 403 },
+      );
+    // Anti-flood: bound how many suggestions one human can have in the queue.
+    const pendKey = keys.landmarksPendingByWallet(signer);
+    const [pendingCount, alreadyMine] = await Promise.all([
+      redis.scard(pendKey),
+      redis.sismember(pendKey, id),
+    ]);
+    if (pendingCount >= MAX_PENDING_PER_WALLET && !alreadyMine)
+      return NextResponse.json(
+        { error: "You have too many suggestions awaiting review. Please wait for some to be reviewed." },
+        { status: 429 },
+      );
+    status = "pending";
+  }
+
   try {
     // Preserve original createdAt/createdBy if this id already exists (idempotent).
     const prev = parseLandmark(await redis.get(keys.landmark(id)));
+
+    // A non-admin may only write a brand-new id or re-edit their OWN pending
+    // suggestion — never overwrite a live/admin landmark or someone else's row
+    // (the id is client-generated, so guessing an existing one is possible).
+    if (!isAdmin && prev && !(prev.status === "pending" && prev.createdBy === signer))
+      return NextResponse.json({ error: "That place already exists." }, { status: 409 });
+
     const now = Math.floor(Date.now() / 1000);
     const landmark: Landmark = {
       id,
@@ -110,11 +146,13 @@ export async function POST(req: NextRequest) {
       createdBy: prev?.createdBy ?? signer,
       createdAt: prev?.createdAt ?? now,
       updatedAt: now,
-      status: "active",
+      status,
       ...(note ? { note } : {}),
     };
     await redis.set(keys.landmark(id), JSON.stringify(landmark));
     await redis.sadd(keys.landmarksIndex(), id); // Set → no duplicate index entries
+    if (status === "pending")
+      await redis.sadd(keys.landmarksPendingByWallet(signer), id);
     return NextResponse.json({ landmark });
   } catch (e) {
     console.error("[landmarks/post]", e);

@@ -16,43 +16,56 @@ function errMsg(e: unknown): string {
   return /reject|denied|cancel/i.test(m) ? "" : (m || "Something went wrong.");
 }
 
-export default function AdminPlacesPage() {
+function timeAgo(unixSec: number): string {
+  const s = Math.max(1, Math.floor(Date.now() / 1000) - unixSec);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+export default function AdminSuggestionsPage() {
   const { address } = useAccount();
   const isAdmin = isAdminAddress(address);
   const { landmarks, loading, refresh } = useLandmarks("all");
   const { signMessageAsync } = useSignMessage();
   const sign = (m: string) => signMessageAsync({ message: m });
 
-  const [query, setQuery]         = useState("");
-  const [editing, setEditing]     = useState<Landmark | null>(null);
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
-  const [busyId, setBusyId]       = useState<string | null>(null);
-  const [err, setErr]             = useState("");
+  const [busyId, setBusyId]         = useState<string | null>(null);
+  const [confirmRej, setConfirmRej] = useState<string | null>(null);
+  const [editing, setEditing]       = useState<Landmark | null>(null);
+  const [err, setErr]               = useState("");
 
-  const filtered = useMemo(() => {
-    // Pending suggestions live on the Suggestions tab — this page manages only
-    // the live map (active + hidden).
-    const base = landmarks.filter((l) => l.status !== "pending");
-    const q = query.trim().toLowerCase();
-    const list = q ? base.filter((l) => l.name.toLowerCase().includes(q)) : base;
-    return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [landmarks, query]);
+  const pending = useMemo(
+    () => landmarks.filter((l) => l.status === "pending").sort((a, b) => b.createdAt - a.createdAt),
+    [landmarks],
+  );
 
-  async function toggleHide(l: Landmark) {
+  function announce() {
+    // Keeps the sidebar badge + the live map in sync after any decision.
+    window.dispatchEvent(new CustomEvent("gd:landmarks-updated"));
+  }
+
+  async function approve(l: Landmark) {
     setBusyId(l.id); setErr("");
     try {
-      await updateLandmark(sign, l.id, { status: l.status === "active" ? "hidden" : "active" });
-      window.dispatchEvent(new CustomEvent("gd:landmarks-updated"));
+      await updateLandmark(sign, l.id, { status: "active" });
+      announce();
       await refresh();
     } catch (e) { const m = errMsg(e); if (m) setErr(m); }
     finally { setBusyId(null); }
   }
-  async function doDelete(id: string) {
+  async function reject(id: string) {
     setBusyId(id); setErr("");
     try {
       await deleteLandmark(sign, id);
-      setConfirmDel(null);
-      window.dispatchEvent(new CustomEvent("gd:landmarks-updated"));
+      setConfirmRej(null);
+      announce();
       await refresh();
     } catch (e) { const m = errMsg(e); if (m) setErr(m); }
     finally { setBusyId(null); }
@@ -73,71 +86,87 @@ export default function AdminPlacesPage() {
   return (
     <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif" }}>
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "28px 16px 60px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: "-0.02em" }}>Map places</h1>
-        <p style={{ color: "#5a5a5a", fontSize: 13.5, margin: "4px 0 16px" }}>
-          Name a place from the map (🏷️ button). Names show to everyone; hidden ones don’t.
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: "-0.02em" }}>Suggestions</h1>
+          {pending.length > 0 && (
+            <span style={{ background: "#FF5C5C", color: "#fff", fontWeight: 900, fontSize: 13, padding: "3px 10px", borderRadius: 999 }}>
+              {pending.length}
+            </span>
+          )}
+        </div>
+        <p style={{ color: "#5a5a5a", fontSize: 13.5, margin: "4px 0 18px" }}>
+          Places suggested by verified hunters. Approve to put them on the map, or reject to discard.
         </p>
 
-        {/* Search */}
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search places…"
-          className="border-2 border-ink rounded-xl"
-          style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", fontSize: 15, fontWeight: 600, background: "#fff", outline: "none", fontFamily: "inherit" }}
-        />
-
-        {err && <p style={{ margin: "12px 0 0", color: "#C81E1E", fontWeight: 700, fontSize: 13 }}>{err}</p>}
+        {err && <p style={{ margin: "0 0 12px", color: "#C81E1E", fontWeight: 700, fontSize: 13 }}>{err}</p>}
 
         {loading ? (
           <p style={{ textAlign: "center", padding: 40, color: "#888", fontWeight: 700 }}>Loading…</p>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px 20px", color: "#888" }}>
-            <div style={{ fontSize: 40 }}>📍</div>
-            <p style={{ fontWeight: 800, margin: "8px 0 0" }}>{query ? "No matches" : "No places yet"}</p>
-            {!query && <p style={{ fontSize: 13, margin: "4px 0 0" }}>Add the first from the map’s 🏷️ button.</p>}
+        ) : pending.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "64px 20px", color: "#888" }}>
+            <div style={{ fontSize: 44 }}>🎉</div>
+            <p style={{ fontWeight: 900, margin: "10px 0 0", color: "#111", fontSize: 17 }}>All caught up</p>
+            <p style={{ fontSize: 13, margin: "4px 0 0" }}>No suggestions waiting for review.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
-            {filtered.map((l) => {
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {pending.map((l) => {
               const meta = landmarkMeta(l.category);
-              const hidden = l.status === "hidden";
               const busy = busyId === l.id;
+              const mapsUrl = `https://www.google.com/maps?q=${l.lat},${l.lng}`;
               return (
                 <div key={l.id} style={{
-                  background: "#fff", border: "2px solid #111", borderRadius: 14,
-                  padding: "12px 14px", boxShadow: "2px 2px 0 #111",
-                  opacity: hidden ? 0.6 : 1,
+                  background: "#fff", border: "2px solid #111", borderRadius: 16,
+                  padding: "14px 15px", boxShadow: "3px 3px 0 #111",
+                  opacity: busy ? 0.6 : 1, transition: "opacity 0.15s",
                 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
                     <span style={{
-                      width: 36, height: 36, flexShrink: 0, borderRadius: 10,
+                      width: 40, height: 40, flexShrink: 0, borderRadius: 11,
                       border: "2px solid #111", display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 17, background: `${meta.color}22`,
+                      fontSize: 19, background: `${meta.color}22`,
                     }}>{meta.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {l.name} {hidden && <span style={{ fontSize: 10, fontWeight: 800, color: "#999" }}>· hidden</span>}
-                      </p>
-                      <p style={{ margin: "1px 0 0", fontSize: 11.5, color: "#888", fontWeight: 600 }}>
-                        {meta.label} · {l.lat.toFixed(4)}, {l.lng.toFixed(4)}
+                      <p style={{ margin: 0, fontWeight: 900, fontSize: 16, lineHeight: 1.2, wordBreak: "break-word" }}>{l.name}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11.5, color: "#888", fontWeight: 600 }}>
+                        {meta.label} · suggested {timeAgo(l.createdAt)}
                       </p>
                     </div>
                   </div>
-                  {l.note && <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "#555" }}>{l.note}</p>}
 
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <button onClick={() => { setEditing(l); setErr(""); }} disabled={busy} style={miniBtn("#fff")}>Edit</button>
-                    <button onClick={() => toggleHide(l)} disabled={busy} style={miniBtn("#fff")}>
-                      {busy ? "…" : hidden ? "Show" : "Hide"}
+                  {l.note && (
+                    <p style={{ margin: "10px 0 0", fontSize: 13, color: "#444", background: "#f5f4f0", borderRadius: 10, padding: "8px 11px" }}>
+                      “{l.note}”
+                    </p>
+                  )}
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, fontSize: 11.5, color: "#888", fontWeight: 600 }}>
+                    <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ color: "#2563eb", textDecoration: "underline", fontWeight: 700 }}>
+                      📍 {l.lat.toFixed(4)}, {l.lng.toFixed(4)} · verify on map ↗
+                    </a>
+                    <span style={{ color: "#aaa" }}>by {short(l.createdBy)}</span>
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: "flex", gap: 8, marginTop: 13 }}>
+                    <button onClick={() => approve(l)} disabled={busy}
+                      style={{ flex: 1, height: 44, background: "#BFFD00", color: "#111", border: "2.5px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: busy ? "wait" : "pointer", fontFamily: "inherit", boxShadow: "2px 2px 0 #111" }}>
+                      {busy ? "…" : "✓ Approve"}
                     </button>
-                    {confirmDel === l.id ? (
-                      <button onClick={() => doDelete(l.id)} disabled={busy} style={miniBtn("#FFE5E5", "#C81E1E")}>
-                        {busy ? "…" : "Confirm delete"}
+                    <button onClick={() => { setEditing(l); setErr(""); }} disabled={busy}
+                      style={{ padding: "0 14px", height: 44, background: "#fff", color: "#111", border: "2px solid #111", borderRadius: 12, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                      Edit
+                    </button>
+                    {confirmRej === l.id ? (
+                      <button onClick={() => reject(l.id)} disabled={busy}
+                        style={{ padding: "0 14px", height: 44, background: "#FFE5E5", color: "#C81E1E", border: "2px solid #C81E1E", borderRadius: 12, fontWeight: 900, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                        {busy ? "…" : "Confirm"}
                       </button>
                     ) : (
-                      <button onClick={() => { setConfirmDel(l.id); setErr(""); }} disabled={busy} style={{ ...miniBtn("#fff"), marginLeft: "auto", color: "#C81E1E", borderColor: "#C81E1E" }}>
-                        Delete
+                      <button onClick={() => { setConfirmRej(l.id); setErr(""); }} disabled={busy}
+                        style={{ padding: "0 14px", height: 44, background: "#fff", color: "#C81E1E", border: "2px solid #C81E1E", borderRadius: 12, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                        Reject
                       </button>
                     )}
                   </div>
@@ -152,23 +181,15 @@ export default function AdminPlacesPage() {
         <EditSheet
           landmark={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); window.dispatchEvent(new CustomEvent("gd:landmarks-updated")); refresh(); }}
+          onSaved={() => { setEditing(null); announce(); refresh(); }}
         />
       )}
     </div>
   );
 }
 
-function miniBtn(bg: string, color = "#111"): React.CSSProperties {
-  return {
-    padding: "8px 12px", background: bg, color,
-    border: `2px solid ${color === "#111" ? "#111" : color}`, borderRadius: 10,
-    fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
-    boxShadow: "2px 2px 0 rgba(17,17,17,0.15)",
-  };
-}
-
-// ── Edit sheet ────────────────────────────────────────────────────────────────
+// Fix a typo / re-categorise a suggestion before approving. Saving keeps it
+// pending (status untouched) — the admin still makes the explicit approve call.
 function EditSheet({ landmark, onClose, onSaved }: { landmark: Landmark; onClose: () => void; onSaved: () => void }) {
   const { signMessageAsync } = useSignMessage();
   const [name, setName]         = useState(landmark.name);
@@ -177,7 +198,6 @@ function EditSheet({ landmark, onClose, onSaved }: { landmark: Landmark; onClose
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
 
-  // Prevent background scroll while open.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -197,15 +217,17 @@ function EditSheet({ landmark, onClose, onSaved }: { landmark: Landmark; onClose
         { name: cleanName, category, note: note.trim() },
       );
       onSaved();
-    } catch (e) { const m = errMsg(e); if (m) setError(m); }
-    finally { setSaving(false); }
+    } catch (e) {
+      const m = (e as { shortMessage?: string; message?: string })?.shortMessage
+        ?? (e as Error)?.message ?? "";
+      if (!/reject|denied|cancel/i.test(m)) setError(m || "Something went wrong.");
+    } finally { setSaving(false); }
   }
 
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(17,17,17,0.55)", backdropFilter: "blur(3px)" }} />
-      <div
-        role="dialog" aria-modal="true"
+      <div role="dialog" aria-modal="true"
         style={{
           position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 3001,
           width: "100%", maxWidth: 480, margin: "0 auto",
@@ -213,15 +235,15 @@ function EditSheet({ landmark, onClose, onSaved }: { landmark: Landmark; onClose
           border: "2px solid #111", borderBottom: "none",
           padding: "18px 18px calc(20px + env(safe-area-inset-bottom))",
           maxHeight: "92dvh", overflowY: "auto", fontFamily: "'Space Grotesk', sans-serif",
-        }}
-      >
+        }}>
         <div style={{ width: 40, height: 4, borderRadius: 999, background: "#d6d5cf", margin: "0 auto 14px" }} />
-        <p style={{ margin: 0, fontWeight: 900, fontSize: 19 }}>Edit place</p>
+        <p style={{ margin: 0, fontWeight: 900, fontSize: 19 }}>Tidy up before approving</p>
+        <p style={{ margin: "3px 0 0", fontSize: 12.5, color: "#888" }}>Saving keeps it in the queue — approve from the list after.</p>
 
         <input
           value={name} onChange={(e) => { setName(e.target.value); setError(""); }}
           maxLength={LANDMARK_NAME_MAX + 8}
-          style={{ marginTop: 12, width: "100%", height: 50, boxSizing: "border-box", background: "#fff", border: "2px solid #111", borderRadius: 14, padding: "0 14px", fontSize: 16, fontWeight: 800, color: "#111", fontFamily: "inherit", outline: "none" }}
+          style={{ marginTop: 14, width: "100%", height: 50, boxSizing: "border-box", background: "#fff", border: "2px solid #111", borderRadius: 14, padding: "0 14px", fontSize: 16, fontWeight: 800, color: "#111", fontFamily: "inherit", outline: "none" }}
         />
 
         <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12, paddingBottom: 2 }}>

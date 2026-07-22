@@ -80,6 +80,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       next.note = cleanLandmarkName(body.note).slice(0, LANDMARK_NOTE_MAX) || undefined;
     }
     if (body.status !== undefined) {
+      // "active" also serves as APPROVE for a pending suggestion.
       if (body.status !== "active" && body.status !== "hidden")
         return NextResponse.json({ error: "Invalid status" }, { status: 400 });
       next.status = body.status;
@@ -87,6 +88,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     next.updatedAt = Math.floor(Date.now() / 1000);
 
     await redis.set(keys.landmark(id), JSON.stringify(next));
+
+    // Approving a suggestion clears it from the suggester's pending quota.
+    if (existing.status === "pending" && next.status !== "pending" && existing.createdBy)
+      await redis.srem(keys.landmarksPendingByWallet(existing.createdBy), id);
+
     return NextResponse.json({ landmark: next });
   } catch (e) {
     console.error("[landmarks/patch]", e);
@@ -108,6 +114,11 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   if (!redis) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
 
   try {
+    // Rejecting/deleting a pending suggestion frees the suggester's quota slot.
+    const existing = parseLandmark(await redis.get(keys.landmark(id)));
+    if (existing?.status === "pending" && existing.createdBy)
+      await redis.srem(keys.landmarksPendingByWallet(existing.createdBy), id);
+
     await redis.srem(keys.landmarksIndex(), id);
     await redis.del(keys.landmark(id));
     return NextResponse.json({ ok: true });

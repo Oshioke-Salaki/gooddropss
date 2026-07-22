@@ -38,4 +38,6 @@ export const keys = {
   // Admin-curated map landmarks
   landmark:         (id: string)      => `gd:landmark:${id}`,
   landmarksIndex:   ()                => `gd:landmarks:index`, // Set of ids (idempotent)
+  // Ids a wallet has PENDING review — caps how many suggestions one human can queue
+  landmarksPendingByWallet: (addr: string) => `gd:landmarks:pending:${addr.toLowerCase()}`,
 };

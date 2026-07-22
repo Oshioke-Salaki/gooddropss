@@ -36,6 +36,28 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
  * Never throws — on RPC failure it falls back to the input address so stats
  * still work, just un-merged, until the next successful read.
  */
+/**
+ * True if the wallet is a whitelisted GoodDollar human (root or a linked account).
+ * Used to gate crowdsourced landmark suggestions to real, unique people — spam
+ * resistance that piggybacks on the Sybil resistance. Never throws (fails closed
+ * to `false` on a bad address; open to `false` on RPC error so it can't wrongly
+ * grant access).
+ */
+export async function isVerifiedHuman(address: string): Promise<boolean> {
+  if (typeof address !== "string" || !ADDR_RE.test(address)) return false;
+  try {
+    const root = (await client.readContract({
+      address: IDENTITY_ADDRESS,
+      abi: IDENTITY_ABI,
+      functionName: "getWhitelistedRoot",
+      args: [address.toLowerCase() as `0x${string}`],
+    })) as string;
+    return !!root && ADDR_RE.test(root) && root.toLowerCase() !== ZERO;
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveIdentityRoot(address: string): Promise<string> {
   // Guard: a malformed address can't be resolved — return it untouched so the
   // caller (which validates its own inputs) still gets a stable, safe key.

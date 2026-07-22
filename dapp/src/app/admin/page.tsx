@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useAccount, useWriteContract, useReadContract } from "wagmi";
 import { parseUnits, maxUint256 } from "viem";
@@ -314,15 +313,6 @@ export default function AdminPage() {
           20 drops across Nairobi · 30 drops across southern Kaduna (Barnawa, Narayi High Cost, NAFDAC Road).
           Fresh random coordinates each run.
         </p>
-
-        <div style={{ display: "flex", gap: 14, marginBottom: 20, flexWrap: "wrap" }}>
-          <Link href="/admin/places" style={{ fontSize: 13, fontWeight: 800, color: "#BFFD00", textDecoration: "underline" }}>
-            🏷️ Manage map places →
-          </Link>
-          <Link href="/admin/analytics" style={{ fontSize: 13, fontWeight: 800, color: "#888", textDecoration: "underline" }}>
-            📊 Analytics →
-          </Link>
-        </div>
 
         {/* Max drop limit (owner) */}
         <div style={{

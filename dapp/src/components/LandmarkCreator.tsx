@@ -15,12 +15,14 @@ interface Props {
   placing: boolean;                       // "tap the map" mode is active
   picked: { lat: number; lng: number } | null; // a point was tapped
   landmarks: Landmark[];                  // for the nearby-duplicate hint
+  mode?: "admin" | "suggest";             // admin adds live; suggest → review queue
   onCancel: () => void;                   // exit placing / discard the pick
   onRepick: () => void;                   // go back to tapping the map
   onCreated: () => void;                  // saved — refresh + close
 }
 
-export function LandmarkCreator({ placing, picked, landmarks, onCancel, onRepick, onCreated }: Props) {
+export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", onCancel, onRepick, onCreated }: Props) {
+  const isSuggest = mode === "suggest";
   const { signMessageAsync } = useSignMessage();
   const [name, setName]         = useState("");
   const [category, setCategory] = useState<LandmarkCategory>("landmark");
@@ -126,15 +128,21 @@ export function LandmarkCreator({ placing, picked, landmarks, onCancel, onRepick
 
               {done ? (
                 <div style={{ textAlign: "center", padding: "16px 8px" }}>
-                  <div style={{ fontSize: 44, marginBottom: 6 }}>📍</div>
-                  <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111" }}>“{cleanName}” added</p>
-                  <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#6b6e7a" }}>It’s now on the map for everyone.</p>
+                  <div style={{ fontSize: 44, marginBottom: 6 }}>{isSuggest ? "🙌" : "📍"}</div>
+                  <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111" }}>
+                    {isSuggest ? `“${cleanName}” suggested` : `“${cleanName}” added`}
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#6b6e7a" }}>
+                    {isSuggest ? "Thanks! An admin will review it soon." : "It’s now on the map for everyone."}
+                  </p>
                 </div>
               ) : (
                 <>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111", letterSpacing: "-0.02em" }}>Name this place</p>
+                      <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111", letterSpacing: "-0.02em" }}>
+                        {isSuggest ? "Suggest a place" : "Name this place"}
+                      </p>
                       <button
                         onClick={onRepick}
                         style={{ marginTop: 3, padding: 0, border: "none", background: "none", cursor: "pointer", color: "#6b6e7a", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}
@@ -225,10 +233,12 @@ export function LandmarkCreator({ placing, picked, landmarks, onCancel, onRepick
                   >
                     {saving
                       ? <><Loader2 size={17} style={{ animation: "spin 1s linear infinite" }} /> Signing…</>
-                      : <><Check size={17} /> Add place</>}
+                      : <><Check size={17} /> {isSuggest ? "Suggest place" : "Add place"}</>}
                   </button>
                   <p style={{ margin: "9px 0 0", fontSize: 11, color: "#9a9da8", textAlign: "center" }}>
-                    You sign to confirm — free, no gas.
+                    {isSuggest
+                      ? "You sign to confirm — free, no gas. An admin reviews before it appears."
+                      : "You sign to confirm — free, no gas."}
                   </p>
                 </>
               )}

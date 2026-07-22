@@ -78,10 +78,13 @@ export interface Landmark {
   category:  LandmarkCategory;
   lat:       number;            // degrees
   lng:       number;            // degrees
-  createdBy: string;            // admin wallet (lowercased)
+  createdBy: string;            // wallet that created/suggested it (lowercased)
   createdAt: number;            // unix seconds
   updatedAt: number;            // unix seconds
-  status:    "active" | "hidden";
+  // active  = live on the map (admin-created, or a suggestion approved)
+  // pending = a hunter's suggestion awaiting admin review (never on the map)
+  // hidden  = admin took it off the map without deleting
+  status:    "active" | "hidden" | "pending";
   note?:     string;
 }
 

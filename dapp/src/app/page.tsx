@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { LandmarkCreator } from "@/components/LandmarkCreator";
 import { useLandmarks } from "@/hooks/useLandmarks";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { isAdminAddress } from "@/lib/admins";
 import { CreateDropSheet } from "@/components/CreateDropSheet";
 import { ChainDropCreator } from "@/components/ChainDropCreator";
@@ -42,9 +43,14 @@ export default function HomePage() {
   const [spots, setSpots]               = useState<Spot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
 
-  // Admin landmarks
+  // Admin landmarks + crowdsourced suggestions
   const { address } = useAccount();
   const isAdmin = isAdminAddress(address);
+  const { isVerified } = useIdentityStatus();
+  // A verified (non-admin) human may SUGGEST a place; it goes to admin review.
+  const canSuggest = !isAdmin && isVerified;
+  const canPlaceLandmark = isAdmin || canSuggest;
+  const landmarkMode = isAdmin ? "admin" : "suggest";
   const { landmarks, refresh: refreshLandmarks } = useLandmarks();
   const [placingLandmark, setPlacingLandmark] = useState(false);
   const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
@@ -150,13 +156,13 @@ export default function HomePage() {
         }}
       >
         {!placingLandmark && (<>
-        {/* Admin: name a place */}
-        {isAdmin && (
+        {/* Admin: name a place · Verified hunter: suggest a place (→ review) */}
+        {canPlaceLandmark && (
           <button
             onClick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
             style={{
-              background: placingLandmark ? "#BFFD00" : "#181818",
-              color: placingLandmark ? "#111" : "#BFFD00",
+              background: "#181818",
+              color: "#BFFD00",
               border: "2.5px solid #111111",
               boxShadow: "3px 3px 0 #111111",
               fontWeight: 800, fontSize: "12px",
@@ -165,7 +171,7 @@ export default function HomePage() {
               display: "flex", alignItems: "center", gap: "6px",
             }}
           >
-            <span>🏷️</span><span>{placingLandmark ? "Tap the map…" : "Name place"}</span>
+            <span>🏷️</span><span>{isAdmin ? "Name place" : "Suggest place"}</span>
           </button>
         )}
         {/* Hunt Chain FAB */}
@@ -262,12 +268,13 @@ export default function HomePage() {
         onClose={() => setSelectedSpot(null)}
       />
 
-      {/* Admin: name/label a place on the map */}
-      {isAdmin && (
+      {/* Admin names a place (goes live); verified hunter suggests one (→ review) */}
+      {canPlaceLandmark && (
         <LandmarkCreator
           placing={placingLandmark}
           picked={pickedCoord}
           landmarks={landmarks}
+          mode={landmarkMode}
           onCancel={() => { setPlacingLandmark(false); setPickedCoord(null); }}
           onRepick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
           onCreated={() => { setPickedCoord(null); setPlacingLandmark(false); refreshLandmarks(); }}
