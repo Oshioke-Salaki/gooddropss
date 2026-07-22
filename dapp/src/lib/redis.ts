@@ -35,4 +35,7 @@ export const keys = {
   spotsAll:         ()                => `gd:spots:all`,
   spotsByOwner:     (addr: string)    => `gd:spots:owner:${addr.toLowerCase()}`,
   spotPayments:     (id: string)      => `gd:spot:payments:${id}`,
+  // Admin-curated map landmarks
+  landmark:         (id: string)      => `gd:landmark:${id}`,
+  landmarksIndex:   ()                => `gd:landmarks:index`, // Set of ids (idempotent)
 };

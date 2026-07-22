@@ -1,7 +1,11 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useState, useEffect, useCallback } from "react";
+import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
+import { LandmarkCreator } from "@/components/LandmarkCreator";
+import { useLandmarks } from "@/hooks/useLandmarks";
+import { isAdminAddress } from "@/lib/admins";
 import { CreateDropSheet } from "@/components/CreateDropSheet";
 import { ChainDropCreator } from "@/components/ChainDropCreator";
 import { ClaimSheet } from "@/components/ClaimSheet";
@@ -37,6 +41,13 @@ export default function HomePage() {
   const [userLoc, setUserLoc]           = useState<LatLng | null>(null);
   const [spots, setSpots]               = useState<Spot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
+
+  // Admin landmarks
+  const { address } = useAccount();
+  const isAdmin = isAdminAddress(address);
+  const { landmarks, refresh: refreshLandmarks } = useLandmarks();
+  const [placingLandmark, setPlacingLandmark] = useState(false);
+  const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     fetchDrops();
@@ -85,10 +96,15 @@ export default function HomePage() {
           onUserLocation={handleUserLocation}
           spots={spots}
           onSpotClick={handleSpotClick}
+          landmarks={landmarks}
+          pickingMode={placingLandmark}
+          onMapPick={(lat, lng) => { setPickedCoord({ lat, lng }); setPlacingLandmark(false); }}
         />
       </div>
 
-      {/* Status badge — fixed so it clears the Leaflet stacking context */}
+      {/* Status badge — hidden while placing a landmark, so the placement
+          instruction banner owns the centered top slot (they'd otherwise overlap). */}
+      {!placingLandmark && (
       <div
         style={{
           position: "fixed",
@@ -119,6 +135,7 @@ export default function HomePage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Action buttons — fixed so Leaflet's stacking context can't bury them */}
       <div
@@ -132,6 +149,25 @@ export default function HomePage() {
           transition: "bottom 0.2s ease",
         }}
       >
+        {!placingLandmark && (<>
+        {/* Admin: name a place */}
+        {isAdmin && (
+          <button
+            onClick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
+            style={{
+              background: placingLandmark ? "#BFFD00" : "#181818",
+              color: placingLandmark ? "#111" : "#BFFD00",
+              border: "2.5px solid #111111",
+              boxShadow: "3px 3px 0 #111111",
+              fontWeight: 800, fontSize: "12px",
+              padding: "9px 14px", borderRadius: "12px",
+              cursor: "pointer", fontFamily: "inherit",
+              display: "flex", alignItems: "center", gap: "6px",
+            }}
+          >
+            <span>🏷️</span><span>{placingLandmark ? "Tap the map…" : "Name place"}</span>
+          </button>
+        )}
         {/* Hunt Chain FAB */}
         <button
           onClick={() => setShowChain(true)}
@@ -170,6 +206,7 @@ export default function HomePage() {
           <span>Drop G$</span>
           <span>💰</span>
         </button>
+        </>)}
       </div>
 
       <BottomNav />
@@ -224,6 +261,18 @@ export default function HomePage() {
         userLocation={userLoc}
         onClose={() => setSelectedSpot(null)}
       />
+
+      {/* Admin: name/label a place on the map */}
+      {isAdmin && (
+        <LandmarkCreator
+          placing={placingLandmark}
+          picked={pickedCoord}
+          landmarks={landmarks}
+          onCancel={() => { setPlacingLandmark(false); setPickedCoord(null); }}
+          onRepick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
+          onCreated={() => { setPickedCoord(null); setPlacingLandmark(false); refreshLandmarks(); }}
+        />
+      )}
     </div>
   );
 }

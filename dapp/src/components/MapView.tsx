@@ -6,8 +6,9 @@ import Supercluster from "supercluster";
 import { Navigation, MapPin, Plus, Minus } from "lucide-react";
 import { formatG$, gpsToDeg, getDropRarity, RARITY, isFlashDrop, haversineDistance, parseDropHint } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
-import type { Drop, LatLng, Spot } from "@/types";
+import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
+import { landmarkMeta } from "@/lib/landmarks";
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
 
@@ -201,6 +202,29 @@ function makeSpotElement(spot: Spot): HTMLDivElement {
   return el;
 }
 
+// Admin place label — muted "map furniture". pointer-events:none so it can never
+// intercept a tap meant for a drop pin sitting near it.
+function makeLandmarkElement(landmark: Landmark): HTMLDivElement {
+  const meta = landmarkMeta(landmark.category);
+  const safeName = landmark.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const el = document.createElement("div");
+  el.style.pointerEvents = "none";
+  el.innerHTML = `<div style="
+    display:flex;align-items:center;gap:4px;
+    padding:2px 7px 2px 5px;
+    background:rgba(10,11,18,0.82);
+    border:1px solid ${meta.color}55;
+    border-radius:100px;
+    font-family:'Space Grotesk',sans-serif;
+    white-space:nowrap;
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
+  ">
+    <span style="font-size:11px;line-height:1;">${meta.icon}</span>
+    <span style="font-size:10.5px;font-weight:700;color:#e8e8ee;letter-spacing:-0.01em;">${safeName}</span>
+  </div>`;
+  return el;
+}
+
 function makeUserElement(): HTMLDivElement {
   const el = document.createElement("div");
   el.style.pointerEvents = "none";
@@ -244,11 +268,23 @@ interface Props {
   onUserLocation: (loc: LatLng) => void;
   spots?: Spot[];
   onSpotClick?: (spot: Spot) => void;
+  landmarks?: Landmark[];
+  /** When true, a tap on the map reports its coordinates via onMapPick (admin
+   *  landmark placement) instead of doing nothing. */
+  pickingMode?: boolean;
+  onMapPick?: (lat: number, lng: number) => void;
 }
 
 type DropFeatureProps = { dropIndex: number };
 
-export default function MapView({ drops, onDropClick, userLocation, onUserLocation, spots = [], onSpotClick }: Props) {
+// Below this zoom, landmark labels are hidden — they'd clutter and overlap when
+// the map is pulled back. They appear as you zoom into a neighbourhood.
+const LANDMARK_MIN_ZOOM = 13.5;
+
+export default function MapView({
+  drops, onDropClick, userLocation, onUserLocation,
+  spots = [], onSpotClick, landmarks = [], pickingMode = false, onMapPick,
+}: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -267,9 +303,18 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
   dropsRef.current = drops;
 
   // Marker registries so re-renders can clear stale DOM markers.
-  const dropMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const spotMarkersRef = useRef<maplibregl.Marker[]>([]);
-  const userMarkerRef  = useRef<maplibregl.Marker | null>(null);
+  const dropMarkersRef     = useRef<maplibregl.Marker[]>([]);
+  const spotMarkersRef     = useRef<maplibregl.Marker[]>([]);
+  const landmarkMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const userMarkerRef      = useRef<maplibregl.Marker | null>(null);
+
+  // Kept in refs so the map-init effect (which runs once) always sees the latest.
+  const landmarksRef   = useRef<Landmark[]>(landmarks);
+  landmarksRef.current = landmarks;
+  const pickingModeRef = useRef(pickingMode);
+  pickingModeRef.current = pickingMode;
+  const onMapPickRef   = useRef(onMapPick);
+  onMapPickRef.current = onMapPick;
   const clusterRef     = useRef<Supercluster<DropFeatureProps> | null>(null);
 
   const nearbyDrops = useMemo(() => {
@@ -300,6 +345,12 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.touchZoomRotate.enableRotation();
     mapRef.current = map;
+
+    // Admin landmark placement: a tap on empty map (not on a marker) reports its
+    // coordinates. Only active while pickingMode is on (checked via ref).
+    map.on("click", (e) => {
+      if (pickingModeRef.current) onMapPickRef.current?.(e.lngLat.lat, e.lngLat.lng);
+    });
 
     map.on("load", () => {
       // Claim-radius circle source + layers (updated when user location changes)
@@ -447,6 +498,47 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
     };
   }, [spots, mapReady]);
 
+  // ── Landmark labels (zoom-gated + viewport-culled) ──────────────────────────
+  const renderLandmarkMarkers = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    landmarkMarkersRef.current.forEach((m) => m.remove());
+    landmarkMarkersRef.current = [];
+    if (map.getZoom() < LANDMARK_MIN_ZOOM) return; // hidden when pulled back
+    const bounds = map.getBounds();
+    for (const lm of landmarksRef.current) {
+      if (lm.status !== "active") continue;
+      if (!Number.isFinite(lm.lat) || !Number.isFinite(lm.lng)) continue;
+      if (!bounds.contains([lm.lng, lm.lat])) continue; // only render what's on-screen
+      const marker = new maplibregl.Marker({ element: makeLandmarkElement(lm), anchor: "center" })
+        .setLngLat([lm.lng, lm.lat])
+        .addTo(map);
+      landmarkMarkersRef.current.push(marker);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    renderLandmarkMarkers();
+  }, [landmarks, mapReady, renderLandmarkMarkers]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const handler = () => renderLandmarkMarkers();
+    map.on("moveend", handler);
+    map.on("zoomend", handler);
+    return () => { map.off("moveend", handler); map.off("zoomend", handler); };
+  }, [mapReady, renderLandmarkMarkers]);
+
+  // Crosshair cursor while placing a landmark.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.getCanvas().style.cursor = pickingMode ? "crosshair" : "";
+    return () => { const m = mapRef.current; if (m) m.getCanvas().style.cursor = ""; };
+  }, [pickingMode, mapReady]);
+
   // ── User location marker + claim radius ────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -561,6 +653,37 @@ export default function MapView({ drops, onDropClick, userLocation, onUserLocati
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+
+      {/* Landmark placement: pan so the crosshair sits on the spot, then confirm.
+          Reliable even in a tilted 3D view where a clean "click" rarely fires. */}
+      {pickingMode && (
+        <>
+          <div
+            aria-hidden
+            style={{
+              position: "absolute", top: "50%", left: "50%",
+              transform: "translate(-50%, -100%)", zIndex: 1150,
+              pointerEvents: "none", fontSize: 36,
+              filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.55))",
+            }}
+          >📍</div>
+          <button
+            onClick={() => { const c = mapRef.current?.getCenter(); if (c) onMapPick?.(c.lat, c.lng); }}
+            style={{
+              position: "absolute", left: "50%",
+              bottom: "calc(120px + var(--gd-cold-inset, 0px))",
+              transform: "translateX(-50%)", zIndex: 1150,
+              background: "#BFFD00", color: "#111",
+              border: "2.5px solid #111", boxShadow: "3px 3px 0 #111",
+              borderRadius: 14, padding: "12px 22px", cursor: "pointer",
+              fontFamily: "'Space Grotesk', sans-serif", fontWeight: 900, fontSize: 15,
+              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+            }}
+          >
+            📍 Place here
+          </button>
+        </>
+      )}
 
       {/* ── Location status banner ────────────────────────────────────────── */}
       {locPerm === "denied" && !locateErr && (

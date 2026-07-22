@@ -66,6 +66,25 @@ export interface Spot {
   createdAt:    number;        // unix seconds
 }
 
+// Admin-curated place labels — the "map skeleton" for areas the base tiles leave
+// blank. Neutral orientation anchors (distinct from commercial Spots).
+export type LandmarkCategory =
+  | "landmark" | "campus" | "school" | "market" | "worship"
+  | "junction" | "estate" | "park" | "transport";
+
+export interface Landmark {
+  id:        string;
+  name:      string;
+  category:  LandmarkCategory;
+  lat:       number;            // degrees
+  lng:       number;            // degrees
+  createdBy: string;            // admin wallet (lowercased)
+  createdAt: number;            // unix seconds
+  updatedAt: number;            // unix seconds
+  status:    "active" | "hidden";
+  note?:     string;
+}
+
 export interface SpotPayment {
   payer:  string;
   amount: string;   // G$ wei as string (JSON-safe)
