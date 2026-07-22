@@ -128,33 +128,44 @@ export default function LeaderboardPage() {
   }, [drops]);
 
   const { hunters, droppers, totalG$, totalDrops } = useMemo(() => {
-    const hunterMap = new Map<string, { wei: bigint; count: number }>();
-    const dropperMap = new Map<string, { wei: bigint; count: number }>();
+    // Group/dedup by identity ROOT so a migrated person is one entry, but track a
+    // `displayAddr` = the wallet they actually use (the most-recently-active member
+    // of the group). For a migrated user that's their GoodDrops wallet, not the old
+    // Focus-Pet root — so the row shows their current address and its username.
+    type Agg = { wei: bigint; count: number; displayAddr: string; latest: number };
+    const hunterMap = new Map<string, Agg>();
+    const dropperMap = new Map<string, Agg>();
     let totalG$ = 0n;
-    // Collapse each wallet to its identity root (falls back to the wallet itself
-    // until roots resolve, or for unverified wallets).
     const keyOf = (addr: string) => roots.get(addr.toLowerCase()) ?? addr.toLowerCase();
 
+    const bump = (map: Map<string, Agg>, key: string, wallet: string, amount: bigint, when: number) => {
+      const prev = map.get(key);
+      if (!prev) { map.set(key, { wei: amount, count: 1, displayAddr: wallet, latest: when }); return; }
+      const newer = when >= prev.latest;
+      map.set(key, {
+        wei: prev.wei + amount,
+        count: prev.count + 1,
+        displayAddr: newer ? wallet : prev.displayAddr,
+        latest: newer ? when : prev.latest,
+      });
+    };
+
     for (const drop of drops) {
-      const dk = keyOf(drop.dropper);
-      const prev = dropperMap.get(dk) ?? { wei: 0n, count: 0 };
-      dropperMap.set(dk, { wei: prev.wei + drop.amount, count: prev.count + 1 });
+      bump(dropperMap, keyOf(drop.dropper), drop.dropper.toLowerCase(), drop.amount, drop.createdAt || 0);
 
       if (
         drop.status === DROP_STATUS.Claimed &&
         drop.claimer !== "0x0000000000000000000000000000000000000000"
       ) {
-        const ck = keyOf(drop.claimer);
-        const prevC = hunterMap.get(ck) ?? { wei: 0n, count: 0 };
-        hunterMap.set(ck, { wei: prevC.wei + drop.amount, count: prevC.count + 1 });
+        bump(hunterMap, keyOf(drop.claimer), drop.claimer.toLowerCase(), drop.amount, drop.claimedAt || drop.createdAt || 0);
         totalG$ += drop.amount;
       }
     }
 
-    const toRanks = (map: Map<string, { wei: bigint; count: number }>): Rank[] =>
-      Array.from(map.entries())
-        .map(([address, { wei, count }]) => ({
-          address,
+    const toRanks = (map: Map<string, Agg>): Rank[] =>
+      Array.from(map.values())
+        .map(({ wei, count, displayAddr }) => ({
+          address: displayAddr,
           totalWei: wei,
           count,
         }))

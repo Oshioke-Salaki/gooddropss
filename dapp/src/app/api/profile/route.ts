@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyMessage } from "viem";
+import { resolveIdentityRoot } from "@/lib/identityRoot";
 
 // Fail fast on network blips — the default (5 retries, exponential backoff)
 // makes requests hang for 20–30s when DNS/network hiccups.
@@ -21,7 +22,17 @@ export async function GET(req: NextRequest) {
   if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
 
   try {
-    const raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${address}`);
+    // Usernames are IDENTITY-scoped: resolve the wallet to its GoodDollar root so a
+    // name set on any of a person's linked wallets is found from any of them. Self-
+    // verified / unverified wallets resolve to themselves — unchanged behaviour.
+    const root = await resolveIdentityRoot(address);
+    let raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${root}`);
+    // Legacy fallback: names set on a LINKED wallet before identity-scoping were
+    // keyed by that wallet. Only checked for linked wallets (root != self) and only
+    // on a miss, so self-verified users still do a single read.
+    if (!raw && root !== address) {
+      raw = await redis.get<{ username: string; createdAt: number }>(`gd:profile:${address}`);
+    }
     if (!raw) return NextResponse.json(null);
     return NextResponse.json(raw);
   } catch (e) {
@@ -69,25 +80,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
   }
 
-  const addrKey     = `gd:profile:${address.toLowerCase()}`;
+  // Store under the signer's GoodDollar identity ROOT, so the name follows the
+  // person across every linked wallet. The signature proves ownership of `address`;
+  // its root is resolved on-chain, so a user can only ever affect their own identity.
+  const root        = await resolveIdentityRoot(address.toLowerCase());
+  const profileKey  = `gd:profile:${root}`;
   const usernameLow = username.toLowerCase();
   const nameKey     = `gd:username:${usernameLow}`;
 
-  // Check uniqueness — but allow re-claiming your own username
+  // Uniqueness — but allow re-claiming your OWN name. Resolve the stored value's
+  // identity root so a legacy wallet-keyed reservation still recognises its owner
+  // (new reservations store the root, which resolves to itself).
   const existing = await redis.get<string>(nameKey);
-  if (existing && existing.toLowerCase() !== address.toLowerCase()) {
+  if (existing && (await resolveIdentityRoot(existing.toLowerCase())) !== root) {
     return NextResponse.json({ error: "Username already taken" }, { status: 409 });
   }
 
-  // Release old username if the user is changing it
-  const oldProfile = await redis.get<{ username: string }>( addrKey);
+  // Release the old username if the user is changing it.
+  const oldProfile = await redis.get<{ username: string }>(profileKey);
   if (oldProfile?.username && oldProfile.username.toLowerCase() !== usernameLow) {
     await redis.del(`gd:username:${oldProfile.username.toLowerCase()}`);
   }
 
-  // Persist
-  await redis.set(nameKey, address.toLowerCase());
-  await redis.set(addrKey, { username, createdAt: Date.now() });
+  // Persist (identity-scoped).
+  await redis.set(nameKey, root);
+  await redis.set(profileKey, { username, createdAt: Date.now() });
 
   return NextResponse.json({ username });
 }
