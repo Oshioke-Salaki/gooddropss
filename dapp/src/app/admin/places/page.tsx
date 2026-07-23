@@ -126,8 +126,11 @@ export default function AdminPlacesPage() {
                   </div>
                   {l.note && <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "#555" }}>{l.note}</p>}
 
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     <button onClick={() => { setEditing(l); setErr(""); }} disabled={busy} style={miniBtn("#fff")}>Edit</button>
+                    <button onClick={() => window.open(`/?focus=${l.lat},${l.lng}`, "_blank", "noopener")} disabled={busy} style={miniBtn("#fff")}>
+                      📍 Preview
+                    </button>
                     <button onClick={() => toggleHide(l)} disabled={busy} style={miniBtn("#fff")}>
                       {busy ? "…" : hidden ? "Show" : "Hide"}
                     </button>

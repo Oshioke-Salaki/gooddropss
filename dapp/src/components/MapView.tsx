@@ -251,6 +251,30 @@ function makeUserElement(): HTMLDivElement {
   return el;
 }
 
+// Temporary "here it is" highlight dropped when previewing a place from an admin
+// list. Pulsing lime ring so it reads distinctly from the blue user dot.
+function makeFocusElement(): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.pointerEvents = "none";
+  el.innerHTML = `
+    <div style="position:relative;width:22px;height:22px;">
+      <div class="user-loc-pulse" style="
+        position:absolute;inset:-14px;
+        background:rgba(191,253,0,0.20);
+        border:2px solid rgba(191,253,0,0.65);
+        border-radius:50%;
+      "></div>
+      <div style="
+        width:22px;height:22px;
+        background:#BFFD00;
+        border:3px solid #111;
+        border-radius:50%;
+        box-shadow:0 2px 10px rgba(0,0,0,0.5);
+      "></div>
+    </div>`;
+  return el;
+}
+
 // ── Geodesic circle polygon (claim radius) — no turf needed ──────────────────
 function circlePolygon(lat: number, lng: number, radiusM: number, points = 64): GeoJSON.Feature<GeoJSON.Polygon> {
   const coords: [number, number][] = [];
@@ -273,6 +297,9 @@ interface Props {
   spots?: Spot[];
   onSpotClick?: (spot: Spot) => void;
   landmarks?: Landmark[];
+  /** Fly to + briefly highlight a point (deep-link preview, e.g. from the admin
+   *  Places/Suggestions lists). */
+  focus?: { lat: number; lng: number } | null;
   /** Admin-only: makes landmark labels tappable and reports the tapped one so it
    *  can be edited/hidden/deleted right from the map. Hunters never get this. */
   interactiveLandmarks?: boolean;
@@ -291,7 +318,7 @@ const LANDMARK_MIN_ZOOM = 13.5;
 
 export default function MapView({
   drops, onDropClick, userLocation, onUserLocation,
-  spots = [], onSpotClick, landmarks = [],
+  spots = [], onSpotClick, landmarks = [], focus = null,
   interactiveLandmarks = false, onLandmarkClick,
   pickingMode = false, onMapPick,
 }: Props) {
@@ -560,6 +587,25 @@ export default function MapView({
     map.getCanvas().style.cursor = pickingMode ? "crosshair" : "";
     return () => { const m = mapRef.current; if (m) m.getCanvas().style.cursor = ""; };
   }, [pickingMode, mapReady]);
+
+  // Deep-link preview: fly to a point and drop a brief highlight (from the admin
+  // Places / Suggestions lists). Cleans itself up after a few seconds.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !focus) return;
+    if (!Number.isFinite(focus.lat) || !Number.isFinite(focus.lng)) return;
+    map.flyTo({
+      center: [focus.lng, focus.lat],
+      zoom: Math.max(map.getZoom(), 16.5),
+      duration: 1400,
+      essential: true,
+    });
+    const marker = new maplibregl.Marker({ element: makeFocusElement(), anchor: "center" })
+      .setLngLat([focus.lng, focus.lat])
+      .addTo(map);
+    const t = setTimeout(() => marker.remove(), 6500);
+    return () => { clearTimeout(t); marker.remove(); };
+  }, [focus, mapReady]);
 
   // ── User location marker + claim radius ────────────────────────────────────
   useEffect(() => {

@@ -64,6 +64,22 @@ export default function HomePage() {
   const [placingLandmark, setPlacingLandmark] = useState(false);
   const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
   const [managingLandmark, setManagingLandmark] = useState<Landmark | null>(null);
+  // Deep-link preview: /?focus=lat,lng centers the map on a place (from the admin
+  // Places/Suggestions lists). Read once, then strip the param so a later manual
+  // pan isn't yanked back on re-render.
+  const [focusCoord, setFocusCoord] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const f = p.get("focus");
+      if (!f) return;
+      const [la, ln] = f.split(",").map(Number);
+      if (Number.isFinite(la) && Number.isFinite(ln)) setFocusCoord({ lat: la, lng: ln });
+      p.delete("focus");
+      const qs = p.toString();
+      window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
+    } catch { /* ignore malformed params */ }
+  }, []);
 
   useEffect(() => {
     fetchDrops();
@@ -113,6 +129,7 @@ export default function HomePage() {
           spots={spots}
           onSpotClick={handleSpotClick}
           landmarks={landmarks}
+          focus={focusCoord}
           interactiveLandmarks={isAdmin && !placingLandmark}
           onLandmarkClick={(lm) => setManagingLandmark(lm)}
           pickingMode={placingLandmark}

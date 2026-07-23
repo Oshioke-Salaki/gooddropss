@@ -7,9 +7,11 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // How many subscribers to scan per run. The cursor rotates so repeated runs cover
-// everyone; keep it modest to stay within serverless time limits. Configurable.
+// everyone; keep it modest to stay within serverless time limits (Hobby caps
+// function duration tightly). Configurable via REVERIFY_BATCH.
 const BATCH = Number(process.env.REVERIFY_BATCH ?? 120);
-const CONCURRENCY = 8;
+// Higher concurrency = a full daily scan finishes well inside the time limit.
+const CONCURRENCY = 12;
 // Don't nag: at most one reminder per subscriber in this window.
 const REMIND_COOLDOWN_S = 3 * 24 * 60 * 60;
 

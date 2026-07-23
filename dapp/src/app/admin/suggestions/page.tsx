@@ -140,12 +140,17 @@ export default function AdminSuggestionsPage() {
                     </p>
                   )}
 
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, fontSize: 11.5, color: "#888", fontWeight: 600 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, marginTop: 10, fontSize: 11.5, color: "#888", fontWeight: 600 }}>
+                    <button
+                      onClick={() => window.open(`/?focus=${l.lat},${l.lng}`, "_blank", "noopener")}
+                      style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: "#111", fontFamily: "inherit", fontSize: 11.5, fontWeight: 800, textDecoration: "underline" }}>
+                      📍 Preview on map
+                    </button>
                     <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
                       style={{ color: "#2563eb", textDecoration: "underline", fontWeight: 700 }}>
-                      📍 {l.lat.toFixed(4)}, {l.lng.toFixed(4)} · verify on map ↗
+                      Google ↗
                     </a>
-                    <span style={{ color: "#aaa" }}>by {short(l.createdBy)}</span>
+                    <span style={{ color: "#aaa" }}>{l.lat.toFixed(4)}, {l.lng.toFixed(4)} · {short(l.createdBy)}</span>
                   </div>
 
                   {/* Actions */}

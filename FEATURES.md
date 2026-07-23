@@ -40,7 +40,10 @@ prevent that.
   without leaving the map. Fixing a typo is now a two-second job at the exact
   spot you see it, instead of hunting for the record in a separate admin list.
   For hunters the labels stay non-interactive so they can never swallow a tap
-  meant for a nearby drop.
+  meant for a nearby drop. Admins can also **📍 Preview on map** any place (or
+  pending suggestion) straight from the Places/Suggestions lists — it opens the
+  map, flies to the spot, and drops a brief highlight, so you can eyeball a
+  location before approving or editing it.
 
 ---
 
@@ -160,7 +163,7 @@ cliff (or immediately after) with a one-tap path back keeps hard-won verified
 users active instead of silently churning. It reuses the exact ladder logic the
 app already uses on-screen, so the timing is always right.
 
-*Runs on a scheduler (Vercel Cron, every 6h) and needs a `CRON_SECRET`; the
+*Runs on a scheduler (Vercel Cron, daily on Hobby) and needs a `CRON_SECRET`; the
 endpoint fails closed if it isn't configured.*
 
 ---
@@ -175,8 +178,11 @@ navigation sidebar (a horizontal tab strip on mobile):
   badge so you can see at a glance how many places are waiting.
 - **Reports** — triage hunter-flagged drops (hide / un-hide / dismiss), also with
   a live count badge.
-- **Places** — manage every live landmark (search, edit, hide/show, delete).
+- **Places** — manage every live landmark (search, edit, hide/show, delete, and
+  **📍 Preview on map** to jump straight to a place).
 - **Analytics** — usage and activity.
+- **Health** — an at-a-glance status board (see §11) of every integration —
+  Redis, subgraph, push, the webhook/cron secrets — plus live counts.
 
 **Why it matters.** As GoodDrops grows, admin work grows with it. A single
 scrolling page doesn't scale. The sidebar makes the moderation surface obvious
@@ -310,10 +316,12 @@ generic event shape *and* Goldsky's real Mirror/entity-diff shape
 (`{ op: "INSERT" | "UPDATE", data: { new, old } }`), deriving *created* vs
 *claimed* from the row's status transition. It also ignores events older than 15
 minutes, so a subgraph re-index or Mirror bootstrap can never blast stale pings.
-The normalisation is a pure module (`lib/webhookNormalize.ts`) covered by unit
-tests, alongside tests for the report/landmark **signature auth round-trips**
-(client signs → server recovers the exact signer), the admin allowlist, and the
-input validators.
+When `GOLDSKY_WEBHOOK_SECRET` is set, the endpoint **verifies the
+`goldsky-webhook-secret` header** and rejects anything else — so nobody can forge
+drop events to trigger spam pushes. The normalisation is a pure module
+(`lib/webhookNormalize.ts`) covered by unit tests, alongside tests for the
+report/landmark **signature auth round-trips** (client signs → server recovers the
+exact signer), the admin allowlist, and the input validators.
 
 **Why it matters.** Notifications that fire on the wrong payload shape — or spam
 users during a re-index — erode trust fast in a money app. Matching the actual
@@ -324,6 +332,25 @@ Run them with `npm test`.
 
 ---
 
+## 11. Admin Health Dashboard
+
+**What it is.** A **Health** tab (`/admin/health`) that shows, at a glance, the
+status of every external dependency the app relies on — Redis (with a live ping),
+the subgraph (with its current indexed block), web-push/VAPID, and each secret
+(internal notify, Goldsky webhook, cron) — each flagged OK / Warn / Error / Off,
+plus live counts (push subscribers, hunters sharing location, reported/hidden
+drops, landmarks). It's admin-cookie gated and never exposes secret values.
+
+**Why it matters.** These new features lean on services that live *outside* the
+codebase — a webhook you configure in Goldsky, env vars you set in Vercel, a cron
+that only fires when its secret is present. When something isn't wired, the
+symptom is silent (a push that just never arrives), which is miserable to debug.
+The Health tab turns "is it actually working?" into a five-second glance, so
+misconfiguration is caught immediately instead of via a confused user. It's also
+your post-deploy smoke test.
+
+---
+
 ### Configuration notes (for whoever deploys)
 
 - **Nearby-drop alerts** rely on the on-chain webhook (Goldsky → `/api/push/webhook`)
@@ -331,9 +358,17 @@ Run them with `npm test`.
   format, but you must still have a Goldsky webhook *configured* to POST `Drop`
   entity changes to that path. The broadcast no-ops safely if coordinates are
   absent.
-- **Re-verify reminders** run via Vercel Cron (`dapp/vercel.json`, every 6h) and
-  require a `CRON_SECRET` env var; the endpoint fails closed without it. Vercel
-  automatically sends that secret as the cron request's `Authorization` header.
-  Generate one with `openssl rand -hex 32`.
+- **Re-verify reminders** run via Vercel Cron (`dapp/vercel.json`) and require a
+  `CRON_SECRET` env var; the endpoint fails closed without it. Vercel automatically
+  sends that secret as the cron request's `Authorization` header. Generate one with
+  `openssl rand -hex 32`.
+  - **Vercel Hobby only allows once-daily crons**, so the schedule is `0 9 * * *`
+    (09:00 UTC daily). At the current subscriber count one daily run covers
+    everyone; the run also rotates a cursor so a larger base is covered across
+    days (well inside the 3-day reminder cooldown).
+  - Want tighter timing (e.g. every 6h)? Either upgrade to Vercel Pro and change
+    the schedule, or point an external free scheduler (cron-job.org, GitHub
+    Actions, Upstash QStash) at `GET /api/cron/reverify` with the header
+    `Authorization: Bearer <CRON_SECRET>`.
 - See `dapp/.env.example` for the full, commented list of environment variables.
 - Push features reuse the existing VAPID/web-push setup and Upstash Redis.
