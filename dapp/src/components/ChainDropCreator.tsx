@@ -13,13 +13,29 @@ import {
   G_TOKEN_ADDRESS, ERC20_ABI,
 } from "@/lib/contracts";
 import {
-  degToGps, formatG$,
+  degToGps, formatG$, haversineDistance,
   buildChainHint, buildPrivateChainHint, buildChainLastHint,
 } from "@/lib/utils";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
-import type { ChainStop } from "@/types";
+import { useLandmarks } from "@/hooks/useLandmarks";
+import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
+import type { ChainStop, Landmark } from "@/types";
 import clsx from "clsx";
+
+const CHAIN_CLUE_MAX = 120;
+
+// Active landmarks within clue range of a stop, nearest first (max 4).
+function nearbyLandmarksFor(landmarks: Landmark[], lat: number | null, lng: number | null): Landmark[] {
+  if (lat === null || lng === null) return [];
+  return landmarks
+    .filter((l) => l.status === "active" && Number.isFinite(l.lat) && Number.isFinite(l.lng))
+    .map((l) => ({ l, d: haversineDistance(lat, lng, l.lat, l.lng) }))
+    .filter(({ d }) => d <= LANDMARK_CLUE_RADIUS_M)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 4)
+    .map(({ l }) => l);
+}
 
 const DURATIONS = [
   { label: "1h",  seconds: 3_600 },
@@ -47,6 +63,7 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const { address, isConnected }  = useSignedInAccount();
   const { writeContractAsync }    = useWriteContract();
   const { balance, isFetching }   = useGoodDollarProfile();
+  const { landmarks }             = useLandmarks();
 
   // Per-drop limits from the contract (each stop must be in range, not just the total).
   const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
@@ -389,12 +406,42 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
                           <input
                             type="text"
                             value={stop.clue}
-                            onChange={(e) => updateStop(idx, "clue", e.target.value.slice(0, 120))}
+                            onChange={(e) => updateStop(idx, "clue", e.target.value.slice(0, CHAIN_CLUE_MAX))}
                             placeholder={isFinal ? "You found it! 🎉" : "Near the red door…"}
                             className="w-full border-2 border-ink rounded-xl px-3 py-2 text-sm bg-transparent outline-none placeholder:text-muted"
                           />
                         </div>
                       </div>
+
+                      {/* Nearby landmarks → one-tap clue anchors for this stop */}
+                      {(() => {
+                        const nearby = nearbyLandmarksFor(landmarks, stop.lat, stop.lng);
+                        if (nearby.length === 0) return null;
+                        return (
+                          <div className="flex gap-2 overflow-x-auto pb-0.5 mt-2" style={{ WebkitOverflowScrolling: "touch" }}>
+                            {nearby.map((l) => {
+                              const meta = landmarkMeta(l.category);
+                              const added = stop.clue.toLowerCase().includes(l.name.toLowerCase());
+                              return (
+                                <button
+                                  key={l.id}
+                                  type="button"
+                                  onClick={() => updateStop(idx, "clue", addLandmarkClue(stop.clue, l.name, CHAIN_CLUE_MAX))}
+                                  disabled={added}
+                                  className={clsx(
+                                    "shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full border-2 border-ink text-[11px] font-bold transition-colors",
+                                    added ? "bg-ink text-cream cursor-default" : "bg-white hover:bg-lime",
+                                  )}
+                                >
+                                  <span>{meta.icon}</span>
+                                  <span className="max-w-[100px] truncate">{l.name}</span>
+                                  <span className="opacity-70">{added ? "✓" : "＋"}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}

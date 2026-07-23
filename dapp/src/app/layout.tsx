@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { SITE_URL, SITE_NAME, X_HANDLE } from "@/lib/site";
@@ -112,6 +113,7 @@ export default function RootLayout({
         />
         <Providers>{children}</Providers>
         <ServiceWorkerRegistration />
+        <Analytics />
       </body>
     </html>
   );

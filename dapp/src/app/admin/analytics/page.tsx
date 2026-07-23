@@ -1,9 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useAccount, useReadContract } from "wagmi";
 import { Loader2 } from "lucide-react";
-import { Nav } from "@/components/Nav";
 import { fetchAllDrops } from "@/lib/subgraph";
 import { resolveRoots } from "@/lib/roots";
 import { formatG$ } from "@/lib/utils";
@@ -140,8 +138,7 @@ export default function AnalyticsPage() {
   if (!isAdmin) {
     return (
       <div style={{ minHeight: "100dvh", background: "#f5f4f0" }}>
-        <Nav />
-        <div style={{ maxWidth: 480, margin: "0 auto", padding: "100px 20px", textAlign: "center", fontFamily: "'Space Grotesk', sans-serif" }}>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "80px 20px", textAlign: "center", fontFamily: "'Space Grotesk', sans-serif" }}>
           <div style={{ fontSize: 48 }}>🔒</div>
           <p style={{ fontWeight: 900, fontSize: 20 }}>Admin only</p>
           <p style={{ color: "#888" }}>{address ? "This wallet isn't authorised." : "Connect the admin wallet."}</p>
@@ -152,14 +149,8 @@ export default function AnalyticsPage() {
 
   return (
     <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif" }}>
-      <Nav />
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "84px 18px 60px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6, flexWrap: "wrap", gap: 8 }}>
-          <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0, letterSpacing: "-0.02em" }}>Analytics</h1>
-          <Link href="/admin" style={{ fontSize: 13, fontWeight: 800, color: "#111", textDecoration: "underline" }}>
-            ← Seed drops
-          </Link>
-        </div>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 18px 60px" }}>
+        <h1 style={{ fontSize: 30, fontWeight: 900, margin: "0 0 6px", letterSpacing: "-0.02em" }}>Analytics</h1>
         <p style={{ color: "#5a5a5a", fontSize: 14, marginBottom: 20 }}>Live from the subgraph + contract.</p>
 
         {/* Security posture — the single most important operational flag.

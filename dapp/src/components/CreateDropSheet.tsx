@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useWriteContract, useSignMessage, useReadContract } from "wagmi";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
@@ -13,10 +13,12 @@ import {
   CLAIM_RADIUS_M,
 } from "@/lib/contracts";
 import {
-  degToGps, formatG$,
+  degToGps, formatG$, haversineDistance,
   buildPrivateHint, buildPrivateHintNoTarget, buildCampaignHint, buildRiddleHint,
   X_HANDLES, X_HASHTAGS,
 } from "@/lib/utils";
+import { useLandmarks } from "@/hooks/useLandmarks";
+import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
   normalizeAnswer, riddleOwnershipMessage,
@@ -81,6 +83,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
+  const { landmarks } = useLandmarks();
 
   // Live drop limits from the contract, so the UI can't drift if they're ever
   // changed on-chain. Fall back to the known 1–500 G$ while the reads resolve.
@@ -100,6 +103,19 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const [lng, setLng]           = useState<number | null>(null);
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Landmarks near the chosen drop spot — offered as one-tap clue shortcuts so a
+  // dropper can anchor their hint to a place hunters actually recognise.
+  const nearbyLandmarks = useMemo(() => {
+    if (lat === null || lng === null) return [];
+    return landmarks
+      .filter((l) => l.status === "active" && Number.isFinite(l.lat) && Number.isFinite(l.lng))
+      .map((l) => ({ l, d: haversineDistance(lat, lng, l.lat, l.lng) }))
+      .filter(({ d }) => d <= LANDMARK_CLUE_RADIUS_M)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 5)
+      .map(({ l }) => l);
+  }, [landmarks, lat, lng]);
 
   // ── Form fields ────────────────────────────────────────────────────────────
   const [amount,        setAmount]        = useState("10");
@@ -827,6 +843,38 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                   maxLength={hintMaxLen} rows={3}
                   className="w-full border-2 border-ink rounded-xl px-4 py-3 text-sm bg-transparent outline-none resize-none placeholder:text-muted"
                 />
+
+                {/* Nearby landmarks → one-tap clue anchors */}
+                {nearbyLandmarks.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-muted">
+                      📍 Nearby places — tap to add
+                    </p>
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5" style={{ WebkitOverflowScrolling: "touch" }}>
+                      {nearbyLandmarks.map((l) => {
+                        const meta = landmarkMeta(l.category);
+                        const added = hint.toLowerCase().includes(l.name.toLowerCase());
+                        return (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onClick={() => setHint((prev) => addLandmarkClue(prev, l.name, hintMaxLen))}
+                            disabled={added}
+                            className={clsx(
+                              "shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 border-ink text-xs font-bold transition-colors",
+                              added ? "bg-ink text-cream cursor-default" : "bg-white hover:bg-lime",
+                            )}
+                          >
+                            <span>{meta.icon}</span>
+                            <span className="max-w-[120px] truncate">{l.name}</span>
+                            <span className="opacity-70">{added ? "✓" : "＋"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <p className="text-xs text-muted">
                   GPS only gets hunters within {CLAIM_RADIUS_M}m — the clue points them at the exact spot.
                 </p>

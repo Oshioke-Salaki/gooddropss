@@ -202,18 +202,21 @@ function makeSpotElement(spot: Spot): HTMLDivElement {
   return el;
 }
 
-// Admin place label — muted "map furniture". pointer-events:none so it can never
-// intercept a tap meant for a drop pin sitting near it.
-function makeLandmarkElement(landmark: Landmark): HTMLDivElement {
+// Admin place label — muted "map furniture". For hunters it's pointer-events:none
+// so it can never intercept a tap meant for a drop pin sitting near it. For admins
+// (`interactive`) it becomes tappable to manage the place inline, with a subtle ✎
+// affordance so its editability is discoverable.
+function makeLandmarkElement(landmark: Landmark, interactive: boolean): HTMLDivElement {
   const meta = landmarkMeta(landmark.category);
   const safeName = landmark.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const el = document.createElement("div");
-  el.style.pointerEvents = "none";
+  el.style.pointerEvents = interactive ? "auto" : "none";
+  if (interactive) el.style.cursor = "pointer";
   el.innerHTML = `<div style="
     display:flex;align-items:center;gap:4px;
     padding:2px 7px 2px 5px;
     background:rgba(10,11,18,0.82);
-    border:1px solid ${meta.color}55;
+    border:1px solid ${interactive ? meta.color + "aa" : meta.color + "55"};
     border-radius:100px;
     font-family:'Space Grotesk',sans-serif;
     white-space:nowrap;
@@ -221,6 +224,7 @@ function makeLandmarkElement(landmark: Landmark): HTMLDivElement {
   ">
     <span style="font-size:11px;line-height:1;">${meta.icon}</span>
     <span style="font-size:10.5px;font-weight:700;color:#e8e8ee;letter-spacing:-0.01em;">${safeName}</span>
+    ${interactive ? `<span style="font-size:9px;line-height:1;color:${meta.color};opacity:0.85;margin-left:1px;">✎</span>` : ""}
   </div>`;
   return el;
 }
@@ -269,6 +273,10 @@ interface Props {
   spots?: Spot[];
   onSpotClick?: (spot: Spot) => void;
   landmarks?: Landmark[];
+  /** Admin-only: makes landmark labels tappable and reports the tapped one so it
+   *  can be edited/hidden/deleted right from the map. Hunters never get this. */
+  interactiveLandmarks?: boolean;
+  onLandmarkClick?: (landmark: Landmark) => void;
   /** When true, a tap on the map reports its coordinates via onMapPick (admin
    *  landmark placement) instead of doing nothing. */
   pickingMode?: boolean;
@@ -283,7 +291,9 @@ const LANDMARK_MIN_ZOOM = 13.5;
 
 export default function MapView({
   drops, onDropClick, userLocation, onUserLocation,
-  spots = [], onSpotClick, landmarks = [], pickingMode = false, onMapPick,
+  spots = [], onSpotClick, landmarks = [],
+  interactiveLandmarks = false, onLandmarkClick,
+  pickingMode = false, onMapPick,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
@@ -315,6 +325,10 @@ export default function MapView({
   pickingModeRef.current = pickingMode;
   const onMapPickRef   = useRef(onMapPick);
   onMapPickRef.current = onMapPick;
+  const interactiveLandmarksRef = useRef(interactiveLandmarks);
+  interactiveLandmarksRef.current = interactiveLandmarks;
+  const onLandmarkClickRef = useRef(onLandmarkClick);
+  onLandmarkClickRef.current = onLandmarkClick;
   const clusterRef     = useRef<Supercluster<DropFeatureProps> | null>(null);
 
   const nearbyDrops = useMemo(() => {
@@ -506,11 +520,19 @@ export default function MapView({
     landmarkMarkersRef.current = [];
     if (map.getZoom() < LANDMARK_MIN_ZOOM) return; // hidden when pulled back
     const bounds = map.getBounds();
+    const interactive = interactiveLandmarksRef.current;
     for (const lm of landmarksRef.current) {
       if (lm.status !== "active") continue;
       if (!Number.isFinite(lm.lat) || !Number.isFinite(lm.lng)) continue;
       if (!bounds.contains([lm.lng, lm.lat])) continue; // only render what's on-screen
-      const marker = new maplibregl.Marker({ element: makeLandmarkElement(lm), anchor: "center" })
+      const el = makeLandmarkElement(lm, interactive);
+      if (interactive) {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onLandmarkClickRef.current?.(lm);
+        });
+      }
+      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([lm.lng, lm.lat])
         .addTo(map);
       landmarkMarkersRef.current.push(marker);
@@ -520,7 +542,7 @@ export default function MapView({
   useEffect(() => {
     if (!mapReady) return;
     renderLandmarkMarkers();
-  }, [landmarks, mapReady, renderLandmarkMarkers]);
+  }, [landmarks, mapReady, interactiveLandmarks, renderLandmarkMarkers]);
 
   useEffect(() => {
     const map = mapRef.current;

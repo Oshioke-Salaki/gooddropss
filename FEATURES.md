@@ -34,6 +34,13 @@ prevent that.
   fast and readable.
 - **Signature, not gas.** Naming a place costs nothing and takes a second. The
   signature still proves who did it, server-side.
+- **Tap-to-edit, right on the map.** For admins, place labels are tappable (a
+  subtle ✎ marks them as editable) — tap one to rename it, re-categorise it,
+  add/adjust a note, hide it, or delete it, all from a single inline sheet
+  without leaving the map. Fixing a typo is now a two-second job at the exact
+  spot you see it, instead of hunting for the record in a separate admin list.
+  For hunters the labels stay non-interactive so they can never swallow a tap
+  meant for a nearby drop.
 
 ---
 
@@ -68,14 +75,106 @@ advantage: better map → better hunts → more users → more suggestions.
 
 ---
 
+## 2b. Landmarks in the Clue — hints hunters can actually follow
+
+**What it is.** When you drop G$ and pick the spot, the drop form now shows the
+**landmarks nearest that exact point** as one-tap chips. Tap "🎓 Colab Campus"
+and it folds a clean "Near Colab Campus — …" into your clue. It works in the
+single-drop flow and per-stop in the Hunt Chain builder, only offers places
+within ~500 m, won't add the same place twice, and never overruns the on-chain
+hint length.
+
+**Why it matters.** GPS alone only gets a hunter within ~60 m — the clue does the
+last leg. But a clue is only useful if it names something the hunter recognises,
+and off-the-shelf map tiles are blank in the neighbourhoods GoodDrops is growing
+in. This closes the loop on the Landmarks feature: the places admins and the
+community add to the map become the shared vocabulary that drop hints are written
+in. Better clue → the drop actually gets found → the dropper's money reaches a
+real person. It also nudges every dropper toward good hints without making them
+think.
+
+---
+
+## 2c. Drop Reporting & Moderation — keeping the map trustworthy
+
+**What it is.** Every drop's sheet now has a discreet **"⚐ Report this drop"**
+action. A verified hunter can flag it as *not there / can't find it*, *scam or
+misleading*, *offensive*, *spam*, or *other*, with an optional note. Reports feed
+a new **Reports** tab in the admin dashboard (with its own live count badge),
+where an admin can:
+
+- **Hide the drop from the map** — it vanishes for everyone, app-wide, instantly.
+- **Un-hide** it if the report was wrong.
+- **Dismiss** the report if the drop is fine.
+
+**Why it matters.** A drop is on-chain and permissionless — anyone can create one,
+and it can't be deleted from the blockchain. Without a moderation lever, one
+scam or offensive drop is visible to every user with no recourse, and in a *money*
+app that poisons trust fast. Hiding is the right tool: the app controls what its
+map shows, so an admin can pull a bad drop out of everyone's view in one tap even
+though the chain keeps its immutable record. Gating reports to **verified humans**
+(the same GoodDollar Sybil resistance used elsewhere) stops the report queue from
+being weaponised by bots. Admin actions are protected by the existing admin
+session — no extra friction, no wallet popups.
+
+---
+
+## 2d. "Drop Near You" Alerts — bring hunters back in the moment
+
+**What it is.** Hunters who turn on notifications can now be **pinged the moment a
+drop appears near them**. With permission, the app shares a *coarse* location
+(rounded to ~110 m — never a precise fix) only while notifications are on. When a
+new public drop is created within ~2 km, nearby opted-in hunters get a "💰 New
+drop near you!" push. It's throttled hard (at most one nearby ping every 20
+minutes per person), capped in fan-out, skips the dropper themselves, and never
+broadcasts private drops.
+
+**Why it matters.** Treasure hunting is about *right place, right time*. Before
+this, a drop could sit unclaimed a block away from someone who would have loved
+it, because they had no idea it existed. Proximity alerts turn latent drops into
+found ones — more claims, more "whoa, there's free money near me" moments, more
+reasons to keep the app installed. The privacy design (coarse location, tied to
+notification consent, easy to switch off) makes it something users are
+comfortable saying yes to.
+
+*Requires the drop-created webhook to carry the drop's coordinates; it no-ops
+safely if they're ever absent.*
+
+---
+
+## 2e. Re-verify Reminders — don't let verified humans fall off the cliff
+
+**What it is.** GoodDollar verification runs on a repeating ladder — a fresh
+verifier is only whitelisted for **3 days** before they must re-authenticate, and
+even the long rung eventually lapses. A scheduled job now scans push subscribers a
+rotating batch at a time and sends a **re-verify nudge** to anyone whose
+verification just lapsed, or is about to (last day of the 3-day rung, last few
+days of the long one). Each person is reminded at most once every few days, so
+it's a nudge, never nagging.
+
+**Why it matters.** A verified human is GoodDrops' most valuable user — they can
+claim, drop, suggest places, and report. When their window quietly elapses,
+`getWhitelistedRoot` goes to zero and the app treats them as if they never
+verified — they hit a wall mid-hunt with no warning. Catching them *before* the
+cliff (or immediately after) with a one-tap path back keeps hard-won verified
+users active instead of silently churning. It reuses the exact ladder logic the
+app already uses on-screen, so the timing is always right.
+
+*Runs on a scheduler (Vercel Cron, every 6h) and needs a `CRON_SECRET`; the
+endpoint fails closed if it isn't configured.*
+
+---
+
 ## 3. Robust Admin Dashboard — a real console with a sidebar
 
 **What it is.** The admin area is now a proper dashboard with a persistent
 navigation sidebar (a horizontal tab strip on mobile):
 
 - **Overview** — seed drops, set the max drop limit.
-- **Suggestions** — review the crowdsourced queue, with a live count badge so you
-  can see at a glance how many places are waiting.
+- **Suggestions** — review the crowdsourced landmark queue, with a live count
+  badge so you can see at a glance how many places are waiting.
+- **Reports** — triage hunter-flagged drops (hide / un-hide / dismiss), also with
+  a live count badge.
 - **Places** — manage every live landmark (search, edit, hide/show, delete).
 - **Analytics** — usage and activity.
 
@@ -175,13 +274,28 @@ growth leaks away. Good SEO is table stakes for being taken seriously.
 
 ### The through-line
 
-Every feature here reduces one of three frictions:
+Every feature here reduces one of a few core frictions:
 
-- **"I can't find it."** → Landmarks + crowdsourcing give the map real places.
-- **"Is this fair / real?"** → Identity-scoped anti-cheat + verified-only
-  suggestions keep it honest.
+- **"I can't find it."** → Landmarks + crowdsourcing give the map real places, and
+  landmark-anchored clues point hunters at the exact spot.
+- **"Is this fair / real / safe?"** → Identity-scoped anti-cheat, verified-only
+  suggestions and reports, and one-tap moderation keep the map honest.
+- **"Nothing's happening near me."** → Proximity alerts surface drops in the
+  moment; re-verify reminders keep verified humans from silently churning.
 - **"It's broken."** → Drop/claim/migration fixes remove the dead-ends that make
   a money app feel untrustworthy.
 
-Get those three right and GoodDrops is something people actually want to use — and
-tell their neighbours about.
+Get those right and GoodDrops is something people actually want to use — and tell
+their neighbours about.
+
+---
+
+### Configuration notes (for whoever deploys)
+
+- **Nearby-drop alerts** rely on the on-chain webhook (Goldsky → `/api/push/webhook`)
+  delivering each new drop's `lat`/`lng`. The broadcast no-ops safely if they're
+  absent, so confirm the webhook payload includes coordinates to switch it on.
+- **Re-verify reminders** run via Vercel Cron (`dapp/vercel.json`, every 6h) and
+  require a `CRON_SECRET` env var; the endpoint fails closed without it. Vercel
+  automatically sends that secret as the cron request's `Authorization` header.
+- Both features reuse the existing VAPID/web-push setup and Upstash Redis.

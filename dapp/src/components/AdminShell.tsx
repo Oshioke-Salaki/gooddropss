@@ -8,9 +8,10 @@ import type { Landmark } from "@/types";
 // strip on mobile. Wraps every /admin/* page (after the password gate) so the
 // whole console shares one navigation surface. Pages keep their own content and
 // dark background; this only owns the nav.
-const NAV: { href: string; label: string; icon: string; exact?: boolean; key?: string }[] = [
+const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?: "suggestions" | "reports" }[] = [
   { href: "/admin",             label: "Overview",    icon: "🏠", exact: true },
-  { href: "/admin/suggestions", label: "Suggestions", icon: "💡", key: "suggestions" },
+  { href: "/admin/suggestions", label: "Suggestions", icon: "💡", badge: "suggestions" },
+  { href: "/admin/reports",     label: "Reports",     icon: "🚩", badge: "reports" },
   { href: "/admin/places",      label: "Places",      icon: "🏷️" },
   { href: "/admin/analytics",   label: "Analytics",   icon: "📊" },
 ];
@@ -18,13 +19,14 @@ const NAV: { href: string; label: string; icon: string; exact?: boolean; key?: s
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pending, setPending] = useState(0);
+  const [reports, setReports] = useState(0);
 
-  // Live pending-suggestion count for the Suggestions badge. Refreshes on the
-  // shared landmarks-updated event (fires after any approve/reject) and on a
-  // slow interval so the badge stays honest without hammering the API.
+  // Live badge counts. Suggestions = pending landmarks; Reports = flagged drops.
+  // Refresh on the shared update events + a slow interval so they stay honest
+  // without hammering the API.
   useEffect(() => {
     let alive = true;
-    const load = () =>
+    const loadSuggestions = () =>
       fetch("/api/landmarks?scope=all")
         .then((r) => r.json())
         .then((d) => {
@@ -33,13 +35,20 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           setPending(list.filter((l) => l.status === "pending").length);
         })
         .catch(() => {});
-    load();
-    const onUpd = () => load();
-    window.addEventListener("gd:landmarks-updated", onUpd);
-    const t = setInterval(load, 60_000);
+    const loadReports = () =>
+      fetch("/api/moderation")
+        .then((r) => (r.ok ? r.json() : { reported: [] }))
+        .then((d) => { if (alive && Array.isArray(d.reported)) setReports(d.reported.length); })
+        .catch(() => {});
+    const loadAll = () => { loadSuggestions(); loadReports(); };
+    loadAll();
+    window.addEventListener("gd:landmarks-updated", loadSuggestions);
+    window.addEventListener("gd:moderation-updated", loadReports);
+    const t = setInterval(loadAll, 60_000);
     return () => {
       alive = false;
-      window.removeEventListener("gd:landmarks-updated", onUpd);
+      window.removeEventListener("gd:landmarks-updated", loadSuggestions);
+      window.removeEventListener("gd:moderation-updated", loadReports);
       clearInterval(t);
     };
   }, []);
@@ -62,7 +71,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         >
           {NAV.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-            const showBadge = item.key === "suggestions" && pending > 0;
+            const badgeCount = item.badge === "suggestions" ? pending : item.badge === "reports" ? reports : 0;
+            const showBadge = badgeCount > 0;
             return (
               <Link
                 key={item.href}
@@ -75,7 +85,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 <span>{item.label}</span>
                 {showBadge && (
                   <span className="ml-1.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-[#FF5C5C] px-1.5 text-[11px] font-black leading-[18px] text-white md:ml-auto">
-                    {pending > 99 ? "99+" : pending}
+                    {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
               </Link>

@@ -80,10 +80,10 @@ export function PushPermissionBanner() {
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#fff" }}>
-              Get notified when drops appear
+              Get alerts when drops appear near you
             </p>
             <p style={{ margin: "2px 0 0", fontSize: 11, color: error ? "#ff6b6b" : "#666" }}>
-              {error || "Know when your drops are claimed too"}
+              {error || "Uses your approximate location · know when your drops are claimed too"}
             </p>
           </div>
 

@@ -62,7 +62,11 @@ export async function POST(req: NextRequest) {
       const redis = getRedis();
       if (redis) {
         const payload: NotifyPayload = await req.json().catch(() => ({ to: "" }));
-        if (payload.to) await redis.del(keys.subscription(payload.to));
+        if (payload.to) {
+          await redis.del(keys.subscription(payload.to));
+          await redis.srem(keys.subscribersIndex(), payload.to.toLowerCase());
+          await redis.hdel(keys.huntersLoc(), payload.to.toLowerCase());
+        }
       }
     }
     console.error("[push/notify]", e);

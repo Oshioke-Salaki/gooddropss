@@ -19,6 +19,7 @@ import {
   formatUsdApprox,
 } from "@/lib/utils";
 import { DropComments } from "@/components/DropComments";
+import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { UserHandle } from "@/components/UserHandle";
 import { Celebration } from "@/components/Celebration";
 import { ShareableClaimCard } from "@/components/ShareableClaimCard";
@@ -59,6 +60,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const { address } = useAccount();
   const profile     = useProfile(address);
   const myUsername  = profile?.username ?? null;
+  const [reporting, setReporting] = useState(false);
   // Nudge to set a name after a win — only once we've confirmed there isn't one.
   const needsName   = !!address && profile !== undefined && !profile?.username;
   const { authenticated } = useAuth();
@@ -885,11 +887,33 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
                 {/* Comments */}
                 <DropComments dropId={String(drop.id)} dropper={drop.dropper} />
+
+                {/* Report — hunters flag scam / not-there / offensive drops.
+                    Hidden on your own drop (nothing to report about yourself). */}
+                {!isSelfDrop && (
+                  <div style={{ marginTop: 14, textAlign: "center" }}>
+                    <button
+                      onClick={() => setReporting(true)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "#9a9da8", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
+                      }}
+                    >
+                      <span aria-hidden>⚐</span> Report this drop
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           );
         })()}
       </motion.div>
+
+      <ReportDropSheet
+        dropId={drop && reporting ? drop.id.toString() : null}
+        onClose={() => setReporting(false)}
+      />
     </>
   );
 }

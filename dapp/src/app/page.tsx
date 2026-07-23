@@ -1,9 +1,10 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { LandmarkCreator } from "@/components/LandmarkCreator";
+import { LandmarkManageSheet } from "@/components/LandmarkManageSheet";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { isAdminAddress } from "@/lib/admins";
@@ -14,12 +15,14 @@ import { HuntingMode } from "@/components/HuntingMode";
 import { ActivityTicker } from "@/components/ActivityTicker";
 import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
+import { NearbyLocationReporter } from "@/components/NearbyLocationReporter";
 import { ColdStartCard } from "@/components/ColdStartCard";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
+import { useHiddenDrops } from "@/hooks/useHiddenDrops";
 import { parseDropHint } from "@/lib/utils";
-import type { Drop, LatLng, Spot } from "@/types";
+import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -33,7 +36,13 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 });
 
 export default function HomePage() {
-  const { drops, loading, fetchDrops, markClaimed } = useDrops();
+  const { drops: allDrops, loading, fetchDrops, markClaimed } = useDrops();
+  const hiddenDrops = useHiddenDrops();
+  // Drop admins moderated away are removed everywhere in the UI, not just the map.
+  const drops = useMemo(
+    () => (hiddenDrops.size === 0 ? allDrops : allDrops.filter((d) => !hiddenDrops.has(d.id.toString()))),
+    [allDrops, hiddenDrops],
+  );
   useDropNotifications(drops); // fires browser notification when own drop is claimed
   const [selectedDrop, setSelectedDrop] = useState<Drop | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
@@ -54,6 +63,7 @@ export default function HomePage() {
   const { landmarks, refresh: refreshLandmarks } = useLandmarks();
   const [placingLandmark, setPlacingLandmark] = useState(false);
   const [pickedCoord, setPickedCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [managingLandmark, setManagingLandmark] = useState<Landmark | null>(null);
 
   useEffect(() => {
     fetchDrops();
@@ -103,6 +113,8 @@ export default function HomePage() {
           spots={spots}
           onSpotClick={handleSpotClick}
           landmarks={landmarks}
+          interactiveLandmarks={isAdmin && !placingLandmark}
+          onLandmarkClick={(lm) => setManagingLandmark(lm)}
           pickingMode={placingLandmark}
           onMapPick={(lat, lng) => { setPickedCoord({ lat, lng }); setPlacingLandmark(false); }}
         />
@@ -218,6 +230,7 @@ export default function HomePage() {
       <BottomNav />
       <ActivityTicker />
       <PushPermissionBanner />
+      <NearbyLocationReporter userLoc={userLoc} />
       <OnboardingOverlay />
 
       {/* Cold-start capture — shows worldwide proof-of-life + notify/seed CTAs
@@ -278,6 +291,15 @@ export default function HomePage() {
           onCancel={() => { setPlacingLandmark(false); setPickedCoord(null); }}
           onRepick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
           onCreated={() => { setPickedCoord(null); setPlacingLandmark(false); refreshLandmarks(); }}
+        />
+      )}
+
+      {/* Admin: tap a place on the map to edit / hide / delete it inline */}
+      {isAdmin && (
+        <LandmarkManageSheet
+          landmark={managingLandmark}
+          onClose={() => setManagingLandmark(null)}
+          onChanged={() => refreshLandmarks()}
         />
       )}
     </div>

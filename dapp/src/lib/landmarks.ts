@@ -72,3 +72,20 @@ export function newLandmarkId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 export const LANDMARK_ID_RE = /^[a-z0-9]+-[a-z0-9]+$/i;
+
+// ── Drop-hint clue integration ────────────────────────────────────────────────
+// Only landmarks within this radius of a drop are offered as clue shortcuts —
+// beyond it a place is no help pinpointing the drop.
+export const LANDMARK_CLUE_RADIUS_M = 500;
+
+// Merge a "Near <place>" reference into a drop's clue text. Idempotent (won't
+// double-add a place already named), non-destructive (keeps what the dropper
+// wrote), and capped to maxLen so it can never overflow the on-chain hint.
+export function addLandmarkClue(hint: string, placeName: string, maxLen: number): string {
+  const name = placeName.trim();
+  if (!name) return hint;
+  const base = hint.trim();
+  if (base.toLowerCase().includes(name.toLowerCase())) return base.slice(0, maxLen);
+  const combined = base ? `Near ${name} — ${base}` : `Near ${name}`;
+  return combined.slice(0, maxLen);
+}

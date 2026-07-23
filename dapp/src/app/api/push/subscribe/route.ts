@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     await redis.set(keys.subscription(address), JSON.stringify(subscription), { ex: 60 * 60 * 24 * 90 }); // 90 days TTL
+    await redis.sadd(keys.subscribersIndex(), address.toLowerCase()); // enumerable for background jobs
     return NextResponse.json({ ok: true, stored: true });
   } catch (e) {
     console.error("[push/subscribe]", e);
@@ -34,7 +35,11 @@ export async function DELETE(req: NextRequest) {
     if (!address) return NextResponse.json({ error: "Missing address" }, { status: 400 });
 
     const redis = getRedis();
-    if (redis) await redis.del(keys.subscription(address));
+    if (redis) {
+      await redis.del(keys.subscription(address));
+      await redis.srem(keys.subscribersIndex(), address.toLowerCase());
+      await redis.hdel(keys.huntersLoc(), address.toLowerCase()); // stop nearby alerts too
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("[push/unsubscribe]", e);
