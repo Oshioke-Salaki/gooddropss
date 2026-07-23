@@ -14,6 +14,7 @@ const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?:
   { href: "/admin/reports",     label: "Reports",     icon: "🚩", badge: "reports" },
   { href: "/admin/places",      label: "Places",      icon: "🏷️" },
   { href: "/admin/analytics",   label: "Analytics",   icon: "📊" },
+  { href: "/admin/health",      label: "Health",      icon: "🩺" },
 ];
 
 export function AdminShell({ children }: { children: React.ReactNode }) {

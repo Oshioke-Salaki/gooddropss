@@ -93,6 +93,18 @@ async function notifyNearby(
 const FRESH_EVENT_S = 15 * 60;
 
 export async function POST(req: NextRequest) {
+  // If a Goldsky webhook secret is configured, require it — stops anyone from
+  // forging drop events to trigger spam pushes. Optional (backwards-compatible):
+  // when unset, the endpoint stays open as before. Goldsky sends the secret in
+  // the `goldsky-webhook-secret` header.
+  const expectedSecret = process.env.GOLDSKY_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const got = req.headers.get("goldsky-webhook-secret") ?? req.headers.get("x-goldsky-secret");
+    if (got !== expectedSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   try {
     const body = await req.json();
     const origin = req.nextUrl.origin;
