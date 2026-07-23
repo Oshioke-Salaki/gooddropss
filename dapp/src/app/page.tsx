@@ -16,7 +16,6 @@ import { ActivityTicker } from "@/components/ActivityTicker";
 import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
 import { NearbyLocationReporter } from "@/components/NearbyLocationReporter";
-import { ReferralPrompt } from "@/components/ReferralPrompt";
 import { ColdStartCard } from "@/components/ColdStartCard";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
@@ -247,7 +246,6 @@ export default function HomePage() {
       <ActivityTicker />
       <PushPermissionBanner />
       <NearbyLocationReporter userLoc={userLoc} />
-      <ReferralPrompt />
       <OnboardingOverlay />
 
       {/* Cold-start capture — shows worldwide proof-of-life + notify/seed CTAs

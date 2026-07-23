@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useAccount, useWriteContract } from "wagmi";
 import { ArrowLeft, Lock, CheckCircle, Navigation } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
+import { friendlyClaimError } from "@/lib/claimErrors";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   haversineDistance,
@@ -115,8 +116,9 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setClaimStatus("done");
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected") { setClaimStatus("idle"); setErrMsg(""); return; }
+      setErrMsg(fe.message);
       setClaimStatus("error");
     }
   }

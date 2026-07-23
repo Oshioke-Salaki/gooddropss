@@ -120,7 +120,7 @@ export default async function HunterPage({ params }: PageProps) {
     <div className="min-h-[100dvh] bg-cream text-ink pb-16" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
       {/* Header */}
       <div className="sticky top-0 z-10 bg-cream/95 backdrop-blur border-b-2 border-ink">
-        <div className="max-w-[480px] mx-auto flex items-center gap-3 px-4 h-14">
+        <div className="max-w-[480px] md:max-w-2xl lg:max-w-4xl mx-auto flex items-center gap-3 px-4 h-14">
           <Link
             href="/leaderboard"
             className="w-9 h-9 flex items-center justify-center bg-card border-2 border-ink rounded-xl shadow-brutal-sm hover:opacity-90"
@@ -134,12 +134,12 @@ export default async function HunterPage({ params }: PageProps) {
         </div>
       </div>
 
-      <div className="max-w-[480px] mx-auto px-4">
+      <div className="max-w-[480px] md:max-w-2xl lg:max-w-4xl mx-auto px-4">
 
         {/* Identity */}
         <div className="flex flex-col items-center text-center pt-9 pb-7 gap-3">
           <div
-            className="w-20 h-20 rounded-full border-2 border-ink shadow-brutal flex items-center justify-center text-3xl font-black text-ink"
+            className="w-20 h-20 lg:w-24 lg:h-24 rounded-full border-2 border-ink shadow-brutal flex items-center justify-center text-3xl lg:text-4xl font-black text-ink"
             style={{ background: avColor }}
           >
             {address.slice(2, 4).toUpperCase()}
@@ -157,7 +157,7 @@ export default async function HunterPage({ params }: PageProps) {
         </div>
 
         {/* Core stats */}
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           <Stat label="Drops Claimed" value={String(dropsClaimed.length)} />
           <Stat label="Drops Created" value={String(dropsCreated.length)} />
           <Stat label="G$ Claimed" value={formatG$(totalClaimed)} accent />
@@ -173,7 +173,7 @@ export default async function HunterPage({ params }: PageProps) {
 
         {/* Highlights */}
         {dropsClaimed.length > 0 && (
-          <div className="grid grid-cols-2 gap-2.5 mt-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-2.5">
             <Stat
               label="Biggest Find"
               value={`${formatG$(biggest)} G$`}
@@ -194,7 +194,7 @@ export default async function HunterPage({ params }: PageProps) {
         )}
 
         {/* Invite friends — own profile only. Density is the growth engine. */}
-        <div className="mt-3">
+        <div className="mt-3 md:max-w-xl md:mx-auto">
           <OwnProfileInvite profileAddress={address} />
         </div>
 
@@ -225,7 +225,7 @@ export default async function HunterPage({ params }: PageProps) {
 
         {/* Achievements */}
         <Section title="Achievements">
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
             {earned.map(({ id, name, desc, Icon, color }) => (
               <div key={id} className="flex items-center gap-2.5 bg-card border-2 border-ink rounded-xl p-3 shadow-brutal-sm">
                 <div
@@ -254,7 +254,7 @@ export default async function HunterPage({ params }: PageProps) {
         {/* Recent claims */}
         {dropsClaimed.length > 0 && (
           <Section title="Recent Claims">
-            <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {dropsClaimed.slice(0, 6).map((d) => {
                 const r = RARITY[getDropRarity(d.amount)];
                 return (
@@ -283,6 +283,7 @@ export default async function HunterPage({ params }: PageProps) {
 
         {/* Shareable hunter card */}
         <Section title="Show off your hunts">
+          <div className="md:max-w-xl md:mx-auto">
           <ShareableHunterCard
             handle={username ? `@${username}` : shortAddr(address)}
             gClaimed={formatG$(totalClaimed)}
@@ -290,6 +291,7 @@ export default async function HunterPage({ params }: PageProps) {
             achievements={earned.length}
             totalAch={achievements.length}
           />
+          </div>
         </Section>
       </div>
     </div>

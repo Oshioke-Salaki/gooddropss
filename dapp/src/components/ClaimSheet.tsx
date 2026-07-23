@@ -18,6 +18,7 @@ import {
   shortAddr,
   formatUsdApprox,
 } from "@/lib/utils";
+import { friendlyClaimError } from "@/lib/claimErrors";
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { UserHandle } from "@/components/UserHandle";
@@ -181,13 +182,29 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
           .catch(() => {});
       }
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      const msg = err.shortMessage ?? err.message ?? "Something went wrong — try again.";
+      const fe = friendlyClaimError(e);
+      // User just dismissed the wallet prompt — no error UI, let them retry.
+      if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+
+      // Truth-check on-chain: many raw errors (RPC blips, gas) don't say whether
+      // the drop is actually gone. Ask the contract so we show the RIGHT thing —
+      // "already claimed" only when it really is.
+      let gone = fe.terminal;
+      let msg  = fe.message;
+      if (!gone) {
+        try {
+          const oc = await publicClient.readContract({
+            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [drop.id],
+          }) as { status: number; expiry: number };
+          const nowS = Math.floor(Date.now() / 1000);
+          if (oc.status === DROP_STATUS.Claimed)   { gone = true; msg = "Someone beat you to it — this drop has already been claimed."; }
+          else if (oc.status === DROP_STATUS.Reclaimed) { gone = true; msg = "The dropper took this one back — it's no longer available."; }
+          else if (Number(oc.expiry) <= nowS)      { gone = true; msg = "This drop has expired and can no longer be claimed."; }
+        } catch { /* couldn't re-check — fall back to the mapped message */ }
+      }
+
       setErrMsg(msg);
-      // Terminal reasons (someone else got it) — retrying can't win, so mark "gone"
-      // and the button switches to "back to the map" instead of "try again".
-      const lost = /already claimed|already been claimed|solved (this|the) riddle first|someone else|being claimed|no longer active|not active|reserved/i.test(msg);
-      setStatus(lost ? "gone" : "error");
+      setStatus(gone ? "gone" : "error");
     }
   }
 

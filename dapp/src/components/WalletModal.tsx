@@ -7,6 +7,7 @@ import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User } from "lucide-react
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { formatG$ } from "@/lib/utils";
+import { friendlyUbiError } from "@/lib/claimErrors";
 import { ClaimSDK } from "@goodsdks/citizen-sdk";
 import { IdentitySDK, useIdentitySDK } from "@goodsdks/identity-sdk";
 
@@ -87,8 +88,9 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
       await sdk.claim();
       setUbiClaimDone(true);
       setUbiStatus("already_claimed");
-    } catch (e: any) {
-      setUbiErr(e?.shortMessage ?? e?.message ?? "Claim failed");
+    } catch (e: unknown) {
+      const msg = friendlyUbiError(e);
+      if (msg) setUbiErr(msg);
     } finally {
       setUbiClaiming(false);
     }
