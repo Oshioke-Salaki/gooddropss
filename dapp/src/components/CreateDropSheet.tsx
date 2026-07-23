@@ -25,7 +25,7 @@ import { SITE_URL } from "@/lib/site";
 import { scatterPoints } from "@/lib/scatter";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
-  normalizeAnswer, riddleOwnershipMessage,
+  normalizeAnswer, riddleTokenMessage, newRiddleToken,
 } from "@/lib/riddles";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -57,10 +57,12 @@ type Status = "idle" | "approving" | "dropping" | "riddle" | "riddleFailed" | "m
 // Parked on disk so closing the sheet, or the whole app, doesn't strand the drop.
 const PENDING_KEY = "gd:pending-riddle";
 
+// A riddle drop that's on-chain but whose riddle isn't bound to its dropId yet.
+// The riddle is already stored server-side under `token` (signed BEFORE the drop),
+// so finishing it is a plain, signature-free network call — just re-bind.
 interface PendingRiddle {
-  dropId:   string;
-  question: string;
-  answer:   string;
+  dropId: string;
+  token:  string;
 }
 
 function loadPending(): PendingRiddle | null {
@@ -158,6 +160,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   useEffect(() => {
     if (!open) return;
     const p = loadPending();
+    // An old-format record (pre token-bind flow) has no token and can't be bound —
+    // discard it rather than showing a resume prompt that can never succeed.
+    if (p && !p.token) { clearPending(); setPending(null); return; }
     // Always reflect storage — setting null clears any stale in-memory pending so a
     // finished riddle drop can't leave the next drop's button silently blocked.
     setPending(p);
@@ -288,6 +293,43 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     // whatever private/campaign encoding sits underneath it.
     const storedHint = riddleOn ? buildRiddleHint(baseHint) : baseHint;
 
+    // ── Riddle: STORE it server-side FIRST, signed BEFORE any drop exists ──────
+    // The signature is taken up-front, so a rejected prompt costs nothing (no
+    // drop, no escrow) instead of stranding an on-chain [R] drop with no riddle.
+    // The dropId isn't known yet — we bind this token to it after createDrop.
+    let riddleToken: string | null = null;
+    if (riddleOn) {
+      riddleToken = newRiddleToken();
+      setStatus("riddle");
+      try {
+        const sig = await signMessageAsync({ message: riddleTokenMessage(riddleToken) });
+        const res = await fetch("/api/riddles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token:    riddleToken,
+            question: riddleQuestion.trim(),
+            answer:   riddleAnswer,
+            signature: sig,
+          }),
+        });
+        if (!res.ok) {
+          const b = await res.json().catch(() => ({}));
+          setErrMsg(b.error ?? "Could not save the riddle — try again.");
+          setStatus("error");
+          return;
+        }
+      } catch (e: unknown) {
+        const err = e as { shortMessage?: string; message?: string };
+        const msg = err.message ?? "";
+        setErrMsg(/reject|denied|cancel/i.test(msg)
+          ? "Signature cancelled — no drop was created."
+          : (err.shortMessage ?? msg ?? "Couldn't set up the riddle."));
+        setStatus("error");
+        return;
+      }
+    }
+
     try {
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
@@ -339,19 +381,15 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
       setCreatedDropId(newDropId);
 
-      // Attach the riddle. The drop is already on-chain and marked [R] at this
-      // point, so failure here is NOT recoverable by retrying handleDrop — park
-      // it and let attachRiddle() finish the job.
-      if (riddleOn && newDropId !== null) {
-        const pending: PendingRiddle = {
-          dropId:   newDropId.toString(),
-          question: riddleQuestion.trim(),
-          answer:   riddleAnswer,
-        };
+      // Bind the (already-signed, already-stored) riddle to this dropId. This is a
+      // plain network call — no wallet prompt — so it can't be stranded by a
+      // rejected signature. If the network blips it's parked and auto-retried.
+      if (riddleOn && riddleToken && newDropId !== null) {
+        const pending: PendingRiddle = { dropId: newDropId.toString(), token: riddleToken };
         savePending(pending);
         setPending(pending);
-        const ok = await attachRiddle(pending);
-        if (!ok) return; // attachRiddle set status → "riddleFailed"
+        const ok = await bindRiddle(pending);
+        if (!ok) return; // bindRiddle set status → "riddleFailed" (resume UI)
       }
 
       setStatus("done");
@@ -432,45 +470,41 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
   }
 
-  // Signs proof-of-ownership and stores the riddle. Returns false (and leaves the
-  // sheet in "riddleFailed") if it couldn't — so the caller never falls through to
-  // a success screen for a drop that's still locked.
-  async function attachRiddle(p: PendingRiddle): Promise<boolean> {
+  // Binds an already-stored riddle to its dropId — a plain, signature-free network
+  // call (the ownership signature was taken up-front, before the drop). Auto-retries
+  // transient network failures; on a hard failure it parks in "riddleFailed" so the
+  // resume UI can finish it later (still with no signature). Returns false if it
+  // couldn't, so the caller never shows a success screen for an unbound riddle.
+  async function bindRiddle(p: PendingRiddle): Promise<boolean> {
     setStatus("riddle");
     setErrMsg("");
-    try {
-      const signature = await signMessageAsync({ message: riddleOwnershipMessage(p.dropId) });
-      const res = await fetch("/api/riddles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dropId:   p.dropId,
-          question: p.question,
-          answer:   p.answer,
-          signature,
-        }),
-      });
-
-      // 409 = a riddle is already stored for this drop. That means a previous
-      // attempt actually succeeded (the response was just lost), so we're done.
-      if (res.ok || res.status === 409) {
-        clearPending();
-        setPending(null); // clear the STATE too, or the next drop is silently blocked
-        setCreatedDropId(BigInt(p.dropId));
-        return true;
-      }
-
-      const body = await res.json().catch(() => ({}));
-      setErrMsg(body.error ?? "Could not save the riddle.");
-      setStatus("riddleFailed");
-      return false;
-    } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      // Most common cause by far: the user dismissed the signature prompt.
-      setErrMsg(err.shortMessage ?? err.message ?? "Signature was cancelled.");
-      setStatus("riddleFailed");
-      return false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch("/api/riddles", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: p.token, dropId: p.dropId }),
+        });
+        // ok (bound) or already-bound both mean success (retry-safe).
+        if (res.ok) {
+          clearPending();
+          setPending(null); // clear STATE too, or the next drop is silently blocked
+          setCreatedDropId(BigInt(p.dropId));
+          return true;
+        }
+        // 404 (token expired) / 403 (owner mismatch) aren't transient — stop retrying.
+        if (res.status === 404 || res.status === 403) {
+          const body = await res.json().catch(() => ({}));
+          setErrMsg(body.error ?? "Could not finish the riddle.");
+          setStatus("riddleFailed");
+          return false;
+        }
+      } catch { /* network blip — fall through to retry */ }
+      await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
     }
+    setErrMsg("Couldn't finish setting up the riddle — tap to retry.");
+    setStatus("riddleFailed");
+    return false;
   }
 
   function handleShare() {
@@ -822,8 +856,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
               </p>
               <p style={{ margin: "0 0 14px", fontSize: 13, color: "#5a5a5a", lineHeight: 1.6 }}>
                 Drop <strong>#{pending.dropId}</strong> is live and your G$ is safely escrowed —
-                but its riddle didn&apos;t save, so nobody can claim it yet.
-                Sign once to finish. This sends no transaction and costs nothing.
+                its riddle is saved but not linked yet, so nobody can claim it.
+                Tap to finish — no signature, no transaction, costs nothing.
               </p>
 
               {errMsg && (
@@ -838,7 +872,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
               <button
                 onClick={async () => {
-                  const ok = await attachRiddle(pending);
+                  const ok = await bindRiddle(pending);
                   if (!ok) return;
                   if (resuming) {
                     // Recovered from an earlier session: the form's amount and
@@ -857,7 +891,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 className="btn-brutal w-full py-3.5 rounded-xl font-black text-base bg-lime text-ink"
                 style={status === "riddle" ? { opacity: 0.6, cursor: "wait" } : undefined}
               >
-                {status === "riddle" ? "Signing…" : "Finish setting the riddle"}
+                {status === "riddle" ? "Finishing…" : "Finish setting the riddle"}
               </button>
 
               <button

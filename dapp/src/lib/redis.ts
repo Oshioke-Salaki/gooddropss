@@ -36,6 +36,9 @@ export const keys = {
   velocity:         (address: string) => `gd:velocity:${address.toLowerCase()}`,
   // Riddle-locked drops
   riddle:           (dropId: string)  => `gd:riddle:${dropId}`,
+  // Pending riddle held under a client token between "store" (signed, pre-drop)
+  // and "bind" (token → dropId, post-drop). Short-lived; bound within seconds.
+  riddleToken:      (token: string)   => `gd:riddle:token:${token}`,
   riddleLock:       (dropId: string)  => `gd:riddle:lock:${dropId}`,
   riddleTries:      (dropId: string, address: string) =>
     `gd:riddle:tries:${dropId}:${address.toLowerCase()}`,

@@ -24,17 +24,39 @@ export const RIDDLE_LOCK_SECONDS = 600;
 export const RIDDLE_MAX_TRIES    = 5;
 export const RIDDLE_TRY_WINDOW_S = 60;
 
-// The dropper signs this to prove they own the drop they're locking. Shared so
-// the client and the verifying route can never drift out of sync.
-export function riddleOwnershipMessage(dropId: string): string {
-  return `GoodDrops — lock drop #${dropId} with a riddle.\n\nSigning this proves you created the drop. It costs nothing and sends no transaction.`;
+// The dropper signs this BEFORE the on-chain drop exists — proving they own the
+// riddle they're about to attach. Signing a random TOKEN (not a drop id) is the
+// whole point: the signature is taken up-front, so a rejected prompt costs nothing
+// (no drop yet) instead of stranding an on-chain drop with no riddle. Binding the
+// token to the eventual dropId is then a plain network call (no wallet prompt),
+// authorised by matching the token's signer to the on-chain dropper.
+export function riddleTokenMessage(token: string): string {
+  return `GoodDrops — set up a riddle for your next drop.\n\nToken: ${token}\n\nSigning this proves the riddle is yours. It costs nothing and sends no transaction.`;
 }
 
+// Client-generated, unguessable. Only the creator ever knows it.
+export const RIDDLE_TOKEN_RE = /^[a-f0-9-]{16,64}$/i;
+export function newRiddleToken(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+}
+
+// The claimable riddle, keyed by dropId once bound. Read by /api/claim-proof.
 export interface RiddleRecord {
   question:   string;
   answerHash: string;
   salt:       string;
   dropper:    string;
+  createdAt:  number;
+}
+
+// The pending riddle, keyed by token between "store" and "bind". Holds the
+// recovered signer as `owner` so binding can require owner === on-chain dropper.
+export interface RiddleTokenRecord {
+  question:   string;
+  answerHash: string;
+  salt:       string;
+  owner:      string;   // recovered signer, lowercased
   createdAt:  number;
 }
 
