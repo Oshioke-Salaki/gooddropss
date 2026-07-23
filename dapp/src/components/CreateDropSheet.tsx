@@ -87,9 +87,12 @@ interface Props {
   campaignId?: string;
   campaignName?: string;
   campaignColor?: string;
+  /** Coordinates where drops have been claimed — used to show local demand
+   *  ("hunters are active here") while the dropper picks a spot. */
+  claimPoints?: { lat: number; lng: number }[];
 }
 
-export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campaignId, campaignName, campaignColor }: Props) {
+export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campaignId, campaignName, campaignColor, claimPoints = [] }: Props) {
   const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
@@ -130,6 +133,14 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       .slice(0, 5)
       .map(({ l }) => l);
   }, [landmarks, lat, lng]);
+
+  // Local demand: how many drops have been claimed near this spot. Nudges droppers
+  // to hide G$ where hunters actually are (or to start a fresh hotspot).
+  const DEMAND_RADIUS_M = 1500;
+  const nearbyDemand = useMemo(() => {
+    if (lat === null || lng === null) return 0;
+    return claimPoints.filter((p) => haversineDistance(lat, lng, p.lat, p.lng) <= DEMAND_RADIUS_M).length;
+  }, [claimPoints, lat, lng]);
 
   // ── Form fields ────────────────────────────────────────────────────────────
   const [amount,        setAmount]        = useState("10");
@@ -951,6 +962,25 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                     </div>
                   )}
                 </button>
+
+                {/* Local demand nudge — drop where the hunters are */}
+                {lat !== null && lng !== null && claimPoints.length > 0 && (
+                  nearbyDemand > 0 ? (
+                    <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-lime/15 border-2 border-lime/50">
+                      <span className="text-base">🔥</span>
+                      <p className="text-xs font-bold text-ink">
+                        Hot spot — {nearbyDemand} {nearbyDemand === 1 ? "drop has" : "drops have"} been found near here. Hunters hunt this area.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 mt-2 px-3 py-2 rounded-xl bg-border/40 border-2 border-dashed border-ink/25">
+                      <span className="text-base">🌱</span>
+                      <p className="text-xs font-semibold text-muted">
+                        No finds here yet — you could start the hotspot. (Tip: 🔥 Hotspots on the map shows where hunters are active.)
+                      </p>
+                    </div>
+                  )
+                )}
               </div>
 
               {/* ── Amount ───────────────────────────────────────────────────── */}

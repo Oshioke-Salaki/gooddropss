@@ -297,6 +297,10 @@ interface Props {
   spots?: Spot[];
   onSpotClick?: (spot: Spot) => void;
   landmarks?: Landmark[];
+  /** Claim-activity hotspots (where hunters have found drops) for the demand
+   *  heatmap. Toggled by `showHeatmap`. */
+  heatmapPoints?: LatLng[];
+  showHeatmap?: boolean;
   /** Fly to + briefly highlight a point (deep-link preview, e.g. from the admin
    *  Places/Suggestions lists). */
   focus?: { lat: number; lng: number } | null;
@@ -318,7 +322,8 @@ const LANDMARK_MIN_ZOOM = 13.5;
 
 export default function MapView({
   drops, onDropClick, userLocation, onUserLocation,
-  spots = [], onSpotClick, landmarks = [], focus = null,
+  spots = [], onSpotClick, landmarks = [],
+  heatmapPoints = [], showHeatmap = false, focus = null,
   interactiveLandmarks = false, onLandmarkClick,
   pickingMode = false, onMapPick,
 }: Props) {
@@ -410,6 +415,35 @@ export default function MapView({
         type: "line",
         source: "gd-claim-radius",
         paint: { "line-color": "#3B82F6", "line-width": 1.5, "line-dasharray": [2, 2], "line-opacity": 0.6 },
+      });
+
+      // Demand heatmap — where hunters have claimed drops. Hidden until toggled.
+      // Sits above the base tiles but below the DOM drop markers (which always
+      // float on top), so hotspots never swallow a tap.
+      map.addSource("gd-heatmap", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "gd-heatmap",
+        type: "heatmap",
+        source: "gd-heatmap",
+        layout: { visibility: "none" },
+        paint: {
+          "heatmap-weight": 1,
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.6, 9, 1, 15, 2.4],
+          "heatmap-radius":    ["interpolate", ["linear"], ["zoom"], 0, 6, 9, 22, 15, 45],
+          "heatmap-opacity":   0.72,
+          "heatmap-color": [
+            "interpolate", ["linear"], ["heatmap-density"],
+            0,    "rgba(0,0,0,0)",
+            0.15, "rgba(90,130,20,0.35)",
+            0.35, "rgba(150,200,30,0.55)",
+            0.6,  "rgba(191,253,0,0.8)",   // brand lime
+            0.8,  "rgba(255,200,0,0.9)",
+            1,    "rgba(255,110,0,1)",      // hot
+          ],
+        },
       });
 
       // 3D buildings at close zoom — pure wow-factor; guarded because layer
@@ -606,6 +640,28 @@ export default function MapView({
     const t = setTimeout(() => marker.remove(), 6500);
     return () => { clearTimeout(t); marker.remove(); };
   }, [focus, mapReady]);
+
+  // Demand heatmap: feed claim points + toggle the layer's visibility.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const src = map.getSource("gd-heatmap") as maplibregl.GeoJSONSource | undefined;
+    if (src) {
+      src.setData({
+        type: "FeatureCollection",
+        features: heatmapPoints
+          .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+          .map((p) => ({
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
+            properties: {},
+          })),
+      });
+    }
+    if (map.getLayer("gd-heatmap")) {
+      map.setLayoutProperty("gd-heatmap", "visibility", showHeatmap ? "visible" : "none");
+    }
+  }, [heatmapPoints, showHeatmap, mapReady]);
 
   // ── User location marker + claim radius ────────────────────────────────────
   useEffect(() => {

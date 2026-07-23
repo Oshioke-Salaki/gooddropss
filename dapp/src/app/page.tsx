@@ -21,7 +21,7 @@ import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useDrops } from "@/hooks/useDrops";
 import { useHiddenDrops } from "@/hooks/useHiddenDrops";
-import { parseDropHint } from "@/lib/utils";
+import { parseDropHint, gpsToDeg } from "@/lib/utils";
 import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
 
@@ -44,6 +44,18 @@ export default function HomePage() {
     [allDrops, hiddenDrops],
   );
   useDropNotifications(drops); // fires browser notification when own drop is claimed
+
+  // Demand heatmap: where hunters have CLAIMED drops (public, from the subgraph
+  // data already loaded). Shows droppers where the players are, so drops land
+  // where they'll be found. Toggled off by default.
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const heatmapPoints = useMemo(
+    () => allDrops
+      .filter((d) => d.status === DROP_STATUS.Claimed)
+      .map((d) => ({ lat: gpsToDeg(d.lat), lng: gpsToDeg(d.lng) }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)),
+    [allDrops],
+  );
   const [selectedDrop, setSelectedDrop] = useState<Drop | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
   const [showChain,  setShowChain]      = useState(false);
@@ -127,6 +139,8 @@ export default function HomePage() {
           spots={spots}
           onSpotClick={handleSpotClick}
           landmarks={landmarks}
+          heatmapPoints={heatmapPoints}
+          showHeatmap={showHeatmap}
           focus={focusCoord}
           interactiveLandmarks={isAdmin && !placingLandmark}
           onLandmarkClick={(lm) => setManagingLandmark(lm)}
@@ -168,6 +182,32 @@ export default function HomePage() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Demand heatmap toggle — shows where hunters have claimed drops, so
+          droppers can drop where the players are. Only when there's history. */}
+      {!placingLandmark && heatmapPoints.length > 0 && (
+        <button
+          onClick={() => setShowHeatmap((v) => !v)}
+          aria-pressed={showHeatmap}
+          style={{
+            position: "fixed",
+            top: "calc(70px + var(--gd-banner-h, 0px))",
+            left: "12px", zIndex: 999,
+            background: showHeatmap ? "#BFFD00" : "rgba(24,24,24,0.92)",
+            color: showHeatmap ? "#111" : "#BFFD00",
+            border: "2px solid #111111",
+            boxShadow: showHeatmap ? "2px 2px 0 #111111" : "2px 2px 0 rgba(191,253,0,0.5)",
+            fontWeight: 800, fontSize: "12px",
+            padding: "7px 12px", borderRadius: "100px",
+            cursor: "pointer", fontFamily: "inherit",
+            display: "flex", alignItems: "center", gap: "5px",
+            backdropFilter: "blur(4px)",
+            transition: "top 0.2s ease",
+          }}
+        >
+          <span>🔥</span><span>{showHeatmap ? "Hotspots on" : "Hotspots"}</span>
+        </button>
       )}
 
       {/* Action buttons — fixed so Leaflet's stacking context can't bury them */}
@@ -270,6 +310,7 @@ export default function HomePage() {
       <CreateDropSheet
         open={showCreate}
         userLocation={userLoc}
+        claimPoints={heatmapPoints}
         onClose={() => setShowCreate(false)}
         onSuccess={() => { setShowCreate(false); fetchDrops(); }}
       />
