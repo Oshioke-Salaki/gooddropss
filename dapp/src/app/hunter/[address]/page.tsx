@@ -8,6 +8,7 @@ import { UserHandle } from "@/components/UserHandle";
 import { HunterStreakBadge } from "@/components/HunterStreakBadge";
 import { HunterRank } from "@/components/HunterRank";
 import { ShareableHunterCard } from "@/components/ShareableHunterCard";
+import { OwnProfileInvite } from "@/components/OwnProfileInvite";
 import { formatG$, shortAddr, getDropRarity, RARITY, gpsToDeg, type DropRarity } from "@/lib/utils";
 import { HunterFindsMap, type FindPoint } from "@/components/HunterFindsMap";
 import { type Drop } from "@/types";
@@ -191,6 +192,11 @@ export default async function HunterPage({ params }: PageProps) {
             />
           </div>
         )}
+
+        {/* Invite friends — own profile only. Density is the growth engine. */}
+        <div className="mt-3">
+          <OwnProfileInvite profileAddress={address} />
+        </div>
 
         {/* Rarity breakdown */}
         {dropsClaimed.length > 0 && (

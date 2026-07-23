@@ -19,6 +19,7 @@ import {
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useLandmarks } from "@/hooks/useLandmarks";
+import { useProfile } from "@/hooks/useProfile";
 import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
 import type { ChainStop, Landmark } from "@/types";
 import clsx from "clsx";
@@ -64,6 +65,8 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const { writeContractAsync }    = useWriteContract();
   const { balance, isFetching }   = useGoodDollarProfile();
   const { landmarks }             = useLandmarks();
+  const profile = useProfile(address);
+  const hasUsername = !!profile?.username;
 
   // Per-drop limits from the contract (each stop must be in range, not just the total).
   const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
@@ -134,13 +137,20 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
 
   const canDeploy =
     isConnected &&
+    hasUsername &&
     stops.length >= 2 &&
     stops.every((s) => s.lat !== null && s.lng !== null && amtInRange(s.amount)) &&
     !insufficientBalance &&
     status === "idle";
 
   async function handleDeploy() {
-    if (!address || !canDeploy) return;
+    if (!address) return;
+    if (!hasUsername) {
+      setErrMsg("Set a username before dropping.");
+      window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
+    if (!canDeploy) return;
     setStatus("approving");
     setErrMsg("");
 
@@ -503,6 +513,16 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
                 <div className="bg-danger/10 border-2 border-danger rounded-xl px-4 py-3 text-sm text-danger font-semibold">
                   {errMsg || "Something went wrong."}
                 </div>
+              )}
+
+              {/* Username gate — drops must be attributable to a named human */}
+              {isConnected && !hasUsername && (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+                  className="btn-brutal w-full py-3 mb-2 rounded-xl font-black text-sm bg-lime text-ink cursor-pointer"
+                >
+                  Set a username to drop →
+                </button>
               )}
 
               {/* Deploy CTA */}

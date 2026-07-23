@@ -1,5 +1,39 @@
 # GoodDrops — New Features
 
+## 0. Growth engine — referrals, named drops, and viral shares
+
+**The problem it solves.** A treasure hunt is worthless without local density: at a
+small user base, ~a third of drops expire *never found* because they land where no
+hunter is. Growth and density are the whole game — so this is the first thing.
+
+**Referral system (Sybil-proof).** Every hunter has a personal invite link
+(`/?ref=<wallet>`). A newcomer who arrives through it gets a one-tap **"You were
+invited — accept"** prompt once they verify; accepting credits the referrer. It's
+all keyed to the **GoodDollar identity root**, so alts of the same person can't
+farm invites, you can't refer yourself, a referred person counts once across all
+their wallets, and only *verified humans* count. Referrers see their count and a
+playful **recruiter tier** (Recruiter → Connector → Ringleader → Kingpin) on their
+profile, plus a recruiter leaderboard.
+
+**Every share recruits.** Referral codes are now baked into the drop tweet, the
+claim card, and the hunter card — so *any* share is also an invite link. The
+capture works from any landing page (a drop link, a hunter card, the homepage).
+
+**Named, recognisable drops.** Drop tweets now lead with the **nearest landmark**
+("I just hid 200 G$ near Colab Campus") instead of a raw geocode — locals
+recognise it, and it reinforces the landmark ecosystem. Drops now also **require a
+username** (single, chain, and batch creators) — no anonymous G$ on the map, so
+hunters always know who hid it and can follow the dropper.
+
+**Why it matters.** This turns the app's existing surfaces (shares, claims,
+profiles) into a compounding growth loop without introducing any treasury: rewards
+are *status* for now; monetary referral bonuses can come later via a
+sponsor-funded campaign. It's the flywheel that makes every other feature matter.
+
+---
+
+
+
 A running log of the features shipped in this cycle and, more importantly, *why*
 each one matters. GoodDrops is a GPS treasure hunt where people hide and find
 real G$ (GoodDollar UBI). Everything below is in service of one goal: make it

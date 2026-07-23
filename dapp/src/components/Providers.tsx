@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
 import { SetNameSheet } from "@/components/SetNameSheet";
+import { ReferralCapture } from "@/components/ReferralCapture";
 
 // Keep every connected wallet on Celo. Auto-switches once whenever a wrong chain
 // is detected (on connect, or if the user changes networks in their wallet). The
@@ -57,6 +58,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <AuthProvider>
           <QueryCacheManager />
           <ChainGuard />
+          <ReferralCapture />
           {children}
           {/* Global "claim your hunter name" sheet — opened from anywhere via the
               gd:setName event (wallet pill, post-claim screen, leaderboard). */}

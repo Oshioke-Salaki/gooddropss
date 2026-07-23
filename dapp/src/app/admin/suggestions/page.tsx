@@ -2,6 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useLandmarks } from "@/hooks/useLandmarks";
+import { UserHandle } from "@/components/UserHandle";
 import { isAdminAddress } from "@/lib/admins";
 import { updateLandmark, deleteLandmark } from "@/lib/landmarkClient";
 import {
@@ -27,7 +28,6 @@ function timeAgo(unixSec: number): string {
   return `${d}d ago`;
 }
 
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export default function AdminSuggestionsPage() {
   const { address } = useAccount();
@@ -150,7 +150,9 @@ export default function AdminSuggestionsPage() {
                       style={{ color: "#2563eb", textDecoration: "underline", fontWeight: 700 }}>
                       Google ↗
                     </a>
-                    <span style={{ color: "#aaa" }}>{l.lat.toFixed(4)}, {l.lng.toFixed(4)} · {short(l.createdBy)}</span>
+                    <span style={{ color: "#aaa", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {l.lat.toFixed(4)}, {l.lng.toFixed(4)} · by <UserHandle address={l.createdBy} style={{ fontWeight: 800, color: "#555" }} />
+                    </span>
                   </div>
 
                   {/* Actions */}

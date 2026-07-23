@@ -49,6 +49,10 @@ export const keys = {
   landmarksIndex:   ()                => `gd:landmarks:index`, // Set of ids (idempotent)
   // Ids a wallet has PENDING review — caps how many suggestions one human can queue
   landmarksPendingByWallet: (addr: string) => `gd:landmarks:pending:${addr.toLowerCase()}`,
+  // Referrals — identity-root scoped (Sybil-proof, one referrer per person)
+  referredBy:        (inviteeRoot: string)  => `gd:ref:by:${inviteeRoot.toLowerCase()}`,   // string: referrer root
+  referralsOf:       (referrerRoot: string) => `gd:ref:of:${referrerRoot.toLowerCase()}`,  // Set of invitee roots
+  referralLeaders:   ()                      => `gd:ref:leaders`,                           // Sorted set: root → count
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

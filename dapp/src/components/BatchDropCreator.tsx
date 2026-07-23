@@ -14,6 +14,7 @@ import {
 } from "@/lib/contracts";
 import { degToGps, buildCampaignHint, formatG$, X_HANDLES, X_HASHTAGS } from "@/lib/utils";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
+import { useProfile } from "@/hooks/useProfile";
 import type { Campaign } from "@/types";
 
 interface FlyTarget { lat: number; lng: number; seq: number; }
@@ -187,6 +188,8 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
   const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync }   = useWriteContract();
   const { balance, isFetching }  = useGoodDollarProfile();
+  const profile = useProfile(address);
+  const hasUsername = !!profile?.username;
 
   // Per-drop limits from the contract (each drop must be in range, not just the total).
   const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
@@ -274,11 +277,17 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
     const n = parseFloat(d.amount);
     return !isNaN(n) && n > 0 && !amtInRange(d.amount);
   });
-  const canDeploy = isConnected && drops.length > 0 && !insufficientBalance &&
+  const canDeploy = isConnected && hasUsername && drops.length > 0 && !insufficientBalance &&
     drops.every((d) => amtInRange(d.amount)) && status === "idle";
 
   async function handleDeploy() {
-    if (!address || !canDeploy) return;
+    if (!address) return;
+    if (!hasUsername) {
+      setErrMsg("Set a username before dropping.");
+      window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
+    if (!canDeploy) return;
     setStatus("approving");
     setErrMsg("");
     try {
@@ -714,6 +723,14 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
 
                 {/* Deploy button */}
                 <div style={{ paddingBottom: 20 }}>
+                  {isConnected && !hasUsername && (
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+                      style={{ width: "100%", padding: "12px", marginBottom: 10, background: "#BFFD00", color: "#111", border: "2px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", boxShadow: "3px 3px 0 #111" }}
+                    >
+                      Set a username to drop →
+                    </button>
+                  )}
                   <button
                     onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleDeploy}
                     disabled={busy || (status !== "error" && !canDeploy)}

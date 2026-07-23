@@ -1,7 +1,9 @@
 "use client";
 import { useRef, useState, useCallback } from "react";
+import { useAccount } from "wagmi";
 import { Share2, Download, Check } from "lucide-react";
 import { X_HANDLES, X_HASHTAGS } from "@/lib/utils";
+import { withRef } from "@/lib/referral";
 
 interface Props {
   handle:       string; // @username or short address
@@ -23,9 +25,11 @@ export function ShareableHunterCard({ handle, gClaimed, claims, achievements, to
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [busy, setBusy]     = useState(false);
   const [copied, setCopied] = useState(false);
+  const { address } = useAccount();
 
   const url = siteUrl ?? (typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz");
-  const shareUrl  = typeof window !== "undefined" ? window.location.href : url;
+  // Referral code = the SHARER's wallet, even when viewing someone else's card.
+  const shareUrl  = withRef(typeof window !== "undefined" ? window.location.href : url, address);
   const shareText = `I've found ${gClaimed} G$ across ${claims} real-world hunts on GoodDrops 🎯 Come hunt with me:\n\n${X_HANDLES}\n${X_HASHTAGS}`;
 
   const renderToBlob = useCallback(async (): Promise<Blob | null> => {

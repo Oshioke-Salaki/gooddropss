@@ -1,7 +1,9 @@
 "use client";
 import { useRef, useState, useCallback } from "react";
+import { useAccount } from "wagmi";
 import { Share2, Download, Check } from "lucide-react";
 import { formatG$, RARITY, X_HANDLES, X_HASHTAGS, type DropRarity } from "@/lib/utils";
+import { withRef } from "@/lib/referral";
 
 interface Props {
   amount:   bigint;
@@ -25,10 +27,12 @@ export function ShareableClaimCard({ amount, rarity, place, handle, dropId, site
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [copied, setCopied]   = useState(false);
   const [busy, setBusy]       = useState(false);
+  const { address } = useAccount();
   const r = RARITY[rarity];
 
   const url = siteUrl ?? (typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz");
-  const shareUrl  = `${url}/drop/${dropId}`;
+  // Carry the sharer's referral code → a claim tweet also recruits.
+  const shareUrl  = withRef(`${url}/drop/${dropId}`, address);
   const shareText = `I just found ${formatG$(amount)} G$ hidden in the real world on GoodDrops 🎯💰 Real money, real places. Come hunt with me:\n\n${X_HANDLES}\n${X_HASHTAGS}`;
 
   // ── Draw the card onto the canvas and return a Blob ──────────────────────

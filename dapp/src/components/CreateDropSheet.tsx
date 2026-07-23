@@ -18,7 +18,10 @@ import {
   X_HANDLES, X_HASHTAGS,
 } from "@/lib/utils";
 import { useLandmarks } from "@/hooks/useLandmarks";
+import { useProfile } from "@/hooks/useProfile";
 import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
+import { inviteUrl } from "@/lib/referral";
+import { SITE_URL } from "@/lib/site";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
   normalizeAnswer, riddleOwnershipMessage,
@@ -84,6 +87,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
   const { landmarks } = useLandmarks();
+  // Drops must be attributable to a named human — no anonymous drops on the map.
+  const profile = useProfile(address);
+  const hasUsername = !!profile?.username;
 
   // Live drop limits from the contract, so the UI can't drift if they're ever
   // changed on-chain. Fall back to the known 1–500 G$ while the reads resolve.
@@ -189,6 +195,12 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   // ── On-chain drop ───────────────────────────────────────────────────────────
   async function handleDrop() {
     if (!address || lat === null || lng === null) return;
+    // Anonymous drops erode trust — require a username first.
+    if (!hasUsername) {
+      setErrMsg("Set a username before dropping.");
+      window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
     // Never create a second drop while one is stranded — that would escrow the
     // user's G$ twice.
     if (pending) return;
@@ -375,10 +387,17 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   }
 
   function handleShare() {
-    const loc = placeName ? `near ${placeName}` : "at a secret spot";
+    // Prefer a named landmark near the drop — locals recognise "near Colab Campus"
+    // far better than a raw geocode. Falls back to the picked place, then generic.
+    const nearest = nearbyLandmarks[0];
+    const loc = nearest ? `near ${nearest.name}`
+      : placeName ? `near ${placeName}`
+      : "at a secret spot";
     const text = `I just hid ${amount} G$ ${loc} 🎯\n\nCan you find it? Hunt it down on GoodDrops 💰\n\n${X_HANDLES}\n${X_HASHTAGS}`;
+    // The link carries the dropper's referral code → every drop tweet recruits.
+    const url = address ? inviteUrl(SITE_URL, address) : SITE_URL;
     window.open(
-      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank", "noopener,noreferrer"
     );
   }
@@ -1036,7 +1055,20 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                   <p className="text-center text-sm text-muted font-semibold">
                     Sign in to drop G$
                   </p>
+                ) : !hasUsername ? (
+                  <>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+                      className="btn-brutal w-full py-4 rounded-xl font-black text-base bg-lime text-ink cursor-pointer"
+                    >
+                      Set a username to drop
+                    </button>
+                    <p className="text-center text-xs text-muted">
+                      Drops show your name so hunters know who hid the G$.
+                    </p>
+                  </>
                 ) : (
+                  <>
                   <button
                     onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleDrop}
                     disabled={status !== "error" && !canDrop}
@@ -1050,10 +1082,11 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                   >
                     {btnLabel}
                   </button>
+                  <p className="text-center text-xs text-muted">
+                    Hunters within 100m can claim this drop
+                  </p>
+                  </>
                 )}
-                <p className="text-center text-xs text-muted">
-                  Hunters within 100m can claim this drop
-                </p>
               </div>
             </>
           )}
