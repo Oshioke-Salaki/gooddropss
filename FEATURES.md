@@ -290,12 +290,50 @@ their neighbours about.
 
 ---
 
+## 9. Product Analytics (Vercel Analytics)
+
+**What it is.** `@vercel/analytics` is mounted app-wide, capturing page views and
+Web Vitals with zero PII and no cookie banner.
+
+**Why it matters.** You can't improve what you can't see. Knowing which pages
+hunters actually land on, where they drop off, and how fast the app feels turns
+"I think" into "I know" — so the next round of work targets what real usage shows,
+not guesses. It auto-collects once deployed on Vercel; nothing to configure.
+
+---
+
+## 10. Webhook Hardening & Tests
+
+**What it is.** The drop webhook (`/api/push/webhook`) — which powers claim
+notifications and the new "drop near you" broadcast — now understands **both** the
+generic event shape *and* Goldsky's real Mirror/entity-diff shape
+(`{ op: "INSERT" | "UPDATE", data: { new, old } }`), deriving *created* vs
+*claimed* from the row's status transition. It also ignores events older than 15
+minutes, so a subgraph re-index or Mirror bootstrap can never blast stale pings.
+The normalisation is a pure module (`lib/webhookNormalize.ts`) covered by unit
+tests, alongside tests for the report/landmark **signature auth round-trips**
+(client signs → server recovers the exact signer), the admin allowlist, and the
+input validators.
+
+**Why it matters.** Notifications that fire on the wrong payload shape — or spam
+users during a re-index — erode trust fast in a money app. Matching the actual
+webhook format and guarding replay makes the alerts dependable. The tests lock in
+the security-critical bits (a report can't be replayed for a different drop, a
+non-admin can't pass the allowlist) so future changes can't quietly break them.
+Run them with `npm test`.
+
+---
+
 ### Configuration notes (for whoever deploys)
 
 - **Nearby-drop alerts** rely on the on-chain webhook (Goldsky → `/api/push/webhook`)
-  delivering each new drop's `lat`/`lng`. The broadcast no-ops safely if they're
-  absent, so confirm the webhook payload includes coordinates to switch it on.
+  delivering each new drop's `lat`/`lng`. The handler now speaks Goldsky's Mirror
+  format, but you must still have a Goldsky webhook *configured* to POST `Drop`
+  entity changes to that path. The broadcast no-ops safely if coordinates are
+  absent.
 - **Re-verify reminders** run via Vercel Cron (`dapp/vercel.json`, every 6h) and
   require a `CRON_SECRET` env var; the endpoint fails closed without it. Vercel
   automatically sends that secret as the cron request's `Authorization` header.
-- Both features reuse the existing VAPID/web-push setup and Upstash Redis.
+  Generate one with `openssl rand -hex 32`.
+- See `dapp/.env.example` for the full, commented list of environment variables.
+- Push features reuse the existing VAPID/web-push setup and Upstash Redis.

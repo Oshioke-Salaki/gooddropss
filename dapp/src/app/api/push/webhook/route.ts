@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import type { Redis } from "@upstash/redis";
 import { parseDropHint, gpsToDeg, haversineDistance } from "@/lib/utils";
+import { normalizeWebhook, readField } from "@/lib/webhookNormalize";
 
 export const runtime = "nodejs";
 
@@ -87,49 +88,17 @@ async function notifyNearby(
   return sent;
 }
 
-type Fields = Record<string, unknown>;
-
 // Events older than this are treated as backfill/replay and never push — so a
 // re-index or a Mirror bootstrap can't blast stale "new drop near you" pings.
 const FRESH_EVENT_S = 15 * 60;
-
-// Goldsky can deliver in two shapes; normalise both to { created, claimed, fields }.
-//   • Mirror / entity webhook: { op:"INSERT"|"UPDATE", entity, data:{ new, old } }
-//   • Generic event webhook:   { type|event, data|payload:{…fields} }
-function normalize(body: Record<string, unknown>): { created: boolean; claimed: boolean; fields: Fields } {
-  const data = body?.data as { new?: Fields; old?: Fields } | undefined;
-  if (typeof body?.op === "string" && data && ("new" in data || "old" in data)) {
-    const op  = String(body.op).toUpperCase();
-    const nu  = (data.new ?? {}) as Fields;
-    const old = (data.old ?? null) as Fields | null;
-    const newStatus = Number(nu.status ?? -1);
-    const oldStatus = old ? Number(old.status ?? -1) : -1;
-    return {
-      created: op === "INSERT",
-      // A drop becomes Claimed (status 1) on a later UPDATE.
-      claimed: (op === "UPDATE" || op === "INSERT") && newStatus === 1 && oldStatus !== 1,
-      fields:  nu,
-    };
-  }
-  const type = String(body?.type ?? body?.event ?? "");
-  const gen  = (body?.data ?? body?.payload ?? {}) as Fields;
-  const status = Number(gen.status ?? -1);
-  return {
-    created: type.includes("DropCreated"),
-    claimed: type.includes("DropClaimed") || status === 1,
-    fields:  gen,
-  };
-}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const origin = req.nextUrl.origin;
-    const { created, claimed, fields } = normalize(body);
+    const { created, claimed, fields } = normalizeWebhook(body);
 
-    // Read a field from the normalised row, tolerating a nested `fields` wrapper.
-    const nested = (fields.fields ?? {}) as Fields;
-    const f = (k: string): unknown => fields[k] ?? nested[k];
+    const f = (k: string): unknown => readField(fields, k);
 
     const dropper = String(f("dropper") ?? "");
     const amount  = String(f("amount") ?? "0");
