@@ -16,6 +16,10 @@ import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucid
 
 interface PageProps { params: Promise<{ address: string }> }
 
+// Identity-scoped profile aggregates all drops (fetchAllDrops) + a root multicall;
+// cache the rendered page for 60s so it's not recomputed on every hit.
+export const revalidate = 60;
+
 // ── Metadata ──────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

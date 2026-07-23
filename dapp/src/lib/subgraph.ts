@@ -1,6 +1,8 @@
 import type { Drop } from "@/types";
+import { resolveRoots } from "@/lib/roots";
 
 const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 const DROPS_QUERY = `
   query GetDrops($lastId: ID!) {
@@ -176,37 +178,31 @@ export interface HunterStats {
   dropsClaimed: Drop[];
 }
 
-const HUNTER_QUERY = `
-  query HunterProfile($addr: Bytes!) {
-    created: drops(where: { dropper: $addr }, orderBy: dropId, orderDirection: desc) {
-      id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint
-    }
-    claimed: drops(where: { claimer: $addr, status: 1 }, orderBy: claimedAt, orderDirection: desc) {
-      id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint
-    }
-  }
-`;
-
+// IDENTITY-SCOPED so the profile matches the (identity-scoped) leaderboard: a
+// person's drops/claims across ALL their linked GoodDollar wallets are summed
+// under one identity. A single-wallet query would undercount anyone who dropped
+// or claimed from a connected wallet (which is exactly what made a profile show
+// 22k while the leaderboard showed 134k for the same person).
 export async function fetchHunterProfile(address: string): Promise<HunterStats | null> {
   if (!SUBGRAPH_URL) return null;
   try {
-    const res = await fetch(SUBGRAPH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: HUNTER_QUERY,
-        variables: { addr: address.toLowerCase() },
-      }),
-      next: { revalidate: 60 },
-    });
-    const json = await res.json();
-    const created: SubgraphDrop[] = json.data?.created ?? [];
-    const claimed: SubgraphDrop[] = json.data?.claimed ?? [];
-    return {
-      address,
-      dropsCreated: created.map(toDrop),
-      dropsClaimed: claimed.map(toDrop),
-    };
+    const all = await fetchAllDrops();
+
+    // Resolve every participating wallet → its identity root (batched multicall).
+    const wallets = new Set<string>([address.toLowerCase()]);
+    for (const d of all) {
+      wallets.add(d.dropper.toLowerCase());
+      if (d.claimer && d.claimer.toLowerCase() !== ZERO_ADDR) wallets.add(d.claimer.toLowerCase());
+    }
+    const roots = await resolveRoots([...wallets]);
+    const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
+    const target = rootOf(address);
+
+    const dropsCreated = all.filter((d) => rootOf(d.dropper) === target);
+    const dropsClaimed = all.filter(
+      (d) => d.status === 1 && d.claimer.toLowerCase() !== ZERO_ADDR && rootOf(d.claimer) === target,
+    );
+    return { address, dropsCreated, dropsClaimed };
   } catch {
     return null;
   }
