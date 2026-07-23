@@ -117,12 +117,10 @@ export default function HomePage() {
             // Must go through parseDropHint, not a startsWith: a riddle-locked
             // private drop is "[R][P:…]", which no prefix test would catch.
             if (parseDropHint(d.hint).isPrivate) return false;
-            if (d.status === DROP_STATUS.Active) return true;
-            const now = Math.floor(Date.now() / 1000);
-            const cutoff = now - 24 * 60 * 60;
-            // claimed drops: use claimedAt; expired/reclaimed drops: use expiry
-            if (d.claimedAt > 0) return d.claimedAt > cutoff;
-            return d.expiry > cutoff;
+            // Only LIVE drops belong on the map. Claimed/reclaimed pins just add
+            // noise and tease hunters with money that's already gone — drop them
+            // the moment they're no longer claimable (also hides expired ones).
+            return d.status === DROP_STATUS.Active && d.expiry > Math.floor(Date.now() / 1000);
           })}
           onDropClick={handleDropClick}
           userLocation={userLoc}

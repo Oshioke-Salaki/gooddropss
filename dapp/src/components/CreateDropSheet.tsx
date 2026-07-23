@@ -22,6 +22,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
 import { inviteUrl } from "@/lib/referral";
 import { SITE_URL } from "@/lib/site";
+import { scatterPoints } from "@/lib/scatter";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
   normalizeAnswer, riddleOwnershipMessage,
@@ -41,7 +42,11 @@ const DURATIONS = [
   { label: "30d", seconds: 2_592_000 },
 ];
 
-type Status = "idle" | "approving" | "dropping" | "riddle" | "riddleFailed" | "done" | "error";
+// Multi-drop: scatter up to this many identical drops around one spot. Capped
+// because each is a separate signed transaction — beyond ~20 it's a slog.
+const MAX_MULTI = 20;
+
+type Status = "idle" | "approving" | "dropping" | "riddle" | "riddleFailed" | "multi" | "done" | "error";
 
 // A riddle can only be attached AFTER createDrop is mined (dropId doesn't exist
 // before that). If the signature is rejected or the POST fails, the drop is
@@ -125,6 +130,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
 
   // ── Form fields ────────────────────────────────────────────────────────────
   const [amount,        setAmount]        = useState("10");
+  const [quantity,      setQuantity]      = useState(1);
+  const [multiProgress, setMultiProgress] = useState<{ done: number; failed: number; total: number } | null>(null);
   const [duration,      setDuration]      = useState(86_400);
   const [hint,          setHint]          = useState("");
   const [status,        setStatus]        = useState<Status>("idle");
@@ -161,11 +168,19 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
   }, [open]);
 
+  // Multi-drop and private/riddle are mutually exclusive — a scattered batch can't
+  // be one private link or share one riddle. Force those off when going multi.
+  useEffect(() => {
+    if (quantity > 1 && !campaignId) { setIsPrivate(false); setHasRiddle(false); }
+  }, [quantity, campaignId]);
+
   const reset = useCallback(() => {
     setStatus("idle");
     setErrMsg("");
     setHint("");
     setAmount("10");
+    setQuantity(1);
+    setMultiProgress(null);
     setDuration(86_400);
     setLat(null);
     setLng(null);
@@ -201,6 +216,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       window.dispatchEvent(new CustomEvent("gd:setName"));
       return;
     }
+    // Multi-drop takes a different, batched path.
+    if (multiActive) { handleMultiDrop(); return; }
     // Never create a second drop while one is stranded — that would escrow the
     // user's G$ twice.
     if (pending) return;
@@ -345,6 +362,76 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
   }
 
+  // Multi-drop: one approval, then N createDrop txs scattered around the spot.
+  // Partial success is fine — each drop is independent; we report done/failed.
+  async function handleMultiDrop() {
+    if (!address || lat === null || lng === null) return;
+    if (amountWei <= 0n)     { setErrMsg("Enter a valid amount."); return; }
+    if (amountWei > maxDrop) { setErrMsg(`Maximum single drop is ${formatG$(maxDrop)} G$.`); return; }
+    if (amountWei < minDrop) { setErrMsg(`Minimum drop is ${formatG$(minDrop)} G$.`); return; }
+    if (totalWei > balance)  { setErrMsg(`Not enough G$ — ${qty} × ${formatG$(amountWei)} needs ${formatG$(totalWei)} G$.`); return; }
+    if (hint.length > hintMaxLen) { setErrMsg(`Clue is too long (max ${hintMaxLen} chars).`); return; }
+
+    const SKEW = 300;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
+    const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
+    const points = scatterPoints(lat, lng, qty, CLAIM_RADIUS_M);
+
+    setErrMsg("");
+    setMultiProgress({ done: 0, failed: 0, total: qty });
+    try {
+      // Approve the whole batch at once.
+      const allowance = await publicClient.readContract({
+        address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
+        args: [address, GOOD_DROPS_ADDRESS],
+      });
+      if (allowance < totalWei) {
+        setStatus("approving");
+        const approveTx = await writeContractAsync({
+          address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve",
+          args: [GOOD_DROPS_ADDRESS, maxUint256],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+      }
+
+      setStatus("multi");
+      let done = 0, failed = 0;
+      for (const pt of points) {
+        try {
+          const tx = await writeContractAsync({
+            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
+            args: [degToGps(pt.lat), degToGps(pt.lng), amountWei as bigint, expiry, hint],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: tx });
+          done++;
+        } catch (e: unknown) {
+          failed++;
+          const msg = (e as { message?: string })?.message ?? "";
+          setMultiProgress({ done, failed, total: qty });
+          // A rejected signature means the user wants to stop — don't prompt N times.
+          if (/reject|denied|cancel/i.test(msg)) break;
+          continue;
+        }
+        setMultiProgress({ done, failed, total: qty });
+      }
+      setStatus("done");
+    } catch (e: unknown) {
+      const err = e as { shortMessage?: string; message?: string };
+      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
+      setStatus("error");
+    }
+  }
+
+  function handleMultiShare() {
+    const nearest = nearbyLandmarks[0];
+    const loc = nearest ? `near ${nearest.name}` : placeName ? `near ${placeName}` : "at one spot";
+    const n = multiProgress?.done ?? qty;
+    const text = `I just scattered ${n} G$ drops ${loc} 🎯💰\n\nFirst come, first served — hunt them down on GoodDrops!\n\n${X_HANDLES}\n${X_HASHTAGS}`;
+    const url = address ? inviteUrl(SITE_URL, address) : SITE_URL;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank", "noopener,noreferrer");
+  }
+
   // Signs proof-of-ownership and stores the riddle. Returns false (and leaves the
   // sheet in "riddleFailed") if it couldn't — so the caller never falls through to
   // a success screen for a drop that's still locked.
@@ -402,12 +489,17 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     );
   }
 
-  const busy = status === "approving" || status === "dropping" || status === "riddle";
+  const busy = status === "approving" || status === "dropping" || status === "riddle" || status === "multi";
   const amountNum = parseFloat(amount);
   const amountWei = !isNaN(amountNum) && amountNum > 0
     ? parseUnits(amount, 18)
     : 0n;
-  const insufficientBalance = isConnected && !balanceFetching && amountWei > 0n && amountWei > balance;
+  // Multi-drop = scatter N identical drops around one spot. Not offered for
+  // campaign/private/riddle drops (those are inherently 1:1).
+  const multiActive = quantity > 1 && !campaignId;
+  const qty = Math.min(MAX_MULTI, Math.max(1, Math.floor(quantity) || 1));
+  const totalWei = amountWei * BigInt(qty);
+  const insufficientBalance = isConnected && !balanceFetching && totalWei > 0n && totalWei > balance;
   const overMax  = amountWei > 0n && amountWei > maxDrop;
   const underMin = amountWei > 0n && amountWei < minDrop;
   // Private prefix overhead: "[P:0x1234567890abcdef1234567890abcdef12345678]" = 46 chars
@@ -443,7 +535,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     status === "approving" ? "One moment…" :
     status === "dropping"  ? "Hiding…" :
     status === "riddle"    ? "Locking riddle…" :
+    status === "multi"     ? `Dropping ${multiProgress ? `${multiProgress.done + multiProgress.failed}/${multiProgress.total}` : ""}…` :
     status === "error"     ? "Try again" :
+    multiActive            ? `Drop ${qty} × ${amount || "?"} G$` :
     `Drop ${amount || "?"} G$`;
 
   return (
@@ -504,7 +598,55 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
           </div>
 
           {/* Success state */}
-          {status === "done" && (() => {
+          {status === "done" && multiProgress && (() => {
+            const { done, failed, total } = multiProgress;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{
+                  background: "#111", border: "2px solid #111",
+                  borderRadius: 20, boxShadow: "4px 4px 0 #BFFD00",
+                  padding: "28px 20px 22px", textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 52, marginBottom: 14, lineHeight: 1 }}>🎉</div>
+                  <p style={{ margin: "0 0 12px", fontWeight: 900, fontSize: 24, color: "#BFFD00", letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                    {done} {done === 1 ? "drop" : "drops"} scattered!
+                  </p>
+                  <div style={{
+                    display: "inline-flex", alignItems: "center", gap: 8,
+                    background: "#BFFD00", color: "#111", border: "2px solid #BFFD00",
+                    borderRadius: 100, padding: "6px 18px", fontWeight: 900, fontSize: 18, marginBottom: 10,
+                  }}>
+                    💰 {done} × {amount} G$
+                  </div>
+                  <p style={{ margin: "0 0 16px", fontSize: 13, color: "#888", fontWeight: 600 }}>
+                    {placeName ? `📍 ${placeName} · ` : ""}spread across ~{CLAIM_RADIUS_M}m
+                    {failed > 0 ? ` · ${failed} didn’t go through` : ""}
+                  </p>
+                  <button
+                    onClick={handleMultiShare}
+                    style={{
+                      width: "100%", padding: "12px", background: "transparent", color: "#BFFD00",
+                      border: "2px solid #BFFD00", borderRadius: 12, fontWeight: 800, fontSize: 14,
+                      cursor: "pointer", fontFamily: "inherit",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; e.currentTarget.style.color = "#111"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#BFFD00"; }}
+                  >
+                    <span>Post on 𝕏</span><span style={{ fontSize: 16 }}>↗</span>
+                  </button>
+                </div>
+                <button
+                  onClick={() => { onSuccess(); reset(); }}
+                  className="btn-brutal w-full py-4 rounded-xl font-black text-base bg-lime text-ink cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            );
+          })()}
+
+          {status === "done" && !multiProgress && (() => {
             const base = typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz";
             const shareUrl = createdDropId !== null
               ? `${base}/drop/${createdDropId}${privateToken ? `?k=${privateToken}` : ""}`
@@ -828,6 +970,51 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 )}
               </div>
 
+              {/* ── Multi-drop quantity (not for campaigns) ──────────────────── */}
+              {!campaignId && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-muted">How many drops</label>
+                    {multiActive && (
+                      <span className={clsx("text-xs font-semibold", insufficientBalance ? "text-danger" : "text-muted")}>
+                        Total: {formatG$(totalWei)} G$
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      disabled={qty <= 1}
+                      className="w-11 h-11 shrink-0 border-2 border-ink rounded-xl font-black text-xl bg-cream hover:bg-border disabled:opacity-40"
+                      aria-label="Fewer drops"
+                    >−</button>
+                    <input
+                      type="number" min={1} max={MAX_MULTI} value={quantity}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        setQuantity(isNaN(n) ? 1 : Math.min(MAX_MULTI, Math.max(1, n)));
+                      }}
+                      className="flex-1 min-w-0 text-center border-2 border-ink rounded-xl px-3 py-3 text-xl font-black bg-transparent outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.min(MAX_MULTI, q + 1))}
+                      disabled={qty >= MAX_MULTI}
+                      className="w-11 h-11 shrink-0 border-2 border-ink rounded-xl font-black text-xl bg-cream hover:bg-border disabled:opacity-40"
+                      aria-label="More drops"
+                    >+</button>
+                  </div>
+                  {multiActive ? (
+                    <p className="text-xs text-muted">
+                      {qty} × {formatG$(amountWei)} G$ scattered across ~{CLAIM_RADIUS_M}m so each is easy to spot and tap. Max {MAX_MULTI}. Private &amp; riddle are off for multi-drops.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted">Drop more than one at this spot — great for events. Each is its own transaction.</p>
+                  )}
+                </div>
+              )}
+
               {/* ── Expiry ───────────────────────────────────────────────────── */}
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted">Expires in</label>
@@ -899,8 +1086,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 </p>
               </div>
 
-              {/* ── Private drop toggle — hidden for campaign drops ───────── */}
-              {!campaignId && <div className="border-2 border-ink rounded-xl overflow-hidden">
+              {/* ── Private drop toggle — hidden for campaign & multi drops ─ */}
+              {!campaignId && !multiActive && <div className="border-2 border-ink rounded-xl overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setIsPrivate((p) => !p)}
@@ -947,8 +1134,8 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                 )}
               </div>}
 
-              {/* ── Riddle lock (optional) ─────────────────────────────────── */}
-              <div className="border-2 border-ink rounded-xl overflow-hidden">
+              {/* ── Riddle lock (optional) — hidden for multi drops ────────── */}
+              {!multiActive && <div className="border-2 border-ink rounded-xl overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setHasRiddle((r) => !r)}
@@ -1040,7 +1227,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                     )}
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* ── Error ────────────────────────────────────────────────────── */}
               {(status === "error" || errMsg) && (

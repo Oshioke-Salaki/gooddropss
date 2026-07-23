@@ -724,7 +724,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                           </>
                         ) : (
                           <p style={{ margin: 0, fontSize: 13, color: "#FF3B3B", fontWeight: 600 }}>
-                            This drop&apos;s riddle couldn&apos;t be loaded — it can&apos;t be claimed right now.
+                            The dropper hasn&apos;t finished setting up this riddle yet — it can&apos;t be claimed until they do. Check back soon.
                           </p>
                         )}
                       </div>
