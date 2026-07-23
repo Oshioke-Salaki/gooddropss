@@ -23,6 +23,7 @@ import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/lan
 import { inviteUrl } from "@/lib/referral";
 import { SITE_URL } from "@/lib/site";
 import { scatterPoints } from "@/lib/scatter";
+import { friendlyClaimError } from "@/lib/claimErrors";
 import {
   RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION,
   normalizeAnswer, riddleTokenMessage, newRiddleToken,
@@ -400,8 +401,9 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     }
   }
 
-  // Multi-drop: one approval, then N createDrop txs scattered around the spot.
-  // Partial success is fine — each drop is independent; we report done/failed.
+  // Multi-drop: one approval + ONE createManyDrops transaction that scatters N
+  // identical drops around the spot. Atomic on-chain (all-or-nothing), so it's a
+  // single signature instead of N.
   async function handleMultiDrop() {
     if (!address || lat === null || lng === null) return;
     if (amountWei <= 0n)     { setErrMsg("Enter a valid amount."); return; }
@@ -415,11 +417,13 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
     const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
     const points = scatterPoints(lat, lng, qty, CLAIM_RADIUS_M);
+    const lats = points.map((p) => degToGps(p.lat));
+    const lngs = points.map((p) => degToGps(p.lng));
 
     setErrMsg("");
     setMultiProgress({ done: 0, failed: 0, total: qty });
     try {
-      // Approve the whole batch at once.
+      // Approve the whole batch's total at once.
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
         args: [address, GOOD_DROPS_ADDRESS],
@@ -434,29 +438,17 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       }
 
       setStatus("multi");
-      let done = 0, failed = 0;
-      for (const pt of points) {
-        try {
-          const tx = await writeContractAsync({
-            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
-            args: [degToGps(pt.lat), degToGps(pt.lng), amountWei as bigint, expiry, hint],
-          });
-          await publicClient.waitForTransactionReceipt({ hash: tx });
-          done++;
-        } catch (e: unknown) {
-          failed++;
-          const msg = (e as { message?: string })?.message ?? "";
-          setMultiProgress({ done, failed, total: qty });
-          // A rejected signature means the user wants to stop — don't prompt N times.
-          if (/reject|denied|cancel/i.test(msg)) break;
-          continue;
-        }
-        setMultiProgress({ done, failed, total: qty });
-      }
+      const tx = await writeContractAsync({
+        address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createManyDrops",
+        args: [lats, lngs, amountWei as bigint, expiry, hint],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: tx });
+      setMultiProgress({ done: qty, failed: 0, total: qty });
       setStatus("done");
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); setMultiProgress(null); return; }
+      setErrMsg(fe.message);
       setStatus("error");
     }
   }
@@ -569,7 +561,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     status === "approving" ? "One moment…" :
     status === "dropping"  ? "Hiding…" :
     status === "riddle"    ? "Locking riddle…" :
-    status === "multi"     ? `Dropping ${multiProgress ? `${multiProgress.done + multiProgress.failed}/${multiProgress.total}` : ""}…` :
+    status === "multi"     ? `Scattering ${qty} drops…` :
     status === "error"     ? "Try again" :
     multiActive            ? `Drop ${qty} × ${amount || "?"} G$` :
     `Drop ${amount || "?"} G$`;
@@ -1041,10 +1033,10 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                   </div>
                   {multiActive ? (
                     <p className="text-xs text-muted">
-                      {qty} × {formatG$(amountWei)} G$ scattered across ~{CLAIM_RADIUS_M}m so each is easy to spot and tap. Max {MAX_MULTI}. Private &amp; riddle are off for multi-drops.
+                      {qty} × {formatG$(amountWei)} G$ scattered across ~{CLAIM_RADIUS_M}m so each is easy to spot and tap — all in one transaction. Max {MAX_MULTI}. Private &amp; riddle are off for multi-drops.
                     </p>
                   ) : (
-                    <p className="text-xs text-muted">Drop more than one at this spot — great for events. Each is its own transaction.</p>
+                    <p className="text-xs text-muted">Drop more than one at this spot — great for events. All in a single transaction.</p>
                   )}
                 </div>
               )}

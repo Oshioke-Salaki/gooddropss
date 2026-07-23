@@ -7,6 +7,8 @@
     "test": "hardhat test",
     "deploy:celo": "hardhat run scripts/deploy.js --network celo",
     "deploy:alfajores": "hardhat run scripts/deploy.js --network alfajores",
+    "upgrade:celo": "hardhat run scripts/upgrade.js --network celo",
+    "upgrade:alfajores": "hardhat run scripts/upgrade.js --network alfajores",
     "verify:celo": "hardhat verify --network celo",
     "flatten": "hardhat flatten contracts/GoodDrops.sol > FlatGoodDrops.sol"
   },

@@ -41,6 +41,11 @@ export const metadata: Metadata = {
   creator: SITE_NAME,
   publisher: SITE_NAME,
   category: "games",
+  // Domain-ownership verification (TalentApp).
+  other: {
+    "talentapp:project_verification":
+      "6cf26c7776d62bdb274fb9a3a7f4a7e3e8f3f77a89ce8e11a2736438e0a01f8b18e51b2942fa281ef7e3b1377fc53906e79e4160af321ed13b949d8e5792c272",
+  },
   alternates: { canonical: "/" },
   robots: {
     index: true,

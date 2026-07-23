@@ -89,6 +89,9 @@ contract GoodDrops is
 
     uint256 public constant MAX_HINT_LENGTH = 200;
 
+    // Max drops one createManyDrops() call may scatter — bounds gas per tx.
+    uint256 public constant MAX_BATCH_DROPS = 20;
+
     // GPS bounds (integer degrees × 1e6)
     int32 public constant LAT_MAX =  90_000_000;
     int32 public constant LAT_MIN = -90_000_000;
@@ -135,6 +138,8 @@ contract GoodDrops is
     error IdentityContractNotSet();
     error CannotRescueLockedTokens();
     error MinExceedsMax();
+    error InvalidBatch();       // batch size is 0 or exceeds MAX_BATCH_DROPS
+    error LengthMismatch();     // lats.length != lngs.length
     error GpsProofRequired();
     error InvalidGpsProof();
     error ProofExpired();
@@ -280,6 +285,80 @@ contract GoodDrops is
         gToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit DropCreated(dropId, msg.sender, lat, lng, amount, expiry, hint);
+    }
+
+    /**
+     * @notice Create many identical drops (same amount, expiry and hint) at
+     *         different coordinates in ONE transaction — e.g. scattering a
+     *         giveaway across a spot. Pulls the total G$ in a single transfer and
+     *         emits one DropCreated per drop, so indexers and the app treat each
+     *         exactly like an individually-created drop. All-or-nothing: any bad
+     *         input reverts the whole call, so no partial batch or partial escrow.
+     *
+     * @param lats    Latitudes  (deg × 1e6), one per drop (1..MAX_BATCH_DROPS).
+     * @param lngs    Longitudes (deg × 1e6); must match `lats` in length.
+     * @param amount  G$ locked in EACH drop (within [minDropAmount, maxDropAmount]).
+     * @param expiry  Shared expiry for every drop (within the allowed window).
+     * @param hint    Shared clue for every drop.
+     * @return firstId  Id of the first drop (ids run firstId .. firstId+count-1).
+     * @return count    Number of drops created (== lats.length).
+     */
+    function createManyDrops(
+        int32[]  calldata lats,
+        int32[]  calldata lngs,
+        uint96   amount,
+        uint40   expiry,
+        string   calldata hint
+    ) external whenNotPaused nonReentrant returns (uint256 firstId, uint256 count) {
+        // ── Validations (shared params checked once) ────────────────────────
+        uint256 n = lats.length;
+        if (n == 0 || n > MAX_BATCH_DROPS) revert InvalidBatch();
+        if (n != lngs.length)              revert LengthMismatch();
+
+        if (amount < minDropAmount || amount > maxDropAmount) revert InvalidAmount();
+
+        uint40 now40 = uint40(block.timestamp);
+        if (expiry < now40 + minExpiryDuration || expiry > now40 + maxExpiryDuration) {
+            revert InvalidExpiry();
+        }
+
+        if (bytes(hint).length > MAX_HINT_LENGTH) revert HintTooLong();
+
+        // ── Effects ─────────────────────────────────────────────────────────
+        firstId = dropCount + 1;
+
+        for (uint256 i = 0; i < n; i++) {
+            int32 lat = lats[i];
+            int32 lng = lngs[i];
+            if (lat < LAT_MIN || lat > LAT_MAX || lng < LNG_MIN || lng > LNG_MAX) {
+                revert InvalidCoordinates();
+            }
+
+            uint256 dropId = ++dropCount;
+            drops[dropId] = Drop({
+                dropper:   msg.sender,
+                amount:    amount,
+                claimer:   address(0),
+                expiry:    expiry,
+                claimedAt: 0,
+                status:    DropStatus.Active,
+                lat:       lat,
+                lng:       lng,
+                hint:      hint
+            });
+
+            emit DropCreated(dropId, msg.sender, lat, lng, amount, expiry, hint);
+        }
+
+        uint256 total = uint256(amount) * n;
+        totalLocked += total;
+
+        // ── Interactions ────────────────────────────────────────────────────
+        // Single transfer for the whole batch. State is fully updated first
+        // (checks-effects-interactions) and nonReentrant guards the call.
+        gToken.safeTransferFrom(msg.sender, address(this), total);
+
+        count = n;
     }
 
     // ─── Core: Claim ─────────────────────────────────────────────────────────

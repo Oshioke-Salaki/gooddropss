@@ -102,6 +102,23 @@ export const GOOD_DROPS_ABI = [
     outputs: [],
   },
   {
+    // Batch: N identical drops at different coordinates in one transaction.
+    name: "createManyDrops",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "lats", type: "int32[]" },
+      { name: "lngs", type: "int32[]" },
+      { name: "amount", type: "uint96" },
+      { name: "expiry", type: "uint40" },
+      { name: "hint", type: "string" },
+    ],
+    outputs: [
+      { name: "firstId", type: "uint256" },
+      { name: "count", type: "uint256" },
+    ],
+  },
+  {
     name: "claim",
     type: "function",
     stateMutability: "nonpayable",
