@@ -46,7 +46,7 @@ export default function AdminReportsPage() {
       const res = await fetch("/api/moderation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, dropId }),
+        body: JSON.stringify({ action, dropId: String(dropId) }),
       });
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.error ?? "Action failed"); }
       window.dispatchEvent(new CustomEvent("gd:moderation-updated"));

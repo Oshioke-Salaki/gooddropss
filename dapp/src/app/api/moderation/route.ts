@@ -32,10 +32,13 @@ export async function GET() {
       redis.smembers(keys.reportedDropsIndex()),
       redis.smembers(keys.hiddenDrops()),
     ]);
-    const hiddenSet = new Set(hidden ?? []);
+    // Upstash auto-parses numeric-looking members to numbers on read — normalise
+    // every drop id back to a string so the whole API speaks strings.
+    const hiddenSet = new Set((hidden ?? []).map(String));
 
     const reported: ReportedDrop[] = [];
-    for (const dropId of dropIds ?? []) {
+    for (const rawId of dropIds ?? []) {
+      const dropId = String(rawId);
       const reporters = await redis.smembers(keys.dropReporters(dropId));
       if (!reporters || reporters.length === 0) continue;
       const raw = await redis.mget<(string | DropReport | null)[]>(
@@ -53,7 +56,7 @@ export async function GET() {
     }
     // Most recently-reported first.
     reported.sort((a, b) => b.lastTs - a.lastTs);
-    return NextResponse.json({ reported, hidden: Array.from(hiddenSet) });
+    return NextResponse.json({ reported, hidden: Array.from(hiddenSet).map(String) });
   } catch (e) {
     console.error("[moderation/get]", e);
     return NextResponse.json({ error: "Could not load queue" }, { status: 500 });
@@ -66,12 +69,15 @@ export async function POST(req: NextRequest) {
   if (!(await isAdminAuthed()))
     return NextResponse.json({ error: "Not authorised" }, { status: 403 });
 
-  let body: { action?: string; dropId?: string };
+  let body: { action?: string; dropId?: string | number };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid body" }, { status: 400 }); }
 
-  const { action, dropId } = body;
-  if (!dropId || typeof dropId !== "string" || !/^[0-9]{1,20}$/.test(dropId))
+  const { action } = body;
+  // Coerce to string: Upstash auto-JSON-parses numeric-looking set members on read,
+  // so a drop id round-trips back as a NUMBER (585) — accept both.
+  const dropId = body.dropId == null ? "" : String(body.dropId);
+  if (!/^[0-9]{1,20}$/.test(dropId))
     return NextResponse.json({ error: "Invalid drop" }, { status: 400 });
 
   const redis = getRedis();
