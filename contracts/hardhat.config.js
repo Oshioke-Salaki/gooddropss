@@ -2,6 +2,16 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@openzeppelin/hardhat-upgrades");
 require("dotenv").config();
 
+// Only pass PRIVATE_KEY to live networks when it's a real 32-byte hex key.
+// A placeholder / empty value would otherwise make Hardhat throw at config load,
+// blocking even `compile` and `test` (which never touch the live networks).
+const RAW_KEY = process.env.PRIVATE_KEY || "";
+const PK = /^0x[0-9a-fA-F]{64}$/.test(RAW_KEY)
+  ? [RAW_KEY]
+  : /^[0-9a-fA-F]{64}$/.test(RAW_KEY)
+    ? ["0x" + RAW_KEY]
+    : [];
+
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
@@ -21,12 +31,12 @@ module.exports = {
   networks: {
     alfajores: {
       url: "https://rpc.ankr.com/celo_alfajores",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: PK,
       chainId: 44787,
     },
     celo: {
       url: "https://forno.celo.org",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      accounts: PK,
       chainId: 42220,
     },
   },

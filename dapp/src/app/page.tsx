@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { LandmarkCreator } from "@/components/LandmarkCreator";
+import { checkBadgesAfterClaim } from "@/components/BadgeCelebration";
 import { LandmarkManageSheet } from "@/components/LandmarkManageSheet";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
@@ -303,7 +304,7 @@ export default function HomePage() {
           drop={huntingDrop}
           userLocation={userLoc}
           onClose={() => setHuntingDrop(null)}
-          onSuccess={() => { setHuntingDrop(null); fetchDrops(); }}
+          onSuccess={() => { setHuntingDrop(null); fetchDrops(); checkBadgesAfterClaim(address); }}
         />
       )}
 
@@ -326,7 +327,7 @@ export default function HomePage() {
         drop={selectedDrop}
         userLocation={userLoc}
         onClose={() => setSelectedDrop(null)}
-        onSuccess={() => { if (selectedDrop) markClaimed(selectedDrop.id); setSelectedDrop(null); }}
+        onSuccess={() => { if (selectedDrop) markClaimed(selectedDrop.id); setSelectedDrop(null); checkBadgesAfterClaim(address); }}
         onHunt={(drop) => { setSelectedDrop(null); setHuntingDrop(drop); }}
       />
 

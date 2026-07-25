@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { useBalance, useSignMessage, usePublicClient, useWalletClient } from "wagmi";
-import { formatUnits } from "viem";
-import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User } from "lucide-react";
+import { useBalance, useSignMessage, usePublicClient, useWalletClient, useWriteContract } from "wagmi";
+import { formatUnits, parseUnits, isAddress } from "viem";
+import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User, Send, ArrowUpRight, ExternalLink } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
+import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
 import { friendlyUbiError } from "@/lib/claimErrors";
 import { ClaimSDK } from "@goodsdks/citizen-sdk";
@@ -170,6 +171,53 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  // ── Send G$ (ERC-20 transfer, send-only) ──────────────────────────────────
+  const [sendOpen,    setSendOpen]    = useState(false);
+  const [recipient,   setRecipient]   = useState("");
+  const [amount,      setAmount]      = useState("");
+  const [sendStatus,  setSendStatus]  = useState<"idle"|"sending"|"done"|"error">("idle");
+  const [sendErr,     setSendErr]     = useState("");
+  const [txHash,      setTxHash]      = useState<`0x${string}` | "">("");
+  const { writeContractAsync }        = useWriteContract();
+
+  function resetSend() {
+    setRecipient(""); setAmount(""); setSendErr(""); setTxHash(""); setSendStatus("idle");
+  }
+
+  async function handleSend() {
+    setSendErr("");
+    const to = recipient.trim();
+    if (!isAddress(to)) { setSendErr("Enter a valid wallet address (0x…)."); return; }
+    if (to.toLowerCase() === address.toLowerCase()) { setSendErr("You can't send G$ to your own address."); return; }
+
+    let amountWei: bigint;
+    try { amountWei = parseUnits(amount.trim(), 18); }
+    catch { setSendErr("Enter a valid amount."); return; }
+    if (amountWei <= 0n)   { setSendErr("Amount must be greater than 0."); return; }
+    if (amountWei > balance) { setSendErr("That's more G$ than you have."); return; }
+
+    setSendStatus("sending");
+    try {
+      const hash = await writeContractAsync({
+        address: G_TOKEN_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: "transfer",
+        args: [to as `0x${string}`, amountWei],
+      });
+      setTxHash(hash);
+      const rc = await publicClient?.waitForTransactionReceipt({ hash });
+      if (rc && rc.status === "reverted") { setSendStatus("error"); setSendErr("Transfer reverted on-chain."); return; }
+      setSendStatus("done");
+      // Nudge every balance instance to refetch immediately.
+      window.dispatchEvent(new Event("gd:verified"));
+    } catch (e: unknown) {
+      const err = e as { shortMessage?: string; message?: string };
+      const msg = err.shortMessage ?? err.message ?? "Transfer failed.";
+      setSendStatus("error");
+      setSendErr(/insufficient funds/i.test(msg) ? "Not enough CELO for gas — top up a little CELO first." : msg);
+    }
   }
 
   const checkIcon = {
@@ -434,6 +482,171 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#888", marginLeft: 3 }}>CELO</span>
               </span>
             </div>
+          </div>
+
+          {/* ── Send G$ ──────────────────────────────────────────────────────── */}
+          <div style={{ borderTop: "1.5px solid #e8e6e0" }}>
+            {!sendOpen ? (
+              <button
+                onClick={() => { setSendOpen(true); resetSend(); }}
+                style={{
+                  width: "100%", padding: "12px 18px", background: "transparent",
+                  border: "none", display: "flex", alignItems: "center", gap: 10,
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                }}
+              >
+                <div style={{
+                  width: 34, height: 34, background: "#111",
+                  border: "2px solid #111", borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  <ArrowUpRight size={17} color="#BFFD00" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: 0, fontWeight: 800, fontSize: 14, color: "#111" }}>Send G$</p>
+                  <p style={{ margin: 0, fontSize: 10, color: "#888", fontWeight: 600 }}>Transfer G$ to any wallet</p>
+                </div>
+                <span style={{ fontSize: 18, color: "#888", lineHeight: 1 }}>›</span>
+              </button>
+            ) : (
+              <div style={{ padding: "14px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <p style={{ margin: 0, fontWeight: 900, fontSize: 14, color: "#111", display: "flex", alignItems: "center", gap: 6 }}>
+                    <Send size={14} /> Send G$
+                  </p>
+                  <button
+                    onClick={() => { setSendOpen(false); resetSend(); }}
+                    style={{
+                      width: 26, height: 26, background: "#fff", border: "2px solid #111",
+                      borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                    }}
+                  >
+                    <X size={13} color="#111" />
+                  </button>
+                </div>
+
+                {sendStatus === "done" ? (
+                  <div style={{ textAlign: "center", padding: "6px 0 2px" }}>
+                    <div style={{ fontSize: 34, lineHeight: 1 }}>✅</div>
+                    <p style={{ margin: "8px 0 2px", fontWeight: 900, fontSize: 15, color: "#111" }}>
+                      Sent {amount} G$
+                    </p>
+                    <p style={{ margin: 0, fontSize: 11, color: "#888", fontFamily: "monospace" }}>
+                      to {recipient.slice(0, 6)}…{recipient.slice(-4)}
+                    </p>
+                    {txHash && (
+                      <a
+                        href={`https://celoscan.io/tx/${txHash}`}
+                        target="_blank" rel="noopener noreferrer"
+                        style={{
+                          marginTop: 10, display: "inline-flex", alignItems: "center", gap: 5,
+                          fontSize: 11, fontWeight: 800, color: "#111", textDecoration: "none",
+                          border: "2px solid #111", borderRadius: 8, padding: "5px 10px", background: "#fff",
+                        }}
+                      >
+                        View on Celoscan <ExternalLink size={11} />
+                      </a>
+                    )}
+                    <button
+                      onClick={resetSend}
+                      style={{
+                        marginTop: 12, width: "100%", padding: "9px",
+                        background: "#BFFD00", color: "#111", border: "2px solid #111",
+                        borderRadius: 10, boxShadow: "2px 2px 0 #111", fontWeight: 800, fontSize: 13,
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      Send another
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Recipient */}
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "#888", marginBottom: 4 }}>
+                      Recipient wallet
+                    </label>
+                    <input
+                      type="text"
+                      value={recipient}
+                      onChange={(e) => { setRecipient(e.target.value.trim()); setSendErr(""); }}
+                      placeholder="0x…"
+                      spellCheck={false}
+                      disabled={sendStatus === "sending"}
+                      style={{
+                        width: "100%", border: "2px solid #111", borderRadius: 10,
+                        padding: "9px 11px", fontSize: 13, fontWeight: 600, fontFamily: "monospace",
+                        background: "#fff", outline: "none", boxSizing: "border-box",
+                      }}
+                    />
+
+                    {/* Amount */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "12px 0 4px" }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: "#888" }}>Amount</label>
+                      <button
+                        onClick={() => setAmount(formatUnits(balance, 18))}
+                        disabled={sendStatus === "sending"}
+                        style={{
+                          background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
+                          fontSize: 11, fontWeight: 800, color: "#111", padding: 0,
+                        }}
+                      >
+                        Balance: {formatG$(balance)} G$ · <span style={{ textDecoration: "underline" }}>Max</span>
+                      </button>
+                    </div>
+                    <div style={{
+                      display: "flex", alignItems: "center", border: "2px solid #111",
+                      borderRadius: 10, background: "#fff", overflow: "hidden",
+                    }}>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => { setAmount(e.target.value); setSendErr(""); }}
+                        placeholder="0.00"
+                        min="0"
+                        disabled={sendStatus === "sending"}
+                        style={{
+                          flex: 1, border: "none", outline: "none", padding: "9px 11px",
+                          fontSize: 15, fontWeight: 800, background: "transparent", fontFamily: "inherit",
+                          minWidth: 0,
+                        }}
+                      />
+                      <span style={{ padding: "0 12px", fontWeight: 900, fontSize: 13, color: "#888" }}>G$</span>
+                    </div>
+
+                    {sendErr && (
+                      <p style={{ margin: "8px 0 0", fontSize: 11, fontWeight: 700, color: "#ef4444" }}>{sendErr}</p>
+                    )}
+
+                    <button
+                      onClick={handleSend}
+                      disabled={sendStatus === "sending" || !recipient || !amount}
+                      style={{
+                        marginTop: 12, width: "100%", padding: "11px",
+                        background: sendStatus === "sending" || !recipient || !amount ? "#eee" : "#BFFD00",
+                        color: sendStatus === "sending" || !recipient || !amount ? "#aaa" : "#111",
+                        border: "2px solid",
+                        borderColor: sendStatus === "sending" || !recipient || !amount ? "#ddd" : "#111",
+                        borderRadius: 10,
+                        boxShadow: sendStatus === "sending" || !recipient || !amount ? "none" : "2px 2px 0 #111",
+                        fontWeight: 800, fontSize: 14,
+                        cursor: sendStatus === "sending" || !recipient || !amount ? "not-allowed" : "pointer",
+                        fontFamily: "inherit",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                      }}
+                    >
+                      {sendStatus === "sending"
+                        ? <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Sending…</>
+                        : <><Send size={14} /> Send G$</>
+                      }
+                    </button>
+                    <p style={{ margin: "8px 0 0", fontSize: 10, color: "#aaa", textAlign: "center" }}>
+                      Sends on Celo · a tiny bit of CELO covers gas
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ── UBI / Engagement Rewards ──────────────────────────────────────── */}

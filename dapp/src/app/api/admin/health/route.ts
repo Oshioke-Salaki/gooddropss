@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
+import { createPublicClient, http, formatEther, parseEther } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
+import { antispoofMode } from "@/lib/antispoof";
+import { GOOD_DROPS_BADGES_ADDRESS, GOOD_DROPS_BADGES_ABI } from "@/lib/contracts";
 
 export const runtime = "nodejs";
 
@@ -98,18 +103,75 @@ export async function GET() {
     detail: has(process.env.GPS_SIGNER_KEY) ? "Set — proximity claims can be signed." : "Missing — GPS-gated claims won't sign.",
   });
 
+  // ── Anti-spoof mode ───────────────────────────────────────────────────────
+  const spoofMode = antispoofMode();
+  checks.push({
+    key: "antispoof", label: "Anti-spoof (presence proof)",
+    status: spoofMode === "enforce" ? "ok" : spoofMode === "shadow" ? "warn" : "error",
+    detail: spoofMode === "enforce"
+      ? "Enforcing — spoofed claims are rejected."
+      : spoofMode === "shadow"
+      ? "Shadow mode — logging suspicious claims but not blocking. Review flags, then set ANTISPOOF_MODE=enforce."
+      : "OFF — presence is spoofable. Set ANTISPOOF_MODE=shadow.",
+  });
+
+  // ── Badge minting (signer address must match the on-chain badgeSigner) ─────
+  const badgeSignerKey = process.env.BADGE_SIGNER_KEY as `0x${string}` | undefined;
+  if (!badgeSignerKey) {
+    checks.push({ key: "badgeMint", label: "Badge minting", status: "off", detail: "BADGE_SIGNER_KEY unset — on-chain badge minting disabled (off-chain badges still work)." });
+  } else {
+    try {
+      const client = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
+      const onChainSigner = await client.readContract({
+        address: GOOD_DROPS_BADGES_ADDRESS, abi: GOOD_DROPS_BADGES_ABI, functionName: "badgeSigner",
+      });
+      const local = privateKeyToAccount(badgeSignerKey).address;
+      const match = onChainSigner.toLowerCase() === local.toLowerCase();
+      checks.push({
+        key: "badgeMint", label: "Badge minting",
+        status: match ? "ok" : "error",
+        detail: match ? "Signer matches on-chain badgeSigner." : `MISMATCH: contract expects ${onChainSigner.slice(0, 10)}… but BADGE_SIGNER_KEY is ${local.slice(0, 10)}…`,
+      });
+    } catch {
+      checks.push({ key: "badgeMint", label: "Badge minting", status: "warn", detail: "Configured but couldn't read on-chain badgeSigner (RPC / wrong address?)." });
+    }
+  }
+
+  // ── Gas faucet ────────────────────────────────────────────────────────────
+  const faucetKey = process.env.GAS_FAUCET_KEY as `0x${string}` | undefined;
+  if (!faucetKey) {
+    checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "off", detail: "GAS_FAUCET_KEY unset — hunters with 0 CELO can't pay claim gas." });
+  } else {
+    try {
+      const client = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
+      const account = privateKeyToAccount(faucetKey);
+      const bal = await client.getBalance({ address: account.address });
+      const low = bal < parseEther("2");
+      checks.push({
+        key: "gasFaucet", label: "Gas top-up faucet",
+        status: low ? "warn" : "ok",
+        detail: `${Number(formatEther(bal)).toFixed(2)} CELO in ${account.address.slice(0, 8)}…${low ? " — LOW, refill soon." : "."}`,
+      });
+    } catch {
+      checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "warn", detail: "Configured but balance check failed (RPC)." });
+    }
+  }
+
   // ── Operational stats (only if Redis is live) ────────────────────────────
   let stats: Record<string, number> | null = null;
   if (redis && redisOk) {
     try {
-      const [subscribers, huntersSharingLocation, reportedDrops, hiddenDrops, landmarks] = await Promise.all([
+      const today = new Date().toISOString().slice(0, 10);
+      const [subscribers, huntersSharingLocation, reportedDrops, hiddenDrops, landmarks, spoofFlags, gasToday] = await Promise.all([
         redis.scard(keys.subscribersIndex()),
         redis.hlen(keys.huntersLoc()),
         redis.scard(keys.reportedDropsIndex()),
         redis.scard(keys.hiddenDrops()),
         redis.scard(keys.landmarksIndex()),
+        redis.llen(keys.spoofFlags()),
+        redis.get<number>(keys.gasDaily(today)).then((n) => Number(n ?? 0)),
       ]);
-      stats = { subscribers, huntersSharingLocation, reportedDrops, hiddenDrops, landmarks };
+      stats = { subscribers, huntersSharingLocation, reportedDrops, hiddenDrops, landmarks, spoofFlags, gasTopupsToday: gasToday };
     } catch { /* stats are best-effort */ }
   }
 

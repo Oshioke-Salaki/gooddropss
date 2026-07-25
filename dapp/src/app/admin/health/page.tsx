@@ -18,6 +18,8 @@ const STAT_LABELS: Record<string, string> = {
   reportedDrops: "Reported drops",
   hiddenDrops: "Hidden drops",
   landmarks: "Landmarks",
+  spoofFlags: "Spoof flags (log)",
+  gasTopupsToday: "Gas top-ups today",
 };
 
 export default function AdminHealthPage() {

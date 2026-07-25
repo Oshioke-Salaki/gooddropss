@@ -21,6 +21,7 @@ import {
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
+import { fireChestReward } from "@/components/ChestReward";
 import { UserHandle } from "@/components/UserHandle";
 import { Celebration } from "@/components/Celebration";
 import { ShareableClaimCard } from "@/components/ShareableClaimCard";
@@ -62,6 +63,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const profile     = useProfile(address);
   const myUsername  = profile?.username ?? null;
   const [reporting, setReporting] = useState(false);
+  const [nearby, setNearby] = useState(0);
   // Nudge to set a name after a win — only once we've confirmed there isn't one.
   const needsName   = !!address && profile !== undefined && !profile?.username;
   const { authenticated } = useAuth();
@@ -102,7 +104,21 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     setStatus("idle");
     setErrMsg("");
     setAnswer("");
+    setNearby(0);
   }, [drop?.id]);
+
+  // Aggregate "hunters nearby" urgency — count only, never who or where.
+  useEffect(() => {
+    if (!drop || drop.status !== DROP_STATUS.Active) return;
+    const lat = gpsToDeg(drop.lat), lng = gpsToDeg(drop.lng);
+    if (lat === 0 && lng === 0) return; // private drop — coords hidden
+    let alive = true;
+    fetch(`/api/hunters-nearby?lat=${lat}&lng=${lng}${address ? `&exclude=${address.toLowerCase()}` : ""}`)
+      .then((r) => r.json())
+      .then((d) => { if (alive && typeof d.count === "number") setNearby(d.count); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [drop?.id, drop?.status, drop?.lat, drop?.lng, address]);
 
   const dropLat = drop ? gpsToDeg(drop.lat) : 0;
   const dropLng = drop ? gpsToDeg(drop.lng) : 0;
@@ -172,6 +188,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      if (drop) fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
       if (address) {
         fetch("/api/engagement", {
           method: "POST",
@@ -400,6 +417,14 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   <span style={{ fontSize: 11, color: "#555" }}>
                     by <UserHandle address={drop.dropper} />
                   </span>
+                  {isActive && nearby > 0 && (
+                    <span
+                      title="Opted-in hunters active near here — be quick!"
+                      style={{ background: "#FF640020", color: "#FF8A3D", fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 100 }}
+                    >
+                      🔥 {nearby === 1 ? "a hunter nearby" : `${nearby} hunters nearby`}
+                    </span>
+                  )}
                 </div>
               </div>
 

@@ -27,6 +27,24 @@ export const keys = {
   hunterNearbyCd:   (address: string) => `gd:hunter:nearbycd:${address.toLowerCase()}`,
   reverifyReminded: (address: string) => `gd:reverify:reminded:${address.toLowerCase()}`,
   reverifyCursor:   ()                => `gd:reverify:cursor`,
+  // Presence ledger — GPS-verified claims per identity root (the badge/set/API substrate)
+  presence:         (root: string)    => `gd:presence:${root.toLowerCase()}`,
+  // Presence badges — custom defs + sets (hashes), earned (zset: id→earnedAt), holder counts
+  badgeDefs:        ()                => `gd:badge:defs`,
+  badgeSets:        ()                => `gd:badge:sets`,
+  badgesOf:         (root: string)    => `gd:badges:${root.toLowerCase()}`,
+  badgeHolders:     (badgeId: string) => `gd:badge:holders:${badgeId}`,
+  badgeMinted:      (root: string)    => `gd:badge:minted:${root.toLowerCase()}`,   // Set of on-chain-minted badgeIds
+  badgeMintLock:    (root: string, badgeId: string) => `gd:badge:mintlock:${root.toLowerCase()}:${badgeId}`,
+  // Anti-spoof shadow log — flagged (not necessarily blocked) claim attempts
+  spoofFlags:       ()                => `gd:spoof:flags`,
+  // Gas top-up faucet — layered anti-drain limits
+  gasCooldown:      (root: string)    => `gd:gas:cd:${root.toLowerCase()}`,      // min gap between top-ups
+  gasMonthly:       (root: string)    => `gd:gas:month:${root.toLowerCase()}`,   // rolling 30d counter
+  gasDaily:         (date: string)    => `gd:gas:day:${date}`,                   // global circuit breaker
+  gasIpDaily:       (ip: string, date: string) => `gd:gas:ip:${ip}:${date}`,     // per-IP secondary cap
+  gasLock:          (root: string)    => `gd:gas:lock:${root.toLowerCase()}`,    // double-send guard
+  gasLog:           ()                => `gd:gas:log`,                           // audit trail (list)
   comments:         (dropId: string)  => `comments:${dropId}`,
   campaign:         (id: string)      => `gd:campaign:${id}`,
   campaignsByOwner: (addr: string)    => `gd:campaigns:owner:${addr.toLowerCase()}`,

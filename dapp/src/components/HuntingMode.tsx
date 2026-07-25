@@ -15,6 +15,7 @@ import {
   RARITY,
   openGoogleMapsWalking,
 } from "@/lib/utils";
+import { fireChestReward } from "@/components/ChestReward";
 import type { Drop, LatLng } from "@/types";
 
 interface Props {
@@ -115,6 +116,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setClaimStatus("done");
+      fireChestReward(formatG$(drop.amount), rarity);
     } catch (e: unknown) {
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setClaimStatus("idle"); setErrMsg(""); return; }

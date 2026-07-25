@@ -9,6 +9,8 @@ import { HunterStreakBadge } from "@/components/HunterStreakBadge";
 import { HunterRank } from "@/components/HunterRank";
 import { ShareableHunterCard } from "@/components/ShareableHunterCard";
 import { OwnProfileInvite } from "@/components/OwnProfileInvite";
+import { BadgeWall } from "@/components/BadgeWall";
+import { Avatar } from "@/components/Avatar";
 import { formatG$, shortAddr, getDropRarity, RARITY, gpsToDeg, type DropRarity } from "@/lib/utils";
 import { HunterFindsMap, type FindPoint } from "@/components/HunterFindsMap";
 import { type Drop } from "@/types";
@@ -69,12 +71,6 @@ function computeAchievements(created: Drop[], claimed: Drop[]): Achievement[] {
   ];
 }
 
-// ── Avatar ────────────────────────────────────────────────────────────────────
-
-function avatarColor(address: string): string {
-  const hue = parseInt(address.slice(2, 8), 16) % 360;
-  return `hsl(${hue}, 80%, 62%)`;
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -117,8 +113,13 @@ export default async function HunterPage({ params }: PageProps) {
 
   const achievements = computeAchievements(dropsCreated, dropsClaimed);
   const earned = achievements.filter((a) => a.earned);
-  const locked = achievements.filter((a) => !a.earned);
-  const avColor = avatarColor(address);
+  // Hunter rank tier drives the avatar ring + badge — status that visibly levels up.
+  const claimsN = dropsClaimed.length;
+  const tier =
+    claimsN >= 50 ? { ring: "#FFD700", badge: "👑" } :
+    claimsN >= 10 ? { ring: "#BFFD00", badge: "🔥" } :
+    claimsN >= 1  ? { ring: "#00CFFF", badge: "🌟" } :
+                    { ring: "#111",    badge: null as string | null };
 
   return (
     <div className="min-h-[100dvh] bg-cream text-ink pb-16" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
@@ -142,11 +143,8 @@ export default async function HunterPage({ params }: PageProps) {
 
         {/* Identity */}
         <div className="flex flex-col items-center text-center pt-9 pb-7 gap-3">
-          <div
-            className="w-20 h-20 lg:w-24 lg:h-24 rounded-full border-2 border-ink shadow-brutal flex items-center justify-center text-3xl lg:text-4xl font-black text-ink"
-            style={{ background: avColor }}
-          >
-            {address.slice(2, 4).toUpperCase()}
+          <div className="shadow-brutal rounded-full">
+            <Avatar address={address} username={username} size={92} ringColor={tier.ring} badge={tier.badge} />
           </div>
           <div>
             <UserHandle address={address} className="block font-black text-2xl leading-tight" />
@@ -154,7 +152,7 @@ export default async function HunterPage({ params }: PageProps) {
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <div className="bg-lime border-2 border-ink rounded-full px-3.5 py-1 text-xs font-black shadow-brutal-sm">
-              🏆 {earned.length} / {achievements.length} achievements
+              🏆 {earned.length} / {achievements.length} core badges
             </div>
             <HunterStreakBadge address={address} />
           </div>
@@ -227,32 +225,11 @@ export default async function HunterPage({ params }: PageProps) {
           </Section>
         )}
 
-        {/* Achievements */}
-        <Section title="Achievements">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
-            {earned.map(({ id, name, desc, Icon, color }) => (
-              <div key={id} className="flex items-center gap-2.5 bg-card border-2 border-ink rounded-xl p-3 shadow-brutal-sm">
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border-2 border-ink"
-                  style={{ background: color }}
-                >
-                  <Icon size={17} color="#111" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-black truncate">{name}</p>
-                  <p className="text-[10px] text-muted leading-tight">{desc}</p>
-                </div>
-              </div>
-            ))}
-            {locked.map(({ id, name, Icon }) => (
-              <div key={id} className="flex items-center gap-2.5 bg-border/40 border-2 border-dashed border-ink/25 rounded-xl p-3">
-                <div className="w-9 h-9 rounded-lg bg-border flex items-center justify-center shrink-0">
-                  <Icon size={17} className="text-muted opacity-50" />
-                </div>
-                <p className="text-xs font-bold text-muted opacity-70 truncate">{name}</p>
-              </div>
-            ))}
-          </div>
+        {/* Badges — presence-verified status. Replaces the old achievements grid
+            (builtin badges mirror those one-for-one, so nobody loses status);
+            fetching the wall also lazily awards anything newly eligible. */}
+        <Section title="Badges">
+          <BadgeWall address={address} />
         </Section>
 
         {/* Recent claims */}

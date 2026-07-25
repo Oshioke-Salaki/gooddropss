@@ -4,6 +4,32 @@ export const GOOD_DROPS_ADDRESS =
 export const G_TOKEN_ADDRESS =
   "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A" as const;
 
+// Soulbound presence badges (UUPS proxy on Celo). Interact with the PROXY.
+export const GOOD_DROPS_BADGES_ADDRESS =
+  "0x3835ad1846b196536e1af0504042565CD1911f35" as const;
+
+export const GOOD_DROPS_BADGES_ABI = [
+  {
+    type: "function", name: "mint", stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "badgeTypeId", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "sig", type: "bytes" },
+    ],
+    outputs: [{ name: "tokenId", type: "uint256" }],
+  },
+  {
+    type: "function", name: "hasBadge", stateMutability: "view",
+    inputs: [{ name: "", type: "address" }, { name: "", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function", name: "badgeSigner", stateMutability: "view",
+    inputs: [], outputs: [{ name: "", type: "address" }],
+  },
+] as const;
+
 export const CLAIM_RADIUS_M = 100;
 
 export const GOOD_DROPS_ABI = [

@@ -25,6 +25,8 @@ import { HuntingMode } from "@/components/HuntingMode";
 import { Celebration } from "@/components/Celebration";
 import { ShareableClaimCard } from "@/components/ShareableClaimCard";
 import { UserHandle } from "@/components/UserHandle";
+import { checkBadgesAfterClaim } from "@/components/BadgeCelebration";
+import { fireChestReward } from "@/components/ChestReward";
 import { DROP_STATUS, type Drop, type Campaign } from "@/types";
 
 // ── Fetch campaign for sponsored drops ────────────────────────────────────────
@@ -197,6 +199,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      checkBadgesAfterClaim(address); // fire-and-forget badge award + celebration
+      fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
       // Track hunting streak (fire-and-forget)
       if (address) {
         fetch("/api/engagement", {

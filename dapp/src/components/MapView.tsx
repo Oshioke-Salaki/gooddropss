@@ -4,7 +4,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import Supercluster from "supercluster";
 import { Navigation, MapPin, Plus, Minus } from "lucide-react";
-import { formatG$, gpsToDeg, getDropRarity, RARITY, isFlashDrop, haversineDistance, parseDropHint } from "@/lib/utils";
+import { formatG$, gpsToDeg, getDropRarity, isFlashDrop, haversineDistance, parseDropHint } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
 import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
@@ -33,152 +33,114 @@ function sizeWrapper(el: HTMLDivElement, px: number) {
   el.style.lineHeight = "0";
 }
 
+// Treasure chest palettes — the materials get richer (and the chest bigger +
+// shinier) with the drop's value, so a legendary reads as "obviously loaded"
+// from across the map.
+type ChestPalette = {
+  size: number; label: number;
+  body: string; bodyDark: string; lid: string; band: string; metal: string;
+  gem: string | null; glow: string; staticGlow: string; shimmer: boolean;
+};
+const CHESTS: Record<"common" | "uncommon" | "rare" | "legendary", ChestPalette> = {
+  common:    { size: 40, label: 10,   body: "#7c5230", bodyDark: "#583a20", lid: "#8f6238", band: "#4b5563", metal: "#9ca3af", gem: null,      glow: "",                     staticGlow: "drop-shadow(0 2px 3px rgba(0,0,0,.55))", shimmer: false },
+  uncommon:  { size: 46, label: 10.5, body: "#7c5230", bodyDark: "#583a20", lid: "#8f6238", band: "#b45309", metal: "#d97706", gem: null,      glow: "",                     staticGlow: "drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 4px rgba(217,119,6,.55))", shimmer: false },
+  rare:      { size: 56, label: 11.5, body: "#2f3e5c", bodyDark: "#1e2a40", lid: "#3a4d72", band: "#cbd5e1", metal: "#e2e8f0", gem: "#38bdf8", glow: "chest-glow-rare",      staticGlow: "", shimmer: false },
+  legendary: { size: 70, label: 13,   body: "#c99b26", bodyDark: "#87640f", lid: "#e0b73a", band: "#ffe066", metal: "#fff3b0", gem: "#ff5d8f", glow: "chest-glow-legendary", staticGlow: "", shimmer: true },
+};
+
+function chestSVG(p: ChestPalette): string {
+  const gem = p.gem
+    ? `<path d="M24 8.2 l3.6 3.3 -3.6 3.6 -3.6 -3.6 z" fill="${p.gem}" stroke="#fff" stroke-width="0.7"/>` +
+      `<path d="M24 8.2 l3.6 3.3 -3.6 0 z" fill="rgba(255,255,255,0.4)"/>`
+    : "";
+  return `<svg width="${p.size}" height="${p.size}" viewBox="0 0 48 46" ${p.staticGlow ? `style="filter:${p.staticGlow};"` : ""} xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="24" cy="43.2" rx="15" ry="2.6" fill="rgba(0,0,0,0.28)"/>
+    <rect x="7" y="23" width="34" height="18" rx="2.5" fill="${p.body}" stroke="${p.bodyDark}" stroke-width="1.4"/>
+    <path d="M7 24 Q7 12 24 12 Q41 12 41 24 Z" fill="${p.lid}" stroke="${p.bodyDark}" stroke-width="1.4"/>
+    <path d="M11 21 Q13.5 15.5 24 15.2" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.6" stroke-linecap="round"/>
+    <rect x="5.5" y="22.8" width="37" height="4.6" rx="1.3" fill="${p.band}"/>
+    <rect x="13.4" y="13" width="2.6" height="28" rx="1" fill="${p.band}" opacity="0.9"/>
+    <rect x="32" y="13" width="2.6" height="28" rx="1" fill="${p.band}" opacity="0.9"/>
+    <circle cx="9.6" cy="39" r="1.1" fill="${p.metal}"/><circle cx="38.4" cy="39" r="1.1" fill="${p.metal}"/>
+    <rect x="20.5" y="23.4" width="7" height="9" rx="1.6" fill="${p.metal}" stroke="${p.bodyDark}" stroke-width="0.8"/>
+    <circle cx="24" cy="27" r="1.3" fill="${p.bodyDark}"/><rect x="23.4" y="27" width="1.2" height="3" fill="${p.bodyDark}"/>
+    ${gem}
+  </svg>`;
+}
+
+function cornerTag(emoji: string, side: "left" | "right", color: string): string {
+  return `<div style="position:absolute;top:-3px;${side}:-5px;width:19px;height:19px;border-radius:50%;background:#111;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;pointer-events:none;z-index:2;">${emoji}</div>`;
+}
+
 function makeDropElement(drop: Drop): HTMLDivElement {
   const el = document.createElement("div");
   const active =
     drop.status === DROP_STATUS.Active &&
     drop.expiry > Math.floor(Date.now() / 1000);
 
+  // Non-live drops (expired-but-active edge cases) — a small dim opened chest.
   if (!active) {
-    const isClaimed = drop.status === DROP_STATUS.Claimed;
-    sizeWrapper(el, 36);
-    el.innerHTML = `<div style="
-      width:36px;height:36px;
-      background:#1a1a2a;
-      border:1.5px solid #333;
-      border-radius:50%;
-      display:flex;align-items:center;justify-content:center;
-      font-weight:700;font-size:14px;color:#444;
-      cursor:pointer;font-family:'Space Grotesk',sans-serif;
-      user-select:none;
-    ">${isClaimed ? "✓" : "↩"}</div>`;
+    sizeWrapper(el, 34);
+    el.innerHTML = `<div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px;opacity:0.45;filter:grayscale(1);cursor:pointer;user-select:none;">📭</div>`;
     return el;
   }
 
-  const flash = isFlashDrop(drop);
-  // Parse properly rather than prefix-testing the raw hint: a riddle-locked
-  // campaign drop is "[R][C:id]…", so /^\[C:/ would miss it and silently
-  // downgrade the pin.
+  const flash      = isFlashDrop(drop);
   const parsed     = parseDropHint(drop.hint);
   const isCampaign = parsed.campaignId !== null;
   const isChain    = parsed.chainNextId !== null || parsed.isChainLast;
   const hasRiddle  = parsed.hasRiddle;
   const rarity     = getDropRarity(drop.amount);
-  const r          = RARITY[rarity];
+  const p          = CHESTS[rarity];
   const label      = formatG$(drop.amount);
 
-  // Riddle drops get a puzzle tag so a hunter knows there's a question waiting
-  // before they walk a kilometre to find out.
-  const riddleTag = hasRiddle
-    ? `<div style="
-        position:absolute;top:-4px;right:-4px;
-        width:19px;height:19px;border-radius:50%;
-        background:#111;border:1.5px solid #BFFD00;
-        display:flex;align-items:center;justify-content:center;
-        font-size:10px;line-height:1;
-        pointer-events:none;
-      ">🧩</div>`
-    : "";
-  if (hasRiddle) el.style.position = "relative";
+  // Special-type badges layered on the chest (a chest can be several things).
+  const tags =
+    (hasRiddle  ? cornerTag("🧩", "right", "#BFFD00") : "") +
+    (flash      ? cornerTag("⚡", "left",  "#FF6400") : "") +
+    (!flash && isChain    ? cornerTag("🔗", "left", "#BFFD00") : "") +
+    (!flash && !isChain && isCampaign ? cornerTag("⭐", "left", "#FFD700") : "");
 
-  if (flash) {
-    el.className = "pin-flash";
-    sizeWrapper(el, 52);
-    el.innerHTML = `<div style="
-      width:52px;height:52px;
-      background:#FF6400;
-      border:2.5px solid rgba(0,0,0,0.5);
-      border-radius:50%;
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-weight:900;font-size:10px;color:#fff;
-      cursor:pointer;
-      font-family:'Space Grotesk',sans-serif;
-      user-select:none;gap:1px;
-    "><span style="font-size:13px;line-height:1;">⚡</span><span>${label}</span></div>${riddleTag}`;
-    return el;
-  }
+  // Flash overrides the glow to an urgent orange pulse; otherwise use the rarity glow.
+  const glowClass = flash ? "chest-glow-flash" : p.glow;
+  const bob = rarity !== "common" || flash;
 
-  if (isChain) {
-    el.className = r.animClass;
-    el.style.borderRadius = "50%";
-    sizeWrapper(el, 54);
-    el.innerHTML = `<div style="
-      width:54px;height:54px;
-      background:#111;
-      border:2.5px solid ${r.color};
-      border-radius:50%;
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-weight:900;font-size:10px;color:${r.color};
-      cursor:pointer;
-      font-family:'Space Grotesk',sans-serif;
-      user-select:none;gap:1px;
-      box-shadow:0 0 0 3px rgba(255,255,255,0.4);
-    "><span style="font-size:13px;line-height:1;">🔗</span><span>${label}</span></div>${riddleTag}`;
-    return el;
-  }
-
-  if (isCampaign) {
-    el.className = r.animClass;
-    el.style.borderRadius = "50%";
-    sizeWrapper(el, 54);
-    el.innerHTML = `<div style="
-      width:54px;height:54px;
-      background:${r.color};
-      border:2.5px solid rgba(0,0,0,0.6);
-      border-radius:50%;
-      display:flex;flex-direction:column;align-items:center;justify-content:center;
-      font-weight:900;font-size:10px;color:${r.textColor};
-      cursor:pointer;
-      font-family:'Space Grotesk',sans-serif;
-      user-select:none;gap:1px;
-      box-shadow:0 0 0 3px rgba(255,255,255,0.6);
-    "><span style="font-size:11px;line-height:1;">⭐</span><span>${label}</span></div>${riddleTag}`;
-    return el;
-  }
-
-  // Rarity-at-altitude: bigger, richer pins for rarer drops.
-  const SIZE_BY_RARITY: Record<typeof rarity, { size: number; font: number; ring: string }> = {
-    common:    { size: 40, font: 10, ring: "none" },
-    uncommon:  { size: 48, font: 11, ring: "none" },
-    rare:      { size: 58, font: 12, ring: "0 0 0 3px rgba(0,207,255,0.28)" },
-    legendary: { size: 70, font: 14, ring: "0 0 0 4px rgba(255,215,0,0.4)" },
-  };
-  const s = SIZE_BY_RARITY[rarity];
-
-  el.className = r.animClass;
-  el.style.borderRadius = "50%";
-  sizeWrapper(el, s.size);
-  el.innerHTML = `<div style="
-    width:${s.size}px;height:${s.size}px;
-    background:${r.color};
-    border:${rarity === "legendary" ? 3 : 2}px solid rgba(0,0,0,0.5);
-    border-radius:50%;
-    display:flex;align-items:center;justify-content:center;
-    font-weight:900;font-size:${s.font}px;color:${r.textColor};
-    cursor:pointer;
-    font-family:'Space Grotesk',sans-serif;
-    user-select:none;
-    box-shadow:${s.ring};
-  ">${label}</div>${riddleTag}`;
+  // CRITICAL: MapLibre positions the marker by setting `transform` on the marker
+  // ELEMENT (el). The bob animation also animates `transform`, so it MUST live on
+  // an INNER wrapper — animating el's transform would override MapLibre's and snap
+  // the chest to the map's origin (top-left). el stays untouched; all visuals +
+  // animation go inside. Fixed chest-sized inner box so every chest (common →
+  // legendary) plants on its exact point; pill + tags are absolutely positioned.
+  el.style.cursor = "pointer";
+  el.innerHTML = `
+    <div class="${`chest-marker ${glowClass} ${bob ? "chest-bob" : ""}`.trim()}" style="position:relative;width:${p.size}px;height:${p.size}px;user-select:none;font-family:'Space Grotesk',sans-serif;">
+      ${chestSVG(p)}
+      ${p.shimmer ? `<div style="position:absolute;inset:0;overflow:hidden;pointer-events:none;"><div class="chest-shimmer"></div></div>` : ""}
+      <div style="position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);background:#111;border:1.5px solid ${p.band};border-radius:100px;padding:0 7px;font-size:${p.label}px;font-weight:900;color:#fff;line-height:1.55;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.5);">${label}</div>
+      ${tags}
+    </div>`;
   return el;
 }
 
 function makeClusterElement(count: number): HTMLDivElement {
+  // A hoard: pile of treasure with the count, hinting "lots of chests here".
   const el = document.createElement("div");
-  el.className = "pin-pulse-uncommon";
-  el.style.borderRadius = "50%";
-  sizeWrapper(el, 46);
+  sizeWrapper(el, 50);
   el.innerHTML = `<div style="
-    width:46px;height:46px;
-    background:#BFFD00;
-    border:2px solid rgba(0,0,0,0.5);
-    border-radius:50%;
+    width:50px;height:50px;position:relative;
     display:flex;align-items:center;justify-content:center;
-    font-weight:900;font-size:14px;color:#111;
-    cursor:pointer;
-    font-family:'Space Grotesk',sans-serif;
-    user-select:none;
-  ">${count}</div>`;
+    cursor:pointer;font-family:'Space Grotesk',sans-serif;user-select:none;
+    filter:drop-shadow(0 2px 4px rgba(0,0,0,.5)) drop-shadow(0 0 6px rgba(191,253,0,.4));
+  ">
+    <span style="font-size:34px;line-height:1;">💰</span>
+    <span style="
+      position:absolute;bottom:-2px;right:-2px;
+      min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;
+      background:#BFFD00;border:2px solid #111;border-radius:100px;
+      display:flex;align-items:center;justify-content:center;
+      font-weight:900;font-size:11px;color:#111;line-height:1;
+    ">${count}</span>
+  </div>`;
   return el;
 }
 

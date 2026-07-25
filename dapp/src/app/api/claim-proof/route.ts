@@ -5,6 +5,8 @@ import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
 import { parseDropHint } from "@/lib/utils";
+import { resolveIdentityRoot } from "@/lib/identityRoot";
+import { antispoofMode, evaluateSpoofSignals, type SpoofFlag } from "@/lib/antispoof";
 import {
   hashAnswer, hashesEqual,
   RIDDLE_LOCK_SECONDS, RIDDLE_MAX_TRIES, RIDDLE_TRY_WINDOW_S,
@@ -16,7 +18,6 @@ export const runtime = "nodejs";
 const PROOF_TTL_S    = 90;   // proof expires after 90 seconds
 const CLAIM_RADIUS_M = 100;  // must be within 100m of the drop
 const MAX_SPEED_KMH  = 500;  // fastest legitimate travel (generous — covers planes)
-const MAX_IP_DIST_KM = 2000; // IP location must be within 2000km of reported GPS
 
 const onChainClient = createPublicClient({
   chain: celo,
@@ -62,7 +63,7 @@ function getClientIp(req: NextRequest): string {
 // so every rule above is enforced simply by refusing to sign.
 export async function POST(req: NextRequest) {
   try {
-    const { dropId, claimer, userLat, userLng, privateToken, answer } = await req.json();
+    const { dropId, claimer, userLat, userLng, privateToken, answer, accuracy, fixAgeMs } = await req.json();
 
     if (
       typeof dropId  !== "string" || !dropId  ||
@@ -124,10 +125,12 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Velocity check ────────────────────────────────────────────────────
-    // If this address claimed recently, the implied travel speed must be physically possible.
+    // Keyed by IDENTITY ROOT, not wallet: a person's linked wallets share one
+    // movement history, so switching wallets can't reset the speed limit.
     const redis = getRedis();
+    const root = (await resolveIdentityRoot(claimer)).toLowerCase();
     if (redis) {
-      const velocityKey = keys.velocity(claimer);
+      const velocityKey = keys.velocity(root);
       const last = await redis.get<{ lat: number; lng: number; ts: number }>(velocityKey);
       if (last) {
         const elapsedHours = (Date.now() / 1000 - last.ts) / 3600;
@@ -142,39 +145,69 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 5. IP geolocation check ──────────────────────────────────────────────
+    // ── 5. IP / device plausibility (mode-gated: off | shadow | enforce) ─────
+    // Presence is the product — a claim proof is only worth what these checks
+    // make it worth. Shadow mode evaluates + logs but never blocks, so we can
+    // watch false-positive rates in /admin/health before flipping to enforce.
+    const mode = antispoofMode();
     const ip = getClientIp(req);
     const isLocalIp = ip === "127.0.0.1" || ip === "::1" || ip.startsWith("192.168.") || ip.startsWith("10.");
-    if (!isLocalIp && false) {
+    if (mode !== "off" && !isLocalIp) {
+      let ipDistanceKm: number | null = null;
+      let proxyOrHosting = false;
+
+      // Vercel's edge geo headers: free, instant, can't be set by the client.
+      const vLat = parseFloat(req.headers.get("x-vercel-ip-latitude") ?? "");
+      const vLng = parseFloat(req.headers.get("x-vercel-ip-longitude") ?? "");
+      if (Number.isFinite(vLat) && Number.isFinite(vLng)) {
+        ipDistanceKm = haversineMetres(vLat, vLng, userLat, userLng) / 1000;
+      }
+
+      // ip-api adds proxy/datacenter detection (Vercel headers don't). Optional:
+      // a timeout or failure downgrades the check, never blocks the claim.
       try {
-        // ip-api.com free tier: proxy/hosting fields catch VPNs and datacenters.
         const geoRes = await fetch(
           `http://ip-api.com/json/${ip}?fields=status,lat,lon,proxy,hosting`,
-          { signal: AbortSignal.timeout(3000) },
+          { signal: AbortSignal.timeout(2500) },
         );
-
         if (geoRes.ok) {
           const geo = await geoRes.json();
           if (geo.status === "success") {
-            if (geo.proxy || geo.hosting) {
-              return NextResponse.json(
-                { error: "VPN or proxy detected — disable it to claim" },
-                { status: 403 },
-              );
-            }
-
-            const ipDistKm = haversineMetres(geo.lat, geo.lon, userLat, userLng) / 1000;
-            if (ipDistKm > MAX_IP_DIST_KM) {
-              return NextResponse.json(
-                { error: "Your network location does not match your GPS position" },
-                { status: 403 },
-              );
+            proxyOrHosting = !!(geo.proxy || geo.hosting);
+            if (ipDistanceKm === null && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)) {
+              ipDistanceKm = haversineMetres(geo.lat, geo.lon, userLat, userLng) / 1000;
             }
           }
         }
       } catch {
-        // Geo lookup timed out or failed — don't block the claim, log and continue.
-        console.warn("[claim-proof] IP geolocation unavailable for", ip);
+        console.warn("[claim-proof] ip-api unavailable for", ip);
+      }
+
+      const verdict = evaluateSpoofSignals({
+        ipDistanceKm,
+        proxyOrHosting,
+        accuracyM: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
+        fixAgeMs:  typeof fixAgeMs === "number" && Number.isFinite(fixAgeMs) ? fixAgeMs : null,
+      });
+
+      if (verdict.suspicious && redis) {
+        const flag: SpoofFlag = {
+          ts: Math.floor(Date.now() / 1000),
+          dropId, claimer: claimer.toLowerCase(), root, ip,
+          mode, blocked: mode === "enforce" && verdict.block,
+          reasons: verdict.reasons,
+        };
+        // Fire-and-forget audit trail, capped at the last 500 flags.
+        redis.lpush(keys.spoofFlags(), JSON.stringify(flag))
+          .then(() => redis.ltrim(keys.spoofFlags(), 0, 499))
+          .catch(() => {});
+      }
+
+      if (mode === "enforce" && verdict.block) {
+        return NextResponse.json(
+          { error: verdict.userMessage ?? "This claim looks spoofed — move closer and try again." },
+          { status: 403 },
+        );
       }
     }
 
@@ -268,10 +301,25 @@ export async function POST(req: NextRequest) {
     const account = privateKeyToAccount(signerKey);
     const sig     = await account.signMessage({ message: { raw: hash } });
 
-    // Store position for future velocity checks (fire-and-forget)
+    // Store position for future velocity checks (fire-and-forget, root-keyed)
+    const nowS = Math.floor(Date.now() / 1000);
     if (redis) {
       redis
-        .set(keys.velocity(claimer), { lat: userLat, lng: userLng, ts: Math.floor(Date.now() / 1000) }, { ex: 48 * 3600 })
+        .set(keys.velocity(root), { lat: userLat, lng: userLng, ts: nowS }, { ex: 48 * 3600 })
+        .catch(() => {});
+
+      // Presence ledger — the substrate for badges/sets/the future presence API.
+      // One entry per signed proof, identity-scoped, coords coarsened to ~110m
+      // (same privacy standard as the heatmap). Capped to the last 500 entries.
+      const entry = JSON.stringify({
+        dropId,
+        lat: Math.round(userLat * 1000) / 1000,
+        lng: Math.round(userLng * 1000) / 1000,
+        ts: nowS,
+      });
+      redis
+        .zadd(keys.presence(root), { score: nowS, member: entry })
+        .then(() => redis.zremrangebyrank(keys.presence(root), 0, -501))
         .catch(() => {});
     }
 

@@ -7,6 +7,9 @@ import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
 import { SetNameSheet } from "@/components/SetNameSheet";
 import { ReferralCapture } from "@/components/ReferralCapture";
+import { GasTopup } from "@/components/GasTopup";
+import { BadgeCelebration } from "@/components/BadgeCelebration";
+import { ChestReward } from "@/components/ChestReward";
 import { ReferralPrompt } from "@/components/ReferralPrompt";
 
 // Keep every connected wallet on Celo. Auto-switches once whenever a wrong chain
@@ -60,6 +63,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <QueryCacheManager />
           <ChainGuard />
           <ReferralCapture />
+          <GasTopup />
+          <BadgeCelebration />
+          <ChestReward />
           {children}
           {/* Global "you were invited — accept" prompt for verified newcomers,
               so attribution works wherever they land (not just the homepage). */}

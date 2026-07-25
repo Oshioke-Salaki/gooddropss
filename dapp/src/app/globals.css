@@ -109,6 +109,85 @@
 }
 .pin-flash { animation: pin-flash 0.8s ease-in-out infinite; }
 
+/* ── Treasure chest markers ──────────────────────────────────────────────── */
+@keyframes chest-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+@keyframes chest-glow-rare {
+  0%, 100% { filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 5px rgba(0,207,255,.5)); }
+  50%      { filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 11px rgba(0,207,255,.85)); }
+}
+@keyframes chest-glow-legendary {
+  0%, 100% { filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 8px rgba(255,215,0,.7)); }
+  50%      { filter: drop-shadow(0 2px 4px rgba(0,0,0,.55)) drop-shadow(0 0 18px rgba(255,215,0,1)); }
+}
+@keyframes chest-glow-flash {
+  0%, 100% { filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 6px rgba(255,100,0,.6)); }
+  50%      { filter: drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 15px rgba(255,100,0,1)); }
+}
+.chest-bob            { animation: chest-bob 3s ease-in-out infinite; }
+.chest-glow-rare      svg { animation: chest-glow-rare      1.8s ease-in-out infinite; }
+.chest-glow-legendary svg { animation: chest-glow-legendary 1.2s ease-in-out infinite; }
+.chest-glow-flash     svg { animation: chest-glow-flash     0.8s ease-in-out infinite; }
+
+/* Diagonal shine sweep for legendary chests */
+@keyframes chest-shimmer {
+  0%   { transform: translateX(-140%) skewX(-18deg); opacity: 0; }
+  35%  { opacity: .9; }
+  100% { transform: translateX(240%) skewX(-18deg); opacity: 0; }
+}
+.chest-shimmer {
+  position: absolute; top: 4%; left: 0; width: 30%; height: 52%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.9), transparent);
+  animation: chest-shimmer 2.6s ease-in-out infinite;
+  pointer-events: none; border-radius: 4px;
+}
+
+/* Brief pulse when a drop is claimed nearby (safe urgency, no location exposed) */
+@keyframes claim-pop {
+  0%   { transform: scale(0.2); opacity: 0.9; }
+  70%  { opacity: 0.35; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.claim-pop {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 3px solid #BFFD00; animation: claim-pop 1.1s ease-out forwards;
+  pointer-events: none;
+}
+
+/* ── Chest-open reward animation (claim celebration) ─────────────────────── */
+@keyframes chest-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-4deg); } 40% { transform: rotate(4deg); }
+  60% { transform: rotate(-3deg); } 80% { transform: rotate(3deg); }
+}
+@keyframes chest-lid-open {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(-108deg); }
+}
+@keyframes reward-flash {
+  0%   { opacity: 0; transform: scale(0.2); }
+  30%  { opacity: 0.95; }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+@keyframes coin-fly {
+  0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+}
+@keyframes reward-amount {
+  0%   { transform: translateY(10px) scale(0.6); opacity: 0; }
+  40%  { transform: translateY(0) scale(1.15); opacity: 1; }
+  60%  { transform: scale(1); }
+  100% { transform: translateY(-6px) scale(1); opacity: 1; }
+}
+.chest-reward-shake { animation: chest-shake 0.5s ease-in-out; }
+.chest-reward-lid   { transform-origin: 50% 100%; animation: chest-lid-open 0.5s cubic-bezier(.34,1.56,.64,1) 0.5s forwards; }
+.chest-reward-flash { animation: reward-flash 0.7s ease-out 0.75s forwards; }
+.chest-reward-coin  { animation: coin-fly 1.1s ease-out 0.7s forwards; }
+.chest-reward-amount{ animation: reward-amount 0.6s ease-out 0.95s forwards; opacity: 0; }
+
 /* ── Hunting mode ring animation ─────────────────────────────────────────── */
 @keyframes hunt-ring-pulse {
   0%, 100% { opacity: 0.15; }
