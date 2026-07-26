@@ -5,6 +5,7 @@ import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
 import { parseDropHint } from "@/lib/utils";
+import { normalizePk } from "@/lib/pk";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { antispoofMode, evaluateSpoofSignals, type SpoofFlag } from "@/lib/antispoof";
 import {
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const signerKey = process.env.GPS_SIGNER_KEY as `0x${string}` | undefined;
+    const signerKey = normalizePk(process.env.GPS_SIGNER_KEY);
     if (!signerKey) {
       return NextResponse.json({ error: "GPS signing not configured" }, { status: 503 });
     }

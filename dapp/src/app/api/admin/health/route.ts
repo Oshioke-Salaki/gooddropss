@@ -6,6 +6,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { antispoofMode } from "@/lib/antispoof";
 import { GOOD_DROPS_BADGES_ADDRESS, GOOD_DROPS_BADGES_ABI } from "@/lib/contracts";
+import { normalizePk } from "@/lib/pk";
 
 export const runtime = "nodejs";
 
@@ -116,7 +117,7 @@ export async function GET() {
   });
 
   // ── Badge minting (signer address must match the on-chain badgeSigner) ─────
-  const badgeSignerKey = process.env.BADGE_SIGNER_KEY as `0x${string}` | undefined;
+  const badgeSignerKey = normalizePk(process.env.BADGE_SIGNER_KEY);
   if (!badgeSignerKey) {
     checks.push({ key: "badgeMint", label: "Badge minting", status: "off", detail: "BADGE_SIGNER_KEY unset — on-chain badge minting disabled (off-chain badges still work)." });
   } else {
@@ -138,7 +139,7 @@ export async function GET() {
   }
 
   // ── Gas faucet ────────────────────────────────────────────────────────────
-  const faucetKey = process.env.GAS_FAUCET_KEY as `0x${string}` | undefined;
+  const faucetKey = normalizePk(process.env.GAS_FAUCET_KEY);
   if (!faucetKey) {
     checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "off", detail: "GAS_FAUCET_KEY unset — hunters with 0 CELO can't pay claim gas." });
   } else {

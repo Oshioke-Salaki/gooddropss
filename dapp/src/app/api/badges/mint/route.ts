@@ -9,6 +9,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { badgeTypeId } from "@/lib/badges";
 import { GOOD_DROPS_BADGES_ADDRESS, GOOD_DROPS_BADGES_ABI } from "@/lib/contracts";
+import { normalizePk } from "@/lib/pk";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -33,8 +34,8 @@ function clientIp(req: NextRequest): string {
 // and pays the gas — so it's free for the hunter. Soulbound + one-per-wallet is
 // enforced by the contract itself as the final backstop.
 export async function POST(req: NextRequest) {
-  const signerKey  = process.env.BADGE_SIGNER_KEY as `0x${string}` | undefined;
-  const relayerKey = (process.env.BADGE_RELAYER_KEY ?? process.env.GAS_FAUCET_KEY) as `0x${string}` | undefined;
+  const signerKey  = normalizePk(process.env.BADGE_SIGNER_KEY);
+  const relayerKey = normalizePk(process.env.BADGE_RELAYER_KEY ?? process.env.GAS_FAUCET_KEY);
   if (!signerKey || !relayerKey) {
     return NextResponse.json({ error: "Minting not configured" }, { status: 503 });
   }

@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
 import { isVerifiedHuman, resolveIdentityRoot } from "@/lib/identityRoot";
+import { normalizePk } from "@/lib/pk";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -56,7 +57,7 @@ function clientIp(req: NextRequest): string {
 // POST /api/gas-topup  Body: { address }
 // 200 {ok:true, tx} | 200 {ok:false, reason} (benign skip) | 4xx on abuse gates
 export async function POST(req: NextRequest) {
-  const faucetKey = process.env.GAS_FAUCET_KEY as `0x${string}` | undefined;
+  const faucetKey = normalizePk(process.env.GAS_FAUCET_KEY);
   if (!faucetKey) return NextResponse.json({ ok: false, reason: "not_configured" });
 
   const redis = getRedis();

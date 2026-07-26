@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
-import { useBalance, useSignMessage, usePublicClient, useWalletClient, useWriteContract } from "wagmi";
-import { formatUnits, parseUnits, isAddress } from "viem";
+import { useAccount, useBalance, useSignMessage, usePublicClient, useWalletClient, useWriteContract, useSwitchChain } from "wagmi";
+import { celo } from "viem/chains";
+import { formatUnits, parseUnits, isAddress, getAddress } from "viem";
 import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User, Send, ArrowUpRight, ExternalLink } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
@@ -181,6 +182,8 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
   const [sendErr,     setSendErr]     = useState("");
   const [txHash,      setTxHash]      = useState<`0x${string}` | "">("");
   const { writeContractAsync }        = useWriteContract();
+  const { chainId }                   = useAccount();
+  const { switchChainAsync }          = useSwitchChain();
 
   function resetSend() {
     setRecipient(""); setAmount(""); setSendErr(""); setTxHash(""); setSendStatus("idle");
@@ -188,8 +191,9 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
 
   async function handleSend() {
     setSendErr("");
-    const to = recipient.trim();
-    if (!isAddress(to)) { setSendErr("Enter a valid wallet address (0x…)."); return; }
+    const raw = recipient.trim();
+    if (!isAddress(raw)) { setSendErr("Enter a valid wallet address (0x… , 42 characters)."); return; }
+    const to = getAddress(raw); // checksum
     if (to.toLowerCase() === address.toLowerCase()) { setSendErr("You can't send G$ to your own address."); return; }
 
     let amountWei: bigint;
@@ -200,11 +204,35 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
 
     setSendStatus("sending");
     try {
+      // 1. Wallet must be on Celo, or the write silently waits on a hidden
+      //    chain-switch prompt (a classic "stuck spinner" cause).
+      if (chainId !== celo.id) {
+        try { await switchChainAsync({ chainId: celo.id }); }
+        catch { setSendStatus("error"); setSendErr("Switch your wallet to the Celo network, then try again."); return; }
+      }
+
+      // 2. Pre-simulate so a would-be revert (e.g. transfer restriction) comes
+      //    back as a clear message instead of an endless spinner.
+      if (publicClient) {
+        try {
+          await publicClient.simulateContract({
+            account: address, address: G_TOKEN_ADDRESS, abi: ERC20_ABI,
+            functionName: "transfer", args: [to, amountWei],
+          });
+        } catch (e: unknown) {
+          const m = (e as { shortMessage?: string; message?: string }).shortMessage ?? "";
+          setSendStatus("error");
+          setSendErr(m ? `This transfer would fail: ${m}` : "This transfer would fail on-chain.");
+          return;
+        }
+      }
+
+      // 3. Submit. This opens your wallet — approve the transaction there.
       const hash = await writeContractAsync({
         address: G_TOKEN_ADDRESS,
         abi: ERC20_ABI,
         functionName: "transfer",
-        args: [to as `0x${string}`, amountWei],
+        args: [to, amountWei],
       });
       setTxHash(hash);
       const rc = await publicClient?.waitForTransactionReceipt({ hash });
@@ -213,10 +241,12 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
       // Nudge every balance instance to refetch immediately.
       window.dispatchEvent(new Event("gd:verified"));
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
+      const err = e as { shortMessage?: string; message?: string; name?: string };
       const msg = err.shortMessage ?? err.message ?? "Transfer failed.";
       setSendStatus("error");
-      setSendErr(/insufficient funds/i.test(msg) ? "Not enough CELO for gas — top up a little CELO first." : msg);
+      if (/User rejected|denied|rejected the request/i.test(msg)) setSendErr("You cancelled the transaction.");
+      else if (/insufficient funds/i.test(msg)) setSendErr("Not enough CELO for gas — top up a little CELO first.");
+      else setSendErr(msg);
     }
   }
 
