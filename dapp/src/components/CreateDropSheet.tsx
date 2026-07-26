@@ -30,6 +30,7 @@ import {
 } from "@/lib/riddles";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, Check, Share2, Lock, Puzzle } from "lucide-react";
 import { decodeEventLog } from "viem";
@@ -97,6 +98,13 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
+  // Dropping is now identity-gated, exactly like claiming: only verified humans
+  // can hide G$. Keeps the "unique humans" metric honest and blocks Sybil drop
+  // farms. Uses the same rich status hook as ClaimSheet (distinguishes never-
+  // verified from lapsed) rather than the bare getWhitelistedRoot() check.
+  const {
+    isVerified, isLapsed, isLoading: identityLoading, checkFailed: identityCheckFailed,
+  } = useIdentityStatus();
   const { landmarks } = useLandmarks();
   // Drops must be attributable to a named human — no anonymous drops on the map.
   const profile = useProfile(address);
@@ -231,6 +239,14 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
     if (!hasUsername) {
       setErrMsg("Set a username before dropping.");
       window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
+    // Identity gate: only verified humans may drop (mirrors the claim gate).
+    // Never sign a would-be tx if the check merely hasn't resolved / failed —
+    // let the CTA surface "checking…" / "retry" instead of a false block.
+    if (!identityLoading && !identityCheckFailed && !isVerified) {
+      setErrMsg(isLapsed ? "Re-verify your GoodDollar identity to drop." : "Verify your GoodDollar identity to drop.");
+      window.dispatchEvent(new CustomEvent("gd:openVerify"));
       return;
     }
     // Multi-drop takes a different, batched path.
@@ -1308,6 +1324,36 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
                     </button>
                     <p className="text-center text-xs text-muted">
                       Drops show your name so hunters know who hid the G$.
+                    </p>
+                  </>
+                ) : identityLoading ? (
+                  <button disabled className="btn-brutal w-full py-4 rounded-xl font-black text-base bg-border text-muted cursor-not-allowed" style={{ boxShadow: "none", transform: "none" }}>
+                    ⏳ Checking verification…
+                  </button>
+                ) : identityCheckFailed ? (
+                  <>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                      className="btn-brutal w-full py-4 rounded-xl font-black text-base bg-lime text-ink cursor-pointer"
+                    >
+                      ⚠️ Couldn't check verification — retry
+                    </button>
+                    <p className="text-center text-xs text-muted">
+                      We couldn&apos;t reach GoodDollar to confirm you&apos;re verified.
+                    </p>
+                  </>
+                ) : !isVerified ? (
+                  <>
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                      className="btn-brutal w-full py-4 rounded-xl font-black text-base bg-lime text-ink cursor-pointer"
+                    >
+                      {isLapsed ? "🔄 Re-verify to drop" : "🪪 Verify to drop"}
+                    </button>
+                    <p className="text-center text-xs text-muted">
+                      {isLapsed
+                        ? "Your GoodDollar verification lapsed. Re-verify to hide G$."
+                        : "Only verified humans can drop G$. One-time face check, takes a minute."}
                     </p>
                   </>
                 ) : (

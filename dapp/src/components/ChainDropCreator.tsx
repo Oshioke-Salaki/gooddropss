@@ -18,6 +18,7 @@ import {
 } from "@/lib/utils";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useProfile } from "@/hooks/useProfile";
 import { landmarkMeta, addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
@@ -67,6 +68,10 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const { landmarks }             = useLandmarks();
   const profile = useProfile(address);
   const hasUsername = !!profile?.username;
+  // Dropping is identity-gated (see CreateDropSheet) — chain hunts are no exception.
+  const {
+    isVerified, isLapsed, isLoading: identityLoading, checkFailed: identityCheckFailed,
+  } = useIdentityStatus();
 
   // Per-drop limits from the contract (each stop must be in range, not just the total).
   const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
@@ -138,6 +143,8 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const canDeploy =
     isConnected &&
     hasUsername &&
+    // Verified, or the check hasn't resolved yet (don't false-block on load/RPC fail).
+    (isVerified || identityLoading || identityCheckFailed) &&
     stops.length >= 2 &&
     stops.every((s) => s.lat !== null && s.lng !== null && amtInRange(s.amount)) &&
     !insufficientBalance &&
@@ -148,6 +155,11 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
     if (!hasUsername) {
       setErrMsg("Set a username before dropping.");
       window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
+    if (!identityLoading && !identityCheckFailed && !isVerified) {
+      setErrMsg(isLapsed ? "Re-verify your GoodDollar identity to drop." : "Verify your GoodDollar identity to drop.");
+      window.dispatchEvent(new CustomEvent("gd:openVerify"));
       return;
     }
     if (!canDeploy) return;
@@ -522,6 +534,16 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
                   className="btn-brutal w-full py-3 mb-2 rounded-xl font-black text-sm bg-lime text-ink cursor-pointer"
                 >
                   Set a username to drop →
+                </button>
+              )}
+
+              {/* Identity gate — only verified humans may drop */}
+              {isConnected && hasUsername && !identityLoading && !isVerified && (
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                  className="btn-brutal w-full py-3 mb-2 rounded-xl font-black text-sm bg-lime text-ink cursor-pointer"
+                >
+                  {identityCheckFailed ? "⚠️ Couldn't check verification — retry" : isLapsed ? "🔄 Re-verify to drop →" : "🪪 Verify to drop →"}
                 </button>
               )}
 

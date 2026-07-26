@@ -15,6 +15,7 @@ import {
 import { degToGps, buildCampaignHint, formatG$, X_HANDLES, X_HASHTAGS } from "@/lib/utils";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile } from "@/hooks/useProfile";
+import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import type { Campaign } from "@/types";
 
 interface FlyTarget { lat: number; lng: number; seq: number; }
@@ -190,6 +191,10 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
   const { balance, isFetching }  = useGoodDollarProfile();
   const profile = useProfile(address);
   const hasUsername = !!profile?.username;
+  // Dropping is identity-gated (see CreateDropSheet) — batch drops too.
+  const {
+    isVerified, isLapsed, isLoading: identityLoading, checkFailed: identityCheckFailed,
+  } = useIdentityStatus();
 
   // Per-drop limits from the contract (each drop must be in range, not just the total).
   const { data: maxDropWei } = useReadContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "maxDropAmount" });
@@ -277,7 +282,9 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
     const n = parseFloat(d.amount);
     return !isNaN(n) && n > 0 && !amtInRange(d.amount);
   });
-  const canDeploy = isConnected && hasUsername && drops.length > 0 && !insufficientBalance &&
+  const canDeploy = isConnected && hasUsername &&
+    (isVerified || identityLoading || identityCheckFailed) &&
+    drops.length > 0 && !insufficientBalance &&
     drops.every((d) => amtInRange(d.amount)) && status === "idle";
 
   async function handleDeploy() {
@@ -285,6 +292,11 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
     if (!hasUsername) {
       setErrMsg("Set a username before dropping.");
       window.dispatchEvent(new CustomEvent("gd:setName"));
+      return;
+    }
+    if (!identityLoading && !identityCheckFailed && !isVerified) {
+      setErrMsg(isLapsed ? "Re-verify your GoodDollar identity to drop." : "Verify your GoodDollar identity to drop.");
+      window.dispatchEvent(new CustomEvent("gd:openVerify"));
       return;
     }
     if (!canDeploy) return;
@@ -729,6 +741,14 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
                       style={{ width: "100%", padding: "12px", marginBottom: 10, background: "#BFFD00", color: "#111", border: "2px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", boxShadow: "3px 3px 0 #111" }}
                     >
                       Set a username to drop →
+                    </button>
+                  )}
+                  {isConnected && hasUsername && !identityLoading && !isVerified && (
+                    <button
+                      onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+                      style={{ width: "100%", padding: "12px", marginBottom: 10, background: "#BFFD00", color: "#111", border: "2px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", boxShadow: "3px 3px 0 #111" }}
+                    >
+                      {identityCheckFailed ? "⚠️ Couldn't check verification — retry" : isLapsed ? "🔄 Re-verify to drop →" : "🪪 Verify to drop →"}
                     </button>
                   )}
                   <button
