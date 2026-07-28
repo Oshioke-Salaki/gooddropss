@@ -1389,6 +1389,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
         currentLocation={userLocation}
         onConfirm={handleLocationConfirm}
         onClose={() => setPickerOpen(false)}
+        landmarks={landmarks}
       />
     </>
   );

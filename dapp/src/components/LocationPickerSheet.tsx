@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { Navigation, Search, X, MapPin } from "lucide-react";
+import { landmarkMeta } from "@/lib/landmarks";
+import type { Landmark } from "@/types";
 
 const PickerMap = dynamic(() => import("./LocationPickerMap"), {
   ssr: false,
@@ -51,6 +53,8 @@ export interface Props {
   currentLocation?: { lat: number; lng: number } | null;
   onConfirm: (lat: number, lng: number, placeName: string | null) => void;
   onClose: () => void;
+  /** Our curated landmarks — shown on the map and matched by the search. */
+  landmarks?: Landmark[];
 }
 
 // Default to Lagos if no location known
@@ -64,6 +68,7 @@ export function LocationPickerSheet({
   currentLocation,
   onConfirm,
   onClose,
+  landmarks = [],
 }: Props) {
   const [query, setQuery]           = useState("");
   const [results, setResults]       = useState<SearchResult[]>([]);
@@ -208,7 +213,24 @@ export function LocationPickerSheet({
     return { primary, secondary };
   }
 
-  const showResults = results.length > 0 || searching;
+  // ── Our landmarks matched by name (shown above the OSM results) ──────────────
+  const landmarkResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return landmarks
+      .filter((l) => l.status === "active" && l.name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [query, landmarks]);
+
+  function selectLandmark(l: Landmark) {
+    setQuery("");
+    setResults([]);
+    searchInputRef.current?.blur();
+    setPlaceName(l.name);
+    setFlyTarget({ lat: l.lat, lng: l.lng, seq: ++flySeq.current });
+  }
+
+  const showResults = landmarkResults.length > 0 || results.length > 0 || searching;
 
   return (
     <>
@@ -326,8 +348,38 @@ export function LocationPickerSheet({
                   overflow: "hidden",
                 }}
               >
+                {/* Our curated places first — a dropper knows these names */}
+                {landmarkResults.map((l, i) => {
+                  const meta = landmarkMeta(l.category);
+                  return (
+                    <button
+                      key={`lm-${l.id}`}
+                      onClick={() => selectLandmark(l)}
+                      style={{
+                        width: "100%", padding: "11px 14px", textAlign: "left",
+                        background: "transparent", border: "none",
+                        borderTop: i > 0 ? "1px solid #f0f0f0" : "none",
+                        cursor: "pointer", fontFamily: "inherit",
+                        display: "flex", alignItems: "center", gap: 10,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <span style={{ fontSize: 17, flexShrink: 0, width: 20, textAlign: "center" }}>{meta.icon}</span>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#111", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {l.name}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 12, color: "#888", marginTop: 1 }}>
+                          Saved place · {meta.label}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+
                 {searching ? (
-                  <div style={{ padding: "12px 14px", color: "#888", fontSize: 13 }}>
+                  <div style={{ padding: "12px 14px", color: "#888", fontSize: 13, borderTop: landmarkResults.length > 0 ? "1px solid #f0f0f0" : "none" }}>
                     Searching…
                   </div>
                 ) : (
@@ -340,7 +392,7 @@ export function LocationPickerSheet({
                         style={{
                           width: "100%", padding: "11px 14px", textAlign: "left",
                           background: "transparent", border: "none",
-                          borderTop: i > 0 ? "1px solid #f0f0f0" : "none",
+                          borderTop: (i > 0 || landmarkResults.length > 0) ? "1px solid #f0f0f0" : "none",
                           cursor: "pointer", fontFamily: "inherit",
                           display: "flex", alignItems: "center", gap: 10,
                         }}
@@ -374,6 +426,7 @@ export function LocationPickerSheet({
             flyTarget={flyTarget}
             onCenterChange={handleCenterChange}
             onDragChange={setDragging}
+            landmarks={landmarks}
           />
 
           {/* Center pin — stays fixed at map midpoint, lifts when dragging */}
