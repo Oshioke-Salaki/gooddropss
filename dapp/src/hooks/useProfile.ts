@@ -3,8 +3,10 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 
 export interface Profile {
-  username: string;
-  createdAt: number;
+  username?: string;
+  createdAt?: number;
+  /** chosen preset avatar id (see lib/avatarPresets). Absent = generated avatar. */
+  avatar?: string;
 }
 
 // Module-level cache — survives re-renders, cleared on page reload

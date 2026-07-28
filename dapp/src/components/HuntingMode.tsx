@@ -5,6 +5,7 @@ import { useAccount, useWriteContract } from "wagmi";
 import { ArrowLeft, Lock, CheckCircle, Navigation } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { friendlyClaimError } from "@/lib/claimErrors";
+import { ensureGasForClaim } from "@/lib/ensureGas";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   haversineDistance,
@@ -27,7 +28,7 @@ interface Props {
   dropCoords?: { lat: number; lng: number };
 }
 
-type ClaimStatus = "idle" | "claiming" | "done" | "error";
+type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error";
 
 const MAX_RANGE = 800;
 
@@ -89,6 +90,10 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
     if (!address || !isClose || claimStatus !== "idle") return;
     setClaimStatus("claiming");
     try {
+      // Guarantee gas before the claim so a low wallet never dead-ends mid-tx.
+      await ensureGasForClaim(address as `0x${string}`, () => setClaimStatus("gassing"));
+      setClaimStatus("claiming");
+
       const proofRes = await fetch("/api/claim-proof", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -359,7 +364,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
               onClick={claimStatus === "error"
                 ? () => { setClaimStatus("idle"); setErrMsg(""); }
                 : handleClaim}
-              disabled={claimStatus === "claiming" || (!isClose && claimStatus !== "error")}
+              disabled={claimStatus === "claiming" || claimStatus === "gassing" || (!isClose && claimStatus !== "error")}
               style={{
                 width: "100%", padding: "17px",
                 background: isClose || claimStatus === "error" ? rarityInfo.color : "#111",
@@ -374,7 +379,8 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
                 boxShadow: isClose ? `0 0 24px ${rarityInfo.color}50` : "none",
               }}
             >
-              {claimStatus === "claiming" ? "Claiming…" :
+              {claimStatus === "gassing"  ? "⛽ Topping up gas…" :
+               claimStatus === "claiming" ? "Claiming…" :
                claimStatus === "error"    ? "Try again" :
                isClose ? `Claim ${formatG$(drop.amount)} G$` :
                <><Lock size={16} /> Get closer to unlock</>}

@@ -8,6 +8,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
 import { publicClient } from "@/lib/publicClient";
 import { friendlyClaimError } from "@/lib/claimErrors";
+import { ensureGasForClaim } from "@/lib/ensureGas";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   formatG$, gpsToDeg, getDropRarity, RARITY,
@@ -43,7 +44,7 @@ function useCampaign(campaignId: string | null) {
 }
 
 // "gone" = a claim that can't be retried (someone else solved/claimed it).
-type ClaimStatus = "idle" | "claiming" | "done" | "error" | "gone";
+type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
 
 export default function DropPageClient({ dropId }: { dropId: string }) {
   const [drop,       setDrop]       = useState<Drop | null | undefined>(undefined);
@@ -171,6 +172,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     setStatus("claiming");
     setErrMsg("");
     try {
+      await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
+      setStatus("claiming");
+
       const needsAnswer = parseDropHint(drop.hint).hasRiddle && !riddle?.lockedByMe;
       const proofRes = await fetch("/api/claim-proof", {
         method: "POST",
@@ -311,6 +315,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const flash  = isFlashDrop(drop);
 
   function claimLabel() {
+    if (status === "gassing")  return "⛽ Topping up gas…";
     if (status === "claiming") return "Claiming…";
     if (terminal)              return "← Back to the map";
     if (status === "error")    return "Try again";

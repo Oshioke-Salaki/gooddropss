@@ -13,6 +13,7 @@ import { useVerification } from "@/hooks/useVerification";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { useProfile } from "@/hooks/useProfile";
 import { VerificationModal } from "@/components/VerificationModal";
+import { AvatarPicker } from "@/components/AvatarPicker";
 import { formatG$ } from "@/lib/utils";
 import clsx from "clsx";
 
@@ -575,6 +576,9 @@ export function Nav() {
         status={status}
         onRefresh={refresh}
       />
+
+      {/* Global avatar picker — opened via the `gd:editAvatar` event from anywhere */}
+      <AvatarPicker />
     </>
   );
 }

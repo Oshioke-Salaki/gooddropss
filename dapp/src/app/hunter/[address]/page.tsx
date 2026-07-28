@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import clsx from "clsx";
 import { fetchHunterProfile } from "@/lib/subgraph";
-import { getUsername } from "@/lib/serverProfile";
+import { getUsername, getUserAvatar } from "@/lib/serverProfile";
+import { EditAvatarButton } from "@/components/EditAvatarButton";
 import { UserHandle } from "@/components/UserHandle";
 import { HunterStreakBadge } from "@/components/HunterStreakBadge";
 import { HunterRank } from "@/components/HunterRank";
@@ -78,9 +79,10 @@ const RARITY_ORDER: DropRarity[] = ["legendary", "rare", "uncommon", "common"];
 
 export default async function HunterPage({ params }: PageProps) {
   const { address } = await params;
-  const [profile, username] = await Promise.all([
+  const [profile, username, avatarPreset] = await Promise.all([
     fetchHunterProfile(address),
     getUsername(address),
+    getUserAvatar(address),
   ]);
   if (!profile) notFound();
 
@@ -143,8 +145,9 @@ export default async function HunterPage({ params }: PageProps) {
 
         {/* Identity */}
         <div className="flex flex-col items-center text-center pt-9 pb-7 gap-3">
-          <div className="shadow-brutal rounded-full">
-            <Avatar address={address} username={username} size={92} ringColor={tier.ring} badge={tier.badge} />
+          <div className="shadow-brutal rounded-full relative">
+            <Avatar address={address} username={username} preset={avatarPreset} size={92} ringColor={tier.ring} badge={tier.badge} />
+            <EditAvatarButton address={address} />
           </div>
           <div>
             <UserHandle address={address} className="block font-black text-2xl leading-tight" />

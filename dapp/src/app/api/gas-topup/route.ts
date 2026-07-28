@@ -39,10 +39,23 @@ const TOPUP_CELO      = process.env.GAS_TOPUP_AMOUNT_CELO ?? "0.5"; // ~500+ txs
 const THRESHOLD_CELO  = "0.01";     // only top up below this balance
 const COOLDOWN_S      = 72 * 3600;  // one top-up per person per 3 days
 const MONTHLY_CAP     = 3;          // per identity root per rolling 30 days
-const DAILY_CAP       = Number(process.env.GAS_TOPUP_MAX_PER_DAY ?? 100); // global circuit breaker
+// Global circuit breaker. Raised now that most top-ups are Tier-1 (GoodDollar-
+// funded, ~free to us); worst-case OUR CELO spend is still bounded by the
+// per-person gates (verified-only, 3-day cooldown, 3/month, IP cap). Env-overridable.
+const DAILY_CAP       = Number(process.env.GAS_TOPUP_MAX_PER_DAY ?? 300);
 const IP_DAILY_CAP    = 5;
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+
+// GoodDollar's own FaucetV2 (Celo mainnet). It tops up verified users' gas from
+// GOODDOLLAR's reserve — and `topWallet(user)` is callable by anyone, so our
+// relayer can trigger it for a hunter and pay only the (tiny) submission gas.
+// This is Tier 1; our self-funded faucet below is only the fallback.
+const GD_FAUCET_ADDRESS = "0x4F93Fa058b03953C851eFaA2e4FC5C34afDFAb84" as const;
+const GD_FAUCET_ABI = [
+  { type: "function", name: "canTop",     stateMutability: "view",    inputs: [{ name: "_user", type: "address" }], outputs: [{ type: "bool" }] },
+  { type: "function", name: "topWallet",  stateMutability: "payable", inputs: [{ name: "_user", type: "address" }], outputs: [] },
+] as const;
 
 const publicClient = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
 
@@ -118,47 +131,66 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, reason: "balance_ok" });
     }
 
-    // Faucet solvency — refuse rather than bounce mid-send.
     const account = privateKeyToAccount(faucetKey);
-    const faucetBalance = await publicClient.getBalance({ address: account.address });
-    if (faucetBalance < parseEther(TOPUP_CELO) * 2n) {
-      console.error("[gas-topup] FAUCET NEARLY EMPTY:", formatEther(faucetBalance), "CELO");
-      return NextResponse.json({ ok: false, reason: "faucet_empty" }, { status: 503 });
-    }
+    const wallet  = createWalletClient({ account, chain: celo, transport: http("https://forno.celo.org") });
 
-    // Mark limits BEFORE sending (fail-closed); roll back only on send failure.
+    // Mark limits BEFORE sending (fail-closed); rolled back only if BOTH tiers fail.
     await Promise.all([
       redis.set(cdKey, "1", { ex: COOLDOWN_S }),
       redis.incr(moKey).then((n) => (n === 1 ? redis.expire(moKey, 30 * 24 * 3600) : null)),
       redis.incr(dayKey).then((n) => (n === 1 ? redis.expire(dayKey, 48 * 3600) : null)),
       redis.incr(ipKey).then((n) => (n === 1 ? redis.expire(ipKey, 48 * 3600) : null)),
     ]);
+    const rollback = () => Promise.all([
+      redis.del(cdKey),
+      redis.decr(moKey).catch(() => {}),
+      redis.decr(dayKey).catch(() => {}),
+      redis.decr(ipKey).catch(() => {}),
+    ]);
 
-    let tx: `0x${string}`;
+    let tx: `0x${string}` | null = null;
+    let via: "gooddollar" | "self" = "self";
+
+    // ── Tier 1 — GoodDollar's faucet (funded by GoodDollar; we pay only gas) ──
     try {
-      const wallet = createWalletClient({ account, chain: celo, transport: http("https://forno.celo.org") });
-      tx = await wallet.sendTransaction({
-        to: address as `0x${string}`,
-        value: parseEther(TOPUP_CELO),
+      const canTop = await publicClient.readContract({
+        address: GD_FAUCET_ADDRESS, abi: GD_FAUCET_ABI, functionName: "canTop", args: [address as `0x${string}`],
       });
+      if (canTop) {
+        const t = await wallet.writeContract({
+          address: GD_FAUCET_ADDRESS, abi: GD_FAUCET_ABI, functionName: "topWallet", args: [address as `0x${string}`],
+        });
+        const rc = await publicClient.waitForTransactionReceipt({ hash: t, timeout: 25_000 });
+        if (rc.status === "success") { tx = t; via = "gooddollar"; }
+      }
     } catch (e) {
-      // Send failed — return the person's allowance so they can retry.
-      await Promise.all([
-        redis.del(cdKey),
-        redis.decr(moKey).catch(() => {}),
-        redis.decr(dayKey).catch(() => {}),
-        redis.decr(ipKey).catch(() => {}),
-      ]);
-      console.error("[gas-topup] send failed", e);
-      return NextResponse.json({ ok: false, reason: "send_failed" }, { status: 502 });
+      console.warn("[gas-topup] GoodDollar faucet unavailable, falling back to self-fund", e);
     }
 
-    // Audit trail (capped at last 1000 payouts).
-    redis.lpush(keys.gasLog(), JSON.stringify({ ts: Math.floor(Date.now() / 1000), address, root, ip, tx, amount: TOPUP_CELO }))
+    // ── Tier 2 — our own faucet (spends our CELO), only if Tier 1 didn't cover it ──
+    if (!tx) {
+      const faucetBalance = await publicClient.getBalance({ address: account.address });
+      if (faucetBalance < parseEther(TOPUP_CELO) * 2n) {
+        console.error("[gas-topup] SELF FAUCET NEARLY EMPTY:", formatEther(faucetBalance), "CELO");
+        await rollback();
+        return NextResponse.json({ ok: false, reason: "faucet_empty" }, { status: 503 });
+      }
+      try {
+        tx = await wallet.sendTransaction({ to: address as `0x${string}`, value: parseEther(TOPUP_CELO) });
+        via = "self";
+      } catch (e) {
+        await rollback();
+        console.error("[gas-topup] self send failed", e);
+        return NextResponse.json({ ok: false, reason: "send_failed" }, { status: 502 });
+      }
+    }
+
+    // Audit trail (capped at last 1000 payouts). `via` shows who paid.
+    redis.lpush(keys.gasLog(), JSON.stringify({ ts: Math.floor(Date.now() / 1000), address, root, ip, tx, via, amount: via === "self" ? TOPUP_CELO : "gooddollar" }))
       .then(() => redis.ltrim(keys.gasLog(), 0, 999))
       .catch(() => {});
 
-    return NextResponse.json({ ok: true, tx, amount: TOPUP_CELO });
+    return NextResponse.json({ ok: true, tx, via, amount: via === "self" ? TOPUP_CELO : null });
   } catch (e) {
     console.error("[gas-topup]", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

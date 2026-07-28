@@ -8,17 +8,26 @@ import { resolveIdentityRoot } from "@/lib/identityRoot";
 const redis = Redis.fromEnv({ retry: { retries: 1, backoff: () => 300 } });
 
 export async function getUsername(address: string): Promise<string | null> {
+  return (await getServerProfile(address))?.username ?? null;
+}
+
+// The chosen preset avatar id (or null) for server-rendered pages.
+export async function getUserAvatar(address: string): Promise<string | null> {
+  return (await getServerProfile(address))?.avatar ?? null;
+}
+
+async function getServerProfile(address: string): Promise<{ username?: string; avatar?: string } | null> {
   try {
     const addr = address.toLowerCase();
     const root = await resolveIdentityRoot(addr);
-    let p = await redis.get<{ username?: string }>(`gd:profile:${root}`);
-    // Legacy fallback for a name set on a linked wallet before identity-scoping.
+    let p = await redis.get<{ username?: string; avatar?: string }>(`gd:profile:${root}`);
+    // Legacy fallback for a profile set on a linked wallet before identity-scoping.
     if (!p && root !== addr) {
-      p = await redis.get<{ username?: string }>(`gd:profile:${addr}`);
+      p = await redis.get<{ username?: string; avatar?: string }>(`gd:profile:${addr}`);
     }
-    return p?.username ?? null;
+    return p ?? null;
   } catch {
-    // Redis unreachable — profiles are cosmetic; degrade to no username.
+    // Redis unreachable — profiles are cosmetic; degrade gracefully.
     return null;
   }
 }

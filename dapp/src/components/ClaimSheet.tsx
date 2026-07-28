@@ -19,6 +19,7 @@ import {
   formatUsdApprox,
 } from "@/lib/utils";
 import { friendlyClaimError } from "@/lib/claimErrors";
+import { ensureGasForClaim } from "@/lib/ensureGas";
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { fireChestReward } from "@/components/ChestReward";
@@ -48,7 +49,7 @@ function useCampaign(campaignId: string | null) {
 
 // "gone" = the claim failed for a reason retrying can't fix (someone else solved
 // the riddle / already claimed it) — the button becomes "back to the map".
-type Status = "idle" | "claiming" | "done" | "error" | "gone";
+type Status = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
 
 interface Props {
   drop: Drop | null;
@@ -161,6 +162,11 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     setStatus("claiming");
     setErrMsg("");
     try {
+      // Ensure gas BEFORE requesting the proof, so a low wallet never fails the
+      // claim mid-tx and the proof stays fresh while any top-up lands.
+      await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
+      setStatus("claiming");
+
       const proofRes = await fetch("/api/claim-proof", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -226,6 +232,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   }
 
   function claimLabel() {
+    if (status === "gassing")  return "⛽ Topping up gas…";
     if (status === "claiming") return "⏳ Claiming…";
     if (terminal)              return "← Back to the map";
     if (status === "error")    return "Try again";
@@ -791,7 +798,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                         : identityCheckFailed ? () => refreshIdentity()
                         : handleClaim
                       }
-                      disabled={status === "claiming" || (status !== "error" && !btnActive)}
+                      disabled={status === "claiming" || status === "gassing" || (status !== "error" && !btnActive)}
                       style={{
                         width: "100%", padding: "20px",
                         background: btnActive ? "#BFFD00" : "#eee",

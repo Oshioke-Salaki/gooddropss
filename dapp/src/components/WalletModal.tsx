@@ -7,6 +7,7 @@ import { formatUnits, parseUnits, isAddress, getAddress } from "viem";
 import { Copy, Check, LogOut, Pencil, X, Loader2, Zap, User, Send, ArrowUpRight, ExternalLink } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
+import { Avatar } from "@/components/Avatar";
 import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
 import { friendlyUbiError } from "@/lib/claimErrors";
@@ -102,8 +103,6 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
     ? parseFloat(formatUnits(nativeBalance.value, nativeBalance.decimals)).toFixed(3)
     : "—";
 
-  const avatarColor = `#${address.slice(2, 8)}`;
-  const avatarText  = address.slice(2, 4).toUpperCase();
   const shortAddr   = `${address.slice(0, 6)}…${address.slice(-4)}`;
 
   // Auto-focus input when editing opens
@@ -300,17 +299,21 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
           {/* ── Identity ──────────────────────────────────────────────────────── */}
           <div style={{ padding: "18px 18px 14px", borderBottom: "2px solid #111" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {/* Avatar */}
-              <div style={{
-                width: 46, height: 46, borderRadius: "50%",
-                background: avatarColor,
-                border: "2.5px solid #111",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 900, fontSize: 14, color: "#fff",
-                flexShrink: 0, textShadow: "0 1px 2px rgba(0,0,0,0.45)",
-              }}>
-                {avatarText}
-              </div>
+              {/* Avatar — tap to pick a preset vibe */}
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent("gd:editAvatar"))}
+                title="Change your avatar"
+                style={{ position: "relative", background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0, borderRadius: "50%", lineHeight: 0 }}
+              >
+                <Avatar address={address} username={profile?.username} preset={profile?.avatar} size={46} ringColor="#111" />
+                <span style={{
+                  position: "absolute", bottom: -3, right: -3,
+                  width: 19, height: 19, borderRadius: "50%",
+                  background: "#BFFD00", border: "2px solid #111",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9, lineHeight: 1,
+                }}>🎨</span>
+              </button>
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 {/* Username or address */}

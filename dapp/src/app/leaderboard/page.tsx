@@ -7,7 +7,7 @@ import { useDrops } from "@/hooks/useDrops";
 import { formatG$ } from "@/lib/utils";
 import { resolveRoots } from "@/lib/roots";
 import { UserHandle } from "@/components/UserHandle";
-import { Avatar } from "@/components/Avatar";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { useProfile } from "@/hooks/useProfile";
 import { DROP_STATUS } from "@/types";
 import type { HunterStreak } from "@/types";
@@ -61,7 +61,7 @@ function RankRow({
         >
           {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}
         </div>
-        <Avatar address={entry.address} size={34} ringColor={isTop3 ? "#111" : "#d6d5cf"} />
+        <ProfileAvatar address={entry.address} size={34} ringColor={isTop3 ? "#111" : "#d6d5cf"} />
         <Link href={`/hunter/${entry.address}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
           <div className="font-bold text-sm truncate flex items-center gap-1.5">
             <UserHandle address={entry.address} />
