@@ -4,11 +4,15 @@ import { resolveRoots } from "@/lib/roots";
 const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
+// NB: order by `id` and cursor by `id_gt` on the SAME field. Ordering by a
+// different field (e.g. dropId) than the cursor makes id_gt re-return rows
+// already seen — silently duplicating every drop past the first 1000-row page,
+// which inflated every subgraph-derived stat (claimed G$, leaderboard, etc.).
 const DROPS_QUERY = `
   query GetDrops($lastId: ID!) {
     drops(
       first: 1000
-      orderBy: dropId
+      orderBy: id
       orderDirection: asc
       where: { id_gt: $lastId }
     ) {
@@ -234,5 +238,10 @@ export async function fetchAllDrops(): Promise<Drop[]> {
     lastId = page[page.length - 1].id;
   }
 
-  return all;
+  // Safety net: even if a future query change reintroduces overlap, never let a
+  // duplicated drop double-count in any aggregate. Keyed by dropId (the on-chain
+  // identity), last write wins.
+  const byId = new Map<string, Drop>();
+  for (const d of all) byId.set(d.id.toString(), d);
+  return [...byId.values()];
 }

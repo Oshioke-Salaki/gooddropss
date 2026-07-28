@@ -34,3 +34,6 @@ Thumbs.db
 *.ntvs*
 *.njsproj
 *.sln
+
+# AI design skills (installed via skills.sh — tooling, not app code)
+.agents/
