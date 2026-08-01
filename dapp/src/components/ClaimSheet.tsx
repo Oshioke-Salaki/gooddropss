@@ -20,6 +20,7 @@ import {
 } from "@/lib/utils";
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { ensureGasForClaim } from "@/lib/ensureGas";
+import { TaskUnlock } from "@/components/TaskUnlock";
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { fireChestReward } from "@/components/ChestReward";
@@ -148,6 +149,16 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const canClaim =
     isConnected && verificationOk && isActive && !isSelfDrop && isClose &&
     answerFilled && !riddleBlocked && status === "idle";
+
+  // Merchant task drops: the hunter must do the task and be scanned/approved
+  // before the claim will sign. When they're otherwise ready (verified, in range),
+  // swap the claim button for the task-unlock panel until it's approved.
+  const isTaskDrop = !!parsed?.taskMerchantId;
+  const [taskUnlocked, setTaskUnlocked] = useState(false);
+  useEffect(() => { setTaskUnlocked(false); }, [drop?.id]);
+  const showTaskUnlock =
+    isTaskDrop && !taskUnlocked &&
+    isConnected && verificationOk && isActive && !isSelfDrop && isClose && !riddleBlocked && status === "idle";
 
   // The claim button is "active" (tappable, styled) when it can claim, when it's
   // offering a retry after an error, or when the verification read failed and the
@@ -790,7 +801,15 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       </div>
                     )}
 
-                    {/* ── CLAIM BUTTON ── */}
+                    {/* ── CLAIM BUTTON (task drops swap in the unlock panel) ── */}
+                    {showTaskUnlock ? (
+                      <TaskUnlock
+                        drop={drop!}
+                        userLocation={userLocation}
+                        address={address as string}
+                        onApproved={() => setTaskUnlocked(true)}
+                      />
+                    ) : (
                     <button
                       onClick={
                         terminal ? onClose
@@ -819,6 +838,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     >
                       {claimLabel()}
                     </button>
+                    )}
 
                     <SafetyNote />
 

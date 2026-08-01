@@ -5,6 +5,7 @@ import type { Spot } from "@/types";
 import {
   approveMessage, APPROVAL_TTL_S, MERCHANT_DAILY_CAP, type TaskQrRecord,
 } from "@/lib/taskLock";
+import { isSpotActive } from "@/lib/spotStatus";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
   if (!spot) return NextResponse.json({ error: "Merchant spot not found." }, { status: 404 });
   const owns = spot.ownerAddress?.toLowerCase() === merchantWallet || spot.wallet?.toLowerCase() === merchantWallet;
   if (!owns) return NextResponse.json({ error: "You don't own this reward drop." }, { status: 403 });
+  if (!isSpotActive(spot)) return NextResponse.json({ error: "This business isn't active — can't approve." }, { status: 403 });
 
   // 4. Per-merchant daily cap (anti-abuse). Reserve before writing; roll back on failure.
   const today = new Date().toISOString().slice(0, 10);

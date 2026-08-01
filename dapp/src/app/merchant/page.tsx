@@ -4,8 +4,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { Store, MapPin, Loader2, Check, TrendingUp } from "lucide-react";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
-import { formatG$, shortAddr } from "@/lib/utils";
-import type { Spot, SpotPayment } from "@/types";
+import type { Spot } from "@/types";
+import { MerchantSpotCard } from "@/components/merchant/MerchantSpotCard";
+import { TaskScanner } from "@/components/merchant/TaskScanner";
+import { isSpotActive } from "@/lib/spotStatus";
 import clsx from "clsx";
 
 const CATEGORIES = [
@@ -16,83 +18,6 @@ const CATEGORIES = [
   { id: "other",     label: "🏪 Other" },
 ];
 
-interface SpotStats { count: number; totalWei: string; payments: SpotPayment[] }
-
-function SpotCard({ spot }: { spot: Spot }) {
-  const [stats, setStats] = useState<SpotStats | null>(null);
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/spots/${spot.id}/payments`)
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
-  }, [spot.id]);
-
-  return (
-    <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-black text-lg leading-tight">{spot.name}</p>
-          {spot.description && (
-            <p className="text-xs text-muted mt-0.5">{spot.description}</p>
-          )}
-        </div>
-        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full border-2 bg-lime border-ink text-ink whitespace-nowrap">
-          🏪 Live
-        </span>
-      </div>
-
-      <div className="text-xs text-muted space-y-1">
-        <div>📍 {spot.lat.toFixed(4)}° N, {spot.lng.toFixed(4)}° E</div>
-        <div>💳 Payouts → {shortAddr(spot.wallet)}</div>
-        {spot.discount && <div>🎁 {spot.discount}</div>}
-      </div>
-
-      {/* Analytics — the merchant's proof of foot traffic */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-ink text-lime rounded-xl p-3">
-          <div className="text-2xl font-black">{stats?.count ?? "…"}</div>
-          <div className="text-[10px] font-bold uppercase tracking-wider opacity-70">Payments received</div>
-        </div>
-        <div className="bg-lime border-2 border-ink rounded-xl p-3">
-          <div className="text-2xl font-black text-ink">
-            {stats ? formatG$(BigInt(stats.totalWei)) : "…"} <span className="text-sm">G$</span>
-          </div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-ink/60">Total earned</div>
-        </div>
-      </div>
-
-      {stats && stats.payments.length > 0 && (
-        <>
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="w-full py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-border transition-colors"
-          >
-            {expanded ? "Hide" : "Show"} recent payments {expanded ? "▲" : "▼"}
-          </button>
-          {expanded && (
-            <div className="space-y-1.5">
-              {stats.payments.slice(0, 10).map((p) => (
-                <a
-                  key={p.tx}
-                  href={`https://celoscan.io/tx/${p.tx}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-between text-xs bg-cream border border-border rounded-lg px-3 py-2 hover:border-ink transition-colors"
-                  style={{ textDecoration: "none" }}
-                >
-                  <span className="font-bold text-ink">{formatG$(BigInt(p.amount))} G$</span>
-                  <span className="text-muted">{shortAddr(p.payer)}</span>
-                  <span className="text-muted">{new Date(p.ts * 1000).toLocaleDateString()}</span>
-                </a>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
 
 export default function MerchantPage() {
   const { address, isConnected } = useSignedInAccount();
@@ -101,6 +26,7 @@ export default function MerchantPage() {
   const [mySpots, setMySpots]   = useState<Spot[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   // Form state
   const [name, setName]           = useState("");
@@ -204,8 +130,8 @@ export default function MerchantPage() {
         ) : (
           <>
             {done && (
-              <div className="flex items-center gap-2 bg-lime border-2 border-ink rounded-xl px-4 py-3 mb-4 font-bold text-sm">
-                <Check size={16} /> Your shop is live on the map!
+              <div className="flex items-center gap-2 bg-[#FFF4E0] border-2 border-ink rounded-xl px-4 py-3 mb-4 font-bold text-sm">
+                <Check size={16} /> Submitted! An admin will review it — it goes live once approved.
               </div>
             )}
 
@@ -342,6 +268,22 @@ export default function MerchantPage() {
               </div>
             )}
 
+            {/* Scan & approve task rewards — only useful once a spot exists */}
+            {mySpots.some(isSpotActive) && (
+              <div className="mb-5">
+                {showScanner ? (
+                  <TaskScanner onClose={() => setShowScanner(false)} />
+                ) : (
+                  <button
+                    onClick={() => setShowScanner(true)}
+                    className="btn-brutal w-full py-3 rounded-xl font-black text-sm bg-lime text-ink flex items-center justify-center gap-2"
+                  >
+                    📷 Scan &amp; approve a reward
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* My spots + analytics */}
             <div className="flex items-center gap-2 mb-3">
               <TrendingUp size={16} />
@@ -360,7 +302,7 @@ export default function MerchantPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {mySpots.map((s) => <SpotCard key={s.id} spot={s} />)}
+                {mySpots.map((s) => <MerchantSpotCard key={s.id} spot={s} onChanged={fetchMySpots} />)}
               </div>
             )}
           </>

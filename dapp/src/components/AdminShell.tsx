@@ -13,6 +13,7 @@ const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?:
   { href: "/admin/suggestions", label: "Suggestions", icon: "💡", badge: "suggestions" },
   { href: "/admin/reports",     label: "Reports",     icon: "🚩", badge: "reports" },
   { href: "/admin/places",      label: "Places",      icon: "🏷️" },
+  { href: "/admin/businesses",  label: "Businesses",  icon: "🏪" },
   { href: "/admin/badges",      label: "Badges",      icon: "🏅" },
   { href: "/admin/analytics",   label: "Analytics",   icon: "📊" },
   { href: "/admin/health",      label: "Health",      icon: "🩺" },

@@ -90,13 +90,15 @@ function makeDropElement(drop: Drop): HTMLDivElement {
   const isCampaign = parsed.campaignId !== null;
   const isChain    = parsed.chainNextId !== null || parsed.isChainLast;
   const hasRiddle  = parsed.hasRiddle;
+  const isTask     = parsed.taskMerchantId !== null;
   const rarity     = getDropRarity(drop.amount);
   const p          = CHESTS[rarity];
   const label      = formatG$(drop.amount);
 
   // Special-type badges layered on the chest (a chest can be several things).
   const tags =
-    (hasRiddle  ? cornerTag("🧩", "right", "#BFFD00") : "") +
+    (isTask     ? cornerTag("🎁", "right", "#FFD700")
+      : hasRiddle ? cornerTag("🧩", "right", "#BFFD00") : "") +
     (flash      ? cornerTag("⚡", "left",  "#FF6400") : "") +
     (!flash && isChain    ? cornerTag("🔗", "left", "#BFFD00") : "") +
     (!flash && !isChain && isCampaign ? cornerTag("⭐", "left", "#FFD700") : "");

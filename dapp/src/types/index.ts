@@ -53,6 +53,14 @@ export interface ChainStop {
 
 // ── GoodSpots: merchants that accept G$ at a physical location ────────────────
 
+// Lifecycle:
+//   pending   → newly registered by a merchant, awaiting admin approval (not live)
+//   active    → approved & live (shown on the map, can run reward drops)
+//   paused    → deactivated BY THE MERCHANT (they can reactivate it themselves)
+//   suspended → deactivated BY AN ADMIN (only an admin can reactivate)
+//   rejected  → a pending spot an admin declined
+export type SpotStatus = "pending" | "active" | "paused" | "suspended" | "rejected";
+
 export interface Spot {
   id:           string;
   name:         string;
@@ -64,6 +72,9 @@ export interface Spot {
   lat:          number;        // degrees
   lng:          number;        // degrees
   createdAt:    number;        // unix seconds
+  status?:      SpotStatus;    // absent on legacy spots → treated as "active"
+  updatedAt?:   number;        // unix seconds of last status/edit change
+  note?:        string;        // admin note (e.g. reason for suspension)
 }
 
 // Admin-curated place labels — the "map skeleton" for areas the base tiles leave
