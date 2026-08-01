@@ -289,6 +289,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── 6b. Merchant task gate ───────────────────────────────────────────────
+    // [T:spotId] lives on-chain, so a task drop is recognisable even if Redis is
+    // down — fail CLOSED rather than sign a proof that skips merchant approval.
+    if (parseDropHint(drop.hint).taskMerchantId) {
+      if (!redis) {
+        return NextResponse.json(
+          { error: "Task drops are temporarily unavailable — try again shortly" },
+          { status: 503 },
+        );
+      }
+      const approved = await redis.get(keys.taskApproval(dropId, root));
+      if (!approved) {
+        return NextResponse.json(
+          { error: "Do the task, then have the merchant scan your QR to unlock this drop." },
+          { status: 403 },
+        );
+      }
+      // Leave the approval in place — its TTL expires it. If the on-chain claim
+      // tx fails, the hunter can retry within the window without re-scanning; the
+      // contract enforces one claim per drop, so this can't double-reward.
+    }
+
     // ── 7. Sign the proof ────────────────────────────────────────────────────
     const deadline = Math.floor(Date.now() / 1000) + PROOF_TTL_S;
 

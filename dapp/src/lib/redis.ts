@@ -65,6 +65,17 @@ export const keys = {
   spotsAll:         ()                => `gd:spots:all`,
   spotsByOwner:     (addr: string)    => `gd:spots:owner:${addr.toLowerCase()}`,
   spotPayments:     (id: string)      => `gd:spot:payments:${id}`,
+
+  // ── Merchant task-locked drops (Phase 3) ──────────────────────────────────
+  // A task drop is [T:spotId] on-chain; the task text lives here. The hunter mints
+  // a single-use QR nonce; the merchant (spot owner) scans + approves it, which
+  // writes a short-lived approval that /api/claim-proof requires before signing.
+  taskDrop:          (dropId: string)              => `gd:task:drop:${dropId}`,           // { spotId, task, createdAt }
+  taskQr:            (nonce: string)               => `gd:task:qr:${nonce}`,              // { dropId, root, spotId } · single-use · TTL 120s
+  taskQrCooldown:    (root: string)                => `gd:task:qrcd:${root.toLowerCase()}`, // anti-spam on nonce minting
+  taskApproval:      (dropId: string, root: string) => `gd:task:appr:${dropId}:${root.toLowerCase()}`, // TTL 10m; claim-proof requires it
+  taskApprovalsDaily:(spotId: string, date: string) => `gd:task:apprday:${spotId}:${date}`,           // per-merchant daily cap
+  taskApprovalLog:   ()                            => `gd:task:log`,                       // audit list (moderation surface)
   // Admin-curated map landmarks
   landmark:         (id: string)      => `gd:landmark:${id}`,
   landmarksIndex:   ()                => `gd:landmarks:index`, // Set of ids (idempotent)

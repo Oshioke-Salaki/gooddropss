@@ -385,6 +385,206 @@ your post-deploy smoke test.
 
 ---
 
+## 12. Presence Foundation — provable claims + the gas faucet (Phase 0)
+
+**What it is.** The groundwork that turns a GoodDrops claim into *cryptographic
+proof a real human was physically somewhere* — and removes the #1 support
+killer (users with zero CELO who can't pay gas):
+
+- **Anti-spoof, three modes** (`ANTISPOOF_MODE`: off / **shadow** / enforce).
+  Every claim is checked for VPN/datacenter IPs and IP-vs-GPS distance (hard
+  block >1500 km; soft-log >400 km — mobile-carrier IPs wander, so false
+  positives are treated as the real enemy), plus optional GPS accuracy/fix-age
+  signals. **Shadow mode logs suspicious claims to `/admin/health` without
+  blocking** — run it a few days, review the flags, then flip to enforce.
+- **Velocity by identity root.** The impossible-travel check was keyed per
+  wallet, so switching linked wallets reset the speed limit. Now all of a
+  person's wallets share one movement history.
+- **Presence ledger.** Every signed proof appends to an identity-scoped,
+  privacy-coarsened (~110 m) ledger — the substrate badges, sets, and a future
+  presence API are built on.
+- **Gas top-up faucet** (`/api/gas-topup` + a silent app-wide client). Verified
+  hunters low on CELO are topped up (0.5 CELO ≈ hundreds of transactions)
+  *before* they ever see "insufficient funds". Guarded by **seven independent
+  anti-drain gates**: verified-humans only · on-chain balance check (can't
+  accumulate) · 72 h cooldown per identity root · 3 per person per 30 days ·
+  a global daily circuit breaker (worst-case drain = one day's budget) ·
+  per-IP caps · atomic per-person locks with fail-closed counters. Every payout
+  is audit-logged; the faucet balance and daily count live on `/admin/health`.
+
+**Why it matters.** "Proof of presence" is GoodDrops' deepest asset — stronger
+than POAP, because a claim requires a *face-verified unique human*, *physically
+in range*, with *money moving on-chain*. That's only true if spoofing is caught
+and if claiming never dies on a $0.001 gas fee. This phase makes both real.
+
+---
+
+## 13. Presence Badges & Collections (Phase 1)
+
+**What it is.** A full status layer earned from GPS-verified claims:
+
+- **Badge wall** on every hunter profile: earned badges with **rarity counts**
+  ("held by 12 humans"), locked badges greyed out with how to get them, and
+  **collection (set) progress bars** ("Devconnect Explorer — 3/5").
+- **11 built-in badges** that absorb the old achievements one-for-one (First
+  Hunt, Drop Maker, Speed Demon, Whale, Legend, Collector, Pioneer) plus new
+  ladder rungs (Serial Hunter 10, Hunt Machine 50, Money Magnet 1 000 G$,
+  On Fire 7-day streak). One system — nobody loses status.
+- **Admin badge builder** (`/admin/badges`): create event/venue badges with
+  rules like *claimed one of these specific drops*, *claimed near a location*,
+  *N claims in a campaign* — and group badges into **sets** (the
+  "collect 5 special drops at Devconnect" product). They award automatically.
+- **Celebration**: claiming a drop fires a "🏅 Badge unlocked" banner the
+  moment a new badge (or set piece) is earned.
+
+**Why it matters — and the design choice that makes it work.** Badges are
+evaluated **lazily from the on-chain record (identity-scoped)**, not in the
+claim hot-path. So the whole history counts: at launch every existing hunter's
+wall lights up with everything they've already earned. It also means evaluation
+can never slow or break a claim, the engine is a pure unit-tested function, and
+badges are **append-only** — once earned, never revoked. This is the retention
+layer (a reason to hunt one more drop) and the event product (sponsor a set,
+attendees collect it) in one.
+
+**On-chain, free, soulbound (Phase 2, shipped).** Every earned badge can be
+minted on-chain with one tap via a **"⛓ mint free"** button on your own badge
+wall. The `GoodDropsBadges` contract (UUPS, soulbound per ERC-5192) lives on
+Celo; the server signs the mint authorization **only for badges the person
+actually earned** (replay-proof: the digest binds chain id + contract + wallet +
+badge + deadline), and a **relayer pays the gas** — so it costs the hunter
+nothing. Minted badges show a ⛓ chip linking to Celoscan, carry branded on-chain
+art + metadata (served from the app), and can never be transferred (bought) —
+only earned or burned. Anti-drain mirrors the gas faucet (each badge one-time,
+plus global + per-IP daily caps). `/admin/health` verifies the signer matches
+the on-chain `badgeSigner`.
+
+---
+
+## 14. Treasure Chests & Avatars — the map that feels like a game
+
+**What it is.** Drops are no longer flat numbered circles — they're **treasure
+chests** whose material, size, and shine escalate with value: a common drop is a
+small iron-banded wooden chest, an uncommon one gets bronze, a rare one is a
+blue-steel chest with a gem and a glowing pulse, and a **legendary is a big
+gold chest with gems and an animated shine sweep** you can spot from across the
+map. Special drops layer badges on the chest (⚡ flash, 🔗 chain, ⭐ campaign,
+🧩 riddle), and a cluster of drops renders as a 💰 hoard with a count. Drop
+markers are crisp inline SVG, so they stay sharp at any zoom.
+
+People now have **generated avatars** too — deterministic two-tone gradients
+with a monogram, shown on the profile and leaderboard. On the profile the avatar
+carries a **rank ring + badge that levels up** (🌟 → 🔥 → 👑 as claims grow), so
+status is visible at a glance.
+
+**Why it matters.** A treasure hunt should *look* like one. Numbered dots are a
+spreadsheet; chests that get shinier with value make the map read instantly
+("that gold one is loaded"), pull the eye toward the big prizes, and make the
+whole thing feel like a game worth playing. Avatars + rank rings give people an
+identity to build and show off — the status loop that keeps hunters coming back.
+
+**Open-the-chest claim moment.** Claiming a drop now plays a cinematic: a gold
+chest shakes, its lid flips open with a flash, coins burst out, and the amount
+pops in — the dopamine beat a treasure hunt was missing.
+
+**"Hunters nearby" urgency (safe).** A drop shows a **🔥 N hunters nearby** chip
+derived from the coarse, opt-in location data — a *count only*, never who or
+exactly where. This is the deliberately safe answer to the mentor's "show hunter
+locations" idea: it creates real FOMO without ever exposing where an individual
+is (which, in a real-money app, would be a stalking/robbery vector). Individual
+hunter locations are **never** plotted on the map.
+
+---
+
+## 17. Cinematic landing — the first-impression moment
+
+**What it is.** A new full-screen landing at `/` for first-time visitors: a deep
+near-black canvas, molten-gold treasure motif, and editorial serif display type
+(Fraunces) meeting Space Grotesk, with lime kept as the single electric accent on
+the primary action. The hero states the promise ("Somewhere near you, there's
+real *money* hidden.") over a drifting field of gold treasure chests and a
+shimmering gold "vein," with pointer-parallax depth and a staggered de-blur
+entrance. Below: a framed **map window** rendered from the product's own world
+(dark contour/street map texture + glowing chests + a "you" pulse), a tight
+**Drop → Hunt → Claim** sequence, a **live ticker of real recent claims**, and a
+final gold CTA. Real numbers are woven in as a sentence (G$ found, claimed drops,
+verified hunters), not a generic stat-card grid.
+
+**Interaction & performance.** Motion follows Apple's fluid-UI principles —
+springs, exponential ease-out, response on press (`:active` scale), and full
+`prefers-reduced-motion` support. The landing is **gated**: returning players (a
+connected wallet, or the `gd_entered` flag) flow straight to the map, so it only
+greets true first-timers — and because the map mounts only after "Start hunting",
+**MapLibre no longer loads until someone enters the app** (a real first-paint
+win).
+
+**Direction.** Built under the "premium treasure — cinematic" direction using the
+installed design skills (Impeccable / Emil / Apple-design); verified against
+Impeccable's craft floor and mechanical detector (clean).
+
+**Deliverable 2 — in-app polish (in progress).** The premium system is being rolled
+through the app surface by surface (styling only; all handlers/logic intact):
+- **Accent system unified to GOLD** — lime is being retired app-wide. Gold is the
+  single accent (actions, highlights, brand); a small green pulse marks "live".
+  Done so far: top nav (now a dark-glass bar matching the landing), bottom nav,
+  the floating map FABs, the live status pill, the cold-start card, and the
+  Drop / Claim / Chain sheets + hunting mode.
+- **Floating-control language** — soft layered shadows + dark glass replace the
+  flat brutalist blocks on the map chrome.
+- Remaining waves: map-marker/rarity colors and the other pages
+  (leaderboard, my-drops, profile, merchant, sponsor) still carry lime and are
+  the next sweep.
+
+---
+
+## 16. Identity-gated dropping — only verified humans hide G$
+
+**What it is.** Creating a drop now requires GoodDollar face-verification, exactly
+like claiming already did. All three creation surfaces enforce it — the single
+**Drop G$** sheet, the **chain-hunt** builder, and the **batch/sponsor** creator:
+an unverified (or lapsed) user sees a **🪪 Verify to drop** CTA that opens the
+face-check flow instead of the drop button, and the submit handler fails closed
+if the identity check hasn't passed. It uses the same rich status hook as the
+claim gate, so it correctly distinguishes *never verified* → "Verify" from
+*lapsed* → "Re-verify", and never false-blocks while the on-chain check is still
+loading or if the RPC read fails (it offers a retry instead).
+
+**Why it matters.** Dropping was the last unauthenticated action. Anyone could
+spin up throwaway wallets and create drops, which (a) inflated the "unique humans"
+analytics — droppers were only deduped by wallet, not identity — and (b) opened a
+Sybil vector for gaming any future dropper rewards. Gating it makes every
+participant a verified human, so the humans metric becomes honest and drop farms
+are shut off at the source.
+
+**Honest limitation (enforcement layer).** Drop creation is a *direct on-chain
+call* (unlike claiming, which routes through the server's proof endpoint), so this
+gate lives in the app — it stops every normal user through the UI, but a technical
+user could still call `createDrop` on the contract directly. **Airtight
+enforcement requires a contract upgrade** so `createDrop` checks the caller's
+IdentityV4 root on-chain (the GoodDrops proxy is UUPS-upgradeable, so this is
+possible without redeploying). Tracked as a follow-up.
+
+---
+
+## 15. Send G$ — a wallet, not just a scoreboard
+
+**What it is.** The account modal now has a **Send G$** panel: paste a recipient
+wallet, enter an amount (with a one-tap **Max**), and transfer G$ straight from
+your balance. It's a plain ERC-20 `transfer` on the G$ token — **send-only** by
+design (no receive/swap/buy surface to build, secure, or explain). Client-side
+guards reject a malformed address, sending to yourself, zero/over-balance
+amounts, and it surfaces a friendly "top up a little CELO for gas" message when
+the wallet has no CELO. On success it waits for the receipt, checks it didn't
+revert, shows a ✅ card with a Celoscan link, and nudges every balance instance
+to refetch.
+
+**Why it matters.** Hunters already hold G$ in-app and had no way to move it
+without leaving for another wallet. Letting them send G$ to friends (tip a
+finder, split a haul, seed a new hunter) closes the loop and makes GoodDrops feel
+like a real wallet — money flows *out* through the same door it came in, which is
+also how new users get their first G$ and first taste of the app.
+
+---
+
 ### Configuration notes (for whoever deploys)
 
 - **Nearby-drop alerts** rely on the on-chain webhook (Goldsky → `/api/push/webhook`)

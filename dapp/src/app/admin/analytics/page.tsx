@@ -12,6 +12,11 @@ import { isAdminAddress } from "@/lib/admins";
 // Admin wallets live in one shared allowlist — see lib/admins.ts.
 const ZERO  = "0x0000000000000000000000000000000000000000";
 
+// Manual prize adjustment: competition prizes count as circulation but aren't in
+// the subgraph (they're plain G$ transfers). Bump this as payouts go out — Week 1
+// hunters = 239,316 G$; add another 239,316 once droppers are paid (→ 478,632).
+const PRIZE_G_DISTRIBUTED = 239_316n * 10n ** 18n;
+
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
   const d = Math.floor(sec / 86400);
@@ -129,6 +134,7 @@ export default function AnalyticsPage() {
     return {
       total: drops.length, active, claimed, reclaimed, expiredUnclaimed,
       claimedWei, reclaimedWei, activeWei,
+      circulatedWei: claimedWei + PRIZE_G_DISTRIBUTED,   // claims + competition prizes
       droppers: droppers.size, hunters: hunters.size, humans: humans.size,
       claimRate, days, maxDay,
       activeToday: activeToday.size, avgTtcSec, claimedDays, maxClaimedWei,
@@ -186,7 +192,7 @@ export default function AnalyticsPage() {
           <>
             {/* Headline row */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 12 }}>
-              <Stat label="G$ circulated" value={`${formatG$(m.claimedWei)}`} sub="claimed by hunters" accent />
+              <Stat label="G$ circulated" value={`${formatG$(m.circulatedWei)}`} sub="claims + prizes" accent />
               <Stat label="Unique humans" value={String(m.humans)} sub="deduped by identity" />
               <Stat label="Hunters" value={String(m.hunters)} sub="claimed ≥ 1 drop" />
               <Stat label="Droppers" value={String(m.droppers)} sub="created ≥ 1 drop" />

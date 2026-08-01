@@ -29,7 +29,7 @@ export function shortAddr(addr: string): string {
 // G$ → USD rate. Configurable so it can track the real oracle price without a
 // code change; falls back to a conservative default when unset.
 const GDOLLAR_USD_RATE = Number(
-  process.env.NEXT_PUBLIC_GDOLLAR_USD ?? "0.00003",
+  process.env.NEXT_PUBLIC_GDOLLAR_USD ?? "0.0000117",
 );
 
 /** USD value of a G$ (wei) amount as a number. */
@@ -189,17 +189,20 @@ export function formatDegrees(raw: number): string {
 // [P:][CHL]hint   — private chain drop (last stop, hidden from map)
 // [R]hint         — riddle-locked: hunter must answer correctly to claim.
 //                   Composes with any of the above (it's the outermost prefix).
+// [T:merchantId]hint — public MERCHANT TASK drop: hunter must do an IRL task and
+//                   get scanned/approved by the merchant before the claim signs.
 //
-// [R] is deliberately recorded ON-CHAIN rather than only in Redis. The riddle's
-// question/answer live server-side, but the *existence* of a riddle must be
-// tamper-proof: it lets the claim gate fail CLOSED when Redis is unavailable,
-// instead of silently signing a proof and letting someone skip the riddle.
+// [R] / [T:] are deliberately recorded ON-CHAIN rather than only in Redis. The
+// riddle answer / task record live server-side, but the *existence* of the gate
+// must be tamper-proof: it lets the claim gate fail CLOSED when Redis is
+// unavailable, instead of silently signing a proof and letting someone skip it.
 
 const PRIVATE_RE = /^\[P:([^\]]*)\]([\s\S]*)/;
 const CAMPAIGN_RE = /^\[C:([^\]]+)\]([\s\S]*)/;
 const CHAIN_RE = /^\[CH:([^\]]+)\]([\s\S]*)/;
 const CHAIN_LAST = /^\[CHL\]([\s\S]*)/;
 const RIDDLE_RE = /^\[R\]([\s\S]*)/;
+const TASK_RE = /^\[T:([^\]]+)\]([\s\S]*)/;
 
 export function parseDropHint(raw: string): {
   isPrivate: boolean;
@@ -208,6 +211,8 @@ export function parseDropHint(raw: string): {
   chainNextId: string | null;
   isChainLast: boolean;
   hasRiddle: boolean;
+  /** merchant id for a task-locked drop, else null */
+  taskMerchantId: string | null;
   hint: string;
 } {
   let rest = raw;
@@ -247,6 +252,7 @@ export function parseDropHint(raw: string): {
       chainNextId: null,
       isChainLast: true,
       hasRiddle,
+      taskMerchantId: null,
       hint: chainLast[1],
     };
 
@@ -260,11 +266,25 @@ export function parseDropHint(raw: string): {
       chainNextId: chain[1],
       isChainLast: false,
       hasRiddle,
+      taskMerchantId: null,
       hint: chain[2],
     };
 
-  // Check remaining for [C:id] (campaigns are never private)
+  // Public-drop gates (never private): merchant task, then campaign.
   if (!isPrivate) {
+    const task = rest.match(TASK_RE);
+    if (task)
+      return {
+        isPrivate: false,
+        target: null,
+        campaignId: null,
+        chainNextId: null,
+        isChainLast: false,
+        hasRiddle,
+        taskMerchantId: task[1],
+        hint: task[2],
+      };
+
     const camp = rest.match(CAMPAIGN_RE);
     if (camp)
       return {
@@ -274,6 +294,7 @@ export function parseDropHint(raw: string): {
         chainNextId: null,
         isChainLast: false,
         hasRiddle,
+        taskMerchantId: null,
         hint: camp[2],
       };
   }
@@ -285,8 +306,16 @@ export function parseDropHint(raw: string): {
     chainNextId: null,
     isChainLast: false,
     hasRiddle,
+    taskMerchantId: null,
     hint: rest,
   };
+}
+
+// A task-locked drop: public, funded normally, but the claim only signs after
+// the merchant scans the hunter's one-time QR and approves. `merchantId` binds
+// the drop to a specific merchant so only they can approve its claims.
+export function buildTaskHint(hint: string, merchantId: string): string {
+  return `[T:${merchantId}]${hint}`;
 }
 
 // Applied last, so [R] wraps whatever private/campaign/chain encoding is already there.
