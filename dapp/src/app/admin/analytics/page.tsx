@@ -13,9 +13,9 @@ import { isAdminAddress } from "@/lib/admins";
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 // Manual prize adjustment: competition prizes count as circulation but aren't in
-// the subgraph (they're plain G$ transfers). Bump this as payouts go out — Week 1
-// hunters = 239,316 G$; add another 239,316 once droppers are paid (→ 478,632).
-const PRIZE_G_DISTRIBUTED = 239_316n * 10n ** 18n;
+// the subgraph (they're plain G$ transfers). Week 1: hunters (239,316) +
+// droppers (239,316) = 478,632 G$ paid from the prize wallet.
+const PRIZE_G_DISTRIBUTED = 478_632n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
