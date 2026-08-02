@@ -7,6 +7,7 @@ import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import type { Spot } from "@/types";
 import { MerchantSpotCard } from "@/components/merchant/MerchantSpotCard";
 import { TaskScanner } from "@/components/merchant/TaskScanner";
+import { HowRewardsWork } from "@/components/merchant/HowRewardsWork";
 import { isSpotActive } from "@/lib/spotStatus";
 import clsx from "clsx";
 
@@ -269,6 +270,8 @@ export default function MerchantPage() {
             )}
 
             {/* Scan & approve task rewards — only useful once a spot exists */}
+            <HowRewardsWork />
+
             {mySpots.some(isSpotActive) && (
               <div className="mb-5">
                 {showScanner ? (
