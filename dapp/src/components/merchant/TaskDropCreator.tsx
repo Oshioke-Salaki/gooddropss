@@ -39,6 +39,9 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   const [duration, setDuration] = useState(604_800);
   const [status, setStatus] = useState<Status>("idle");
   const [err, setErr]       = useState("");
+  // Set when the drop minted but the task record didn't save — lets the merchant
+  // finish saving WITHOUT re-funding (which would mint a second, wasted drop).
+  const [pendingSave, setPendingSave] = useState<{ dropId: string; sig: string } | null>(null);
 
   const amountNum = parseFloat(amount);
   const amountWei = !isNaN(amountNum) && amountNum > 0 ? parseUnits(amount, 18) : 0n;
@@ -89,21 +92,38 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
       if (!dropId) throw new Error("Created, but couldn't read the drop id — refresh and try again.");
 
       // 4. Store the task record (owner-signed).
-      setStatus("saving");
       const sig = await signMessageAsync({ message: taskCreateMessage(dropId, spot.id) });
-      const res = await fetch("/api/task/create", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dropId, spotId: spot.id, task: cleanTask(task), ownerAddress: address, signature: sig }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error ?? "Drop created, but saving the task failed."); }
-
-      setStatus("done");
-      onCreated();
+      await saveTask(dropId, sig);
     } catch (e: unknown) {
       const m = (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message ?? "Failed";
       setErr(/rejected|denied/i.test(m) ? "Cancelled." : m);
       setStatus("error");
     }
+  }
+
+  // Persist the task record with retries. The mint tx is already confirmed, so a
+  // failure here is almost always read-after-write RPC lag on the server — retry
+  // a few times, and if it still fails keep the dropId+sig so the merchant can
+  // finish saving without minting (and paying for) a second drop.
+  async function saveTask(dropId: string, sig: string) {
+    if (!address) return;
+    setStatus("saving"); setErr("");
+    let lastErr = "Saving the task failed.";
+    for (let i = 0; i < 3; i++) {
+      try {
+        const res = await fetch("/api/task/create", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dropId, spotId: spot.id, task: cleanTask(task), ownerAddress: address, signature: sig }),
+        });
+        if (res.ok) { setPendingSave(null); setStatus("done"); onCreated(); return; }
+        const d = await res.json().catch(() => ({}));
+        lastErr = d.error ?? lastErr;
+      } catch { lastErr = "Network error while saving the task."; }
+      if (i < 2) await new Promise((r) => setTimeout(r, 1500));
+    }
+    setPendingSave({ dropId, sig });
+    setErr(`${lastErr} Your reward is already funded — tap “Finish saving” to complete it (this won't charge you again).`);
+    setStatus("error");
   }
 
   if (status === "done") {
@@ -153,9 +173,15 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
 
       {(err || problem) && <p className="text-xs font-bold text-danger">{err || problem}</p>}
 
-      <button onClick={handleCreate} disabled={busy || !!problem}
+      <button
+        onClick={pendingSave ? () => saveTask(pendingSave.dropId, pendingSave.sig) : handleCreate}
+        disabled={busy || (!pendingSave && !!problem)}
         className="btn-brutal w-full py-3 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-60 disabled:cursor-not-allowed">
-        {status === "approving" ? "Approving G$…" : status === "creating" ? "Creating drop…" : status === "saving" ? "Saving task…" : `Fund ${amount || "?"} G$ reward`}
+        {status === "approving" ? "Approving G$…"
+          : status === "creating" ? "Creating drop…"
+          : status === "saving" ? "Saving task…"
+          : pendingSave ? "Finish saving task"
+          : `Fund ${amount || "?"} G$ reward`}
       </button>
     </div>
   );

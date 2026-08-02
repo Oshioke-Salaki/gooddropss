@@ -50,10 +50,19 @@ export async function POST(req: NextRequest) {
   if (!isSpotActive(spot)) return NextResponse.json({ error: "This business isn't active yet." }, { status: 403 });
 
   // 3. The drop must actually be a [T:spotId] task drop on-chain (defense in depth).
-  let drop;
-  try {
-    drop = await publicClient.readContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(dropId)] });
-  } catch { return NextResponse.json({ error: "Drop not found" }, { status: 404 }); }
+  // The client only calls us AFTER the mint tx is confirmed, so if the drop reads
+  // back empty it's read-after-write lag on a load-balanced RPC node, not a missing
+  // drop — retry for a few seconds before giving up, or we'd reject a real drop
+  // ("Drop not found") and leave it funded-but-unclaimable.
+  let drop: { dropper: string; hint: string } | undefined;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      drop = await publicClient.readContract({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(dropId)] });
+      if (drop && drop.dropper !== ZERO) break;
+    } catch { /* transient RPC error — retry */ }
+    drop = undefined;
+    if (attempt < 5) await new Promise((r) => setTimeout(r, 1200));
+  }
   if (!drop || drop.dropper === ZERO) return NextResponse.json({ error: "Drop not found" }, { status: 404 });
   if (parseDropHint(drop.hint).taskMerchantId !== spotId) {
     return NextResponse.json({ error: "Drop is not tagged for this spot" }, { status: 409 });
