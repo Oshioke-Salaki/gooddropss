@@ -43,6 +43,19 @@ export default function AdminBusinesses() {
     finally { setBusy(null); }
   }
 
+  async function remove(id: string, name: string) {
+    if (busy) return;
+    if (typeof window !== "undefined" && !window.confirm(`Permanently delete "${name}"? This can't be undone.`)) return;
+    setBusy(id + "delete"); setErr("");
+    try {
+      const res = await fetch(`/api/spots/${id}`, { method: "DELETE" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setErr(d.error ?? "Delete failed"); return; }
+      load();
+    } catch { setErr("Network error"); }
+    finally { setBusy(null); }
+  }
+
   if (spots === null) return <p className="p-6 font-semibold text-gray-500 animate-pulse">Loading businesses…</p>;
 
   const byStatus = ORDER.map((s) => ({ status: s, items: spots.filter((sp) => spotStatus(sp) === s) })).filter((g) => g.items.length > 0);
@@ -101,6 +114,11 @@ export default function AdminBusinesses() {
                     {status === "suspended" && (
                       <ActBtn onClick={() => act(s.id, "reactivate")} busy={busy === s.id + "reactivate"} primary>▶️ Reactivate</ActBtn>
                     )}
+                    {/* Delete — only for hidden (non-live) businesses, so a legit
+                        active spot can't be wiped by a stray tap. */}
+                    {status !== "active" && (
+                      <ActBtn onClick={() => remove(s.id, s.name)} busy={busy === s.id + "delete"} danger>🗑️ Delete</ActBtn>
+                    )}
                   </div>
                 </div>
               ))}
@@ -119,10 +137,10 @@ function promptNote(): string | undefined {
   return n?.trim() || undefined;
 }
 
-function ActBtn({ children, onClick, busy, primary }: { children: React.ReactNode; onClick: () => void; busy: boolean; primary?: boolean }) {
+function ActBtn({ children, onClick, busy, primary, danger }: { children: React.ReactNode; onClick: () => void; busy: boolean; primary?: boolean; danger?: boolean }) {
   return (
     <button onClick={onClick} disabled={busy}
-      className={`btn-brutal px-3 py-1.5 rounded-lg font-black text-sm disabled:opacity-60 ${primary ? "bg-lime text-ink" : "bg-white"}`}>
+      className={`btn-brutal px-3 py-1.5 rounded-lg font-black text-sm disabled:opacity-60 ${danger ? "bg-red-100 text-red-700 border-red-400" : primary ? "bg-lime text-ink" : "bg-white"}`}>
       {busy ? "…" : children}
     </button>
   );

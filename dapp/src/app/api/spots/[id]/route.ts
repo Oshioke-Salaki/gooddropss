@@ -117,6 +117,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ spot: next });
 }
 
+// DELETE /api/spots/[id] — permanently remove a business. Admin only. Intended
+// for hidden/rejected/suspended spam so it stops cluttering the console. Purges
+// the record and every index that referenced it.
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!(await isAdminAuthed())) return NextResponse.json({ error: "Not authorised" }, { status: 401 });
+
+  const { redis, spot } = await loadSpot(id);
+  if (!redis) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
+  if (!spot) return NextResponse.json({ error: "Business not found" }, { status: 404 });
+
+  await Promise.all([
+    redis.del(keys.spot(id)),
+    redis.lrem(keys.spotsAll(), 0, id),
+    spot.ownerAddress ? redis.lrem(keys.spotsByOwner(spot.ownerAddress), 0, id) : Promise.resolve(0),
+    redis.del(keys.spotPayments(id)),
+  ]);
+  return NextResponse.json({ ok: true });
+}
+
 function conflict(msg: string) {
   return NextResponse.json({ error: msg }, { status: 409 });
 }

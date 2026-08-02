@@ -1,15 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { Store, MapPin, Loader2, Check, TrendingUp } from "lucide-react";
+import { Store, MapPin, Check, TrendingUp } from "lucide-react";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import type { Spot } from "@/types";
 import { MerchantSpotCard } from "@/components/merchant/MerchantSpotCard";
 import { TaskScanner } from "@/components/merchant/TaskScanner";
 import { HowRewardsWork } from "@/components/merchant/HowRewardsWork";
+import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { isSpotActive } from "@/lib/spotStatus";
-import { getPositionRobust, geoErrorMessage, type GeoFail } from "@/lib/geolocate";
+import { getPositionRobust } from "@/lib/geolocate";
 import clsx from "clsx";
 
 const CATEGORIES = [
@@ -37,7 +38,9 @@ export default function MerchantPage() {
   const [discount, setDiscount]   = useState("");
   const [wallet, setWallet]       = useState("");
   const [coords, setCoords]       = useState<{ lat: number; lng: number } | null>(null);
-  const [locating, setLocating]   = useState(false);
+  const [placeName, setPlaceName] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [myLoc, setMyLoc]         = useState<{ lat: number; lng: number } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg]       = useState("");
   const [done, setDone]           = useState(false);
@@ -59,23 +62,17 @@ export default function MerchantPage() {
     if (address && !wallet) setWallet(address);
   }, [address, wallet]);
 
-  function captureLocation() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setErrMsg("This browser can't share location — try Chrome or Safari.");
-      return;
-    }
-    setLocating(true);
-    setErrMsg("");
+  // Warm up a rough position when the form opens so the map picker centres on the
+  // merchant's area (not the default city). Best-effort — the picker's own "locate
+  // me" button is the fallback, and the merchant confirms the exact pin by hand.
+  useEffect(() => {
+    if (!showForm || myLoc) return;
+    let alive = true;
     getPositionRobust()
-      .then((pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocating(false);
-      })
-      .catch((e: GeoFail) => {
-        setLocating(false);
-        setErrMsg(geoErrorMessage(e?.kind ?? "unavailable", "shop"));
-      });
-  }
+      .then((pos) => { if (alive) setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [showForm, myLoc]);
 
   async function handleSubmit() {
     if (!address || !coords || submitting) return;
@@ -96,7 +93,7 @@ export default function MerchantPage() {
       if (!res.ok) throw new Error(body.error ?? "Could not register spot");
       setDone(true);
       setShowForm(false);
-      setName(""); setDesc(""); setDiscount(""); setCoords(null);
+      setName(""); setDesc(""); setDiscount(""); setCoords(null); setPlaceName(null);
       fetchMySpots();
       setTimeout(() => setDone(false), 4000);
     } catch (e: unknown) {
@@ -223,25 +220,27 @@ export default function MerchantPage() {
                   <p className="text-[11px] text-muted mt-1">G$ payments land here. Defaults to your connected wallet.</p>
                 </div>
 
-                {/* Location capture — merchants register while standing in their shop */}
+                {/* Location — same drag-to-confirm map picker used for G$ drops, so
+                    a rough GPS fix can be corrected by hand instead of silently
+                    placing the shop in the wrong spot. */}
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">Shop location *</label>
                   <button
-                    onClick={captureLocation}
-                    disabled={locating}
+                    onClick={() => setPickerOpen(true)}
                     className={clsx(
                       "w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm border-2 transition-colors",
                       coords ? "bg-lime border-ink text-ink" : "bg-cream border-ink text-ink hover:bg-border",
                     )}
                   >
-                    {locating ? <Loader2 size={16} className="animate-spin" />
-                      : coords ? <Check size={16} />
-                      : <MapPin size={16} />}
-                    {locating ? "Getting GPS…"
-                      : coords ? `Pinned: ${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`
-                      : "Use my current location"}
+                    {coords ? <Check size={16} /> : <MapPin size={16} />}
+                    {coords ? "Location pinned — tap to adjust" : "Pin your shop on the map"}
                   </button>
-                  <p className="text-[11px] text-muted mt-1">Stand inside your shop when you pin it — customers must be within 150m to pay.</p>
+                  {coords && (
+                    <p className="text-[11px] text-ink mt-1 font-semibold truncate">
+                      📍 {placeName ? `${placeName} · ` : ""}{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-muted mt-1">Drag the pin to your exact shopfront — customers must be within 150m to pay.</p>
                 </div>
 
                 {errMsg && (
@@ -315,6 +314,19 @@ export default function MerchantPage() {
       </div>
 
       <BottomNav />
+
+      {/* Drag-to-confirm map picker — identical to the G$ drop flow */}
+      <LocationPickerSheet
+        open={pickerOpen}
+        initialCenter={coords ?? myLoc}
+        currentLocation={myLoc}
+        onConfirm={(lat, lng, place) => {
+          setCoords({ lat, lng });
+          setPlaceName(place);
+          setPickerOpen(false);
+        }}
+        onClose={() => setPickerOpen(false)}
+      />
     </div>
   );
 }
