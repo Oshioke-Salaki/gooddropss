@@ -62,17 +62,26 @@ export default function MerchantPage() {
     if (address && !wallet) setWallet(address);
   }, [address, wallet]);
 
-  // Warm up a rough position when the form opens so the map picker centres on the
-  // merchant's area (not the default city). Best-effort — the picker's own "locate
-  // me" button is the fallback, and the merchant confirms the exact pin by hand.
+  // While the form is open, run a continuous high-accuracy watch — same as the
+  // main map — so the position converges to a precise fix instead of a rough
+  // one-shot. The picker follows this until the merchant drags, landing the pin
+  // exactly on the shop. A quick seed fills the gap before the first watch fix.
   useEffect(() => {
-    if (!showForm || myLoc) return;
+    if (!showForm) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
     let alive = true;
-    getPositionRobust()
-      .then((pos) => { if (alive) setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [showForm, myLoc]);
+    if (!myLoc) {
+      getPositionRobust()
+        .then((pos) => { if (alive) setMyLoc((cur) => cur ?? { lat: pos.coords.latitude, lng: pos.coords.longitude }); })
+        .catch(() => {});
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => { if (alive) setMyLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 20_000 },
+    );
+    return () => { alive = false; navigator.geolocation.clearWatch(watchId); };
+  }, [showForm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSubmit() {
     if (!address || !coords || submitting) return;
@@ -320,6 +329,7 @@ export default function MerchantPage() {
         open={pickerOpen}
         initialCenter={coords ?? myLoc}
         currentLocation={myLoc}
+        followLocation={!coords}
         onConfirm={(lat, lng, place) => {
           setCoords({ lat, lng });
           setPlaceName(place);

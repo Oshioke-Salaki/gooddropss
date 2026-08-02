@@ -19,6 +19,9 @@ export interface Props {
   flyTarget: { lat: number; lng: number; seq: number } | null;
   onCenterChange: (lat: number, lng: number) => void;
   onDragChange: (dragging: boolean) => void;
+  /** Fires only on a USER gesture (drag/zoom), never a programmatic flyTo — lets
+   *  the parent stop auto-following the live location once the user takes over. */
+  onUserInteract?: () => void;
   landmarks?: Landmark[];
 }
 
@@ -27,6 +30,7 @@ export default function LocationPickerMap({
   flyTarget,
   onCenterChange,
   onDragChange,
+  onUserInteract,
   landmarks = [],
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -39,6 +43,8 @@ export default function LocationPickerMap({
   onCenterRef.current = onCenterChange;
   const onDragRef = useRef(onDragChange);
   onDragRef.current = onDragChange;
+  const onUserRef = useRef(onUserInteract);
+  onUserRef.current = onUserInteract;
 
   // ── Init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -55,7 +61,12 @@ export default function LocationPickerMap({
     mapRef.current = map;
 
     // The pin is a fixed crosshair in the parent; we just report the centre.
-    map.on("movestart", () => onDragRef.current(true));
+    // `originalEvent` is present only for real gestures (drag/pinch/wheel) — a
+    // programmatic flyTo has none, so this cleanly tells "user moved it" apart.
+    map.on("movestart", (e) => {
+      onDragRef.current(true);
+      if ((e as { originalEvent?: unknown }).originalEvent) onUserRef.current?.();
+    });
     map.on("moveend", () => {
       const c = map.getCenter();
       onDragRef.current(false);

@@ -82,9 +82,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const cur = spotStatus(spot);
   const admin = await isAdminAuthed();
+  // A signed request is a MERCHANT action (pause/reactivate) — route it as such
+  // even when the caller also happens to be an admin, so an admin who owns a shop
+  // can still pause it from the merchant page instead of hitting "Unknown admin
+  // action". Admin-console actions carry no signature and fall to the admin branch.
+  const hasSig = typeof body.signature === "string" && body.signature.length > 0;
   let nextStatus: SpotStatus | null = null;
 
-  if (admin) {
+  if (admin && !hasSig) {
     switch (action) {
       case "approve":    if (cur !== "pending") return conflict("Only pending businesses can be approved."); nextStatus = "active"; break;
       case "reject":     if (cur !== "pending") return conflict("Only pending businesses can be rejected."); nextStatus = "rejected"; break;

@@ -56,6 +56,9 @@ export interface Props {
   onClose: () => void;
   /** Our curated landmarks — shown on the map and matched by the search. */
   landmarks?: Landmark[];
+  /** Keep the pin locked onto `currentLocation` (and follow it as GPS sharpens)
+   *  until the user drags — used for "pin my shop where I'm standing". */
+  followLocation?: boolean;
 }
 
 // Default to Lagos if no location known
@@ -70,6 +73,7 @@ export function LocationPickerSheet({
   onConfirm,
   onClose,
   landmarks = [],
+  followLocation = false,
 }: Props) {
   const [query, setQuery]           = useState("");
   const [results, setResults]       = useState<SearchResult[]>([]);
@@ -86,6 +90,9 @@ export function LocationPickerSheet({
   const geocodeTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flySeq        = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // In followLocation mode: true once the user has manually moved the map, so we
+  // stop yanking the pin back to the live GPS position.
+  const userMovedRef  = useRef(false);
 
   // ── Reset on open ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -97,8 +104,18 @@ export function LocationPickerSheet({
     setPlaceName(null);
     setDragging(false);
     setFlyTarget(null);
+    userMovedRef.current = false;
     reverseGeocode(c.lat, c.lng);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Follow the live location (merchant "pin my shop") ────────────────────────
+  // Keep the pin on currentLocation and re-centre as GPS sharpens — so the pin
+  // converges onto the real spot instead of stranding at the first rough fix —
+  // until the user drags the map, after which their choice is respected.
+  useEffect(() => {
+    if (!open || !followLocation || userMovedRef.current || !currentLocation) return;
+    setFlyTarget({ lat: currentLocation.lat, lng: currentLocation.lng, seq: ++flySeq.current });
+  }, [open, followLocation, currentLocation]);
 
   // ── Search (debounced 400ms) ──────────────────────────────────────────────────
   useEffect(() => {
@@ -423,6 +440,7 @@ export function LocationPickerSheet({
             flyTarget={flyTarget}
             onCenterChange={handleCenterChange}
             onDragChange={setDragging}
+            onUserInteract={() => { userMovedRef.current = true; }}
             landmarks={landmarks}
           />
 
