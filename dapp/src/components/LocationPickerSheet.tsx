@@ -177,24 +177,33 @@ export function LocationPickerSheet({
       return;
     }
 
-    // Fallback: fetch once (no live position available yet)
+    // Fallback: fetch once (no live position available yet). GPS is weak indoors,
+    // so try a precise fix first, then fall back to a coarser network fix (which
+    // accepts a recent cached position) instead of timing out.
     if (!navigator.geolocation) return;
     setLocating(true);
+
+    const ok = (pos: GeolocationPosition) => {
+      setLocating(false);
+      setFlyTarget({ lat: pos.coords.latitude, lng: pos.coords.longitude, seq: ++flySeq.current });
+    };
+    const fail = (err: GeolocationPositionError) => {
+      setLocating(false);
+      setLocErr(
+        err.code === err.PERMISSION_DENIED ? "Location blocked — allow it for this site"
+          : err.code === err.TIMEOUT ? "Couldn't get a fix — move near a window and retry"
+          : "Couldn't get location",
+      );
+      setTimeout(() => setLocErr(""), 4000);
+    };
+
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        setFlyTarget({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          seq: ++flySeq.current,
-        });
+      ok,
+      (e1) => {
+        if (e1.code === e1.PERMISSION_DENIED) { fail(e1); return; }
+        navigator.geolocation.getCurrentPosition(ok, fail, { enableHighAccuracy: false, timeout: 15_000, maximumAge: 120_000 });
       },
-      () => {
-        setLocating(false);
-        setLocErr("Couldn't get location");
-        setTimeout(() => setLocErr(""), 3000);
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 },
     );
   }
 

@@ -59,19 +59,38 @@ export default function MerchantPage() {
   }, [address, wallet]);
 
   function captureLocation() {
-    if (!navigator.geolocation) { setErrMsg("Geolocation not supported"); return; }
+    if (!navigator.geolocation) { setErrMsg("This browser can't share location — try Chrome or Safari."); return; }
     setLocating(true);
     setErrMsg("");
+
+    const ok = (pos: GeolocationPosition) => {
+      setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setLocating(false);
+    };
+    const fail = (err: GeolocationPositionError) => {
+      setLocating(false);
+      setErrMsg(
+        err.code === err.PERMISSION_DENIED
+          ? "Location is blocked. Allow location access for this site (or open it in Chrome/Safari), then try again."
+          : err.code === err.TIMEOUT
+          ? "Couldn't get a fix — step near a window or door and try again."
+          : "Couldn't get your location — make sure location is on, then try again.",
+      );
+    };
+
+    // Precise fix first (fast). GPS is weak indoors, so if that times out or is
+    // unavailable, fall back to a coarser network fix (accepts a recent cached
+    // position) — plenty accurate since customers pay within 150m.
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocating(false);
+      ok,
+      (e1) => {
+        if (e1.code === e1.PERMISSION_DENIED) { fail(e1); return; }
+        navigator.geolocation.getCurrentPosition(
+          ok, fail,
+          { enableHighAccuracy: false, timeout: 15_000, maximumAge: 120_000 },
+        );
       },
-      () => {
-        setErrMsg("Couldn't get location — enable GPS and try again");
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+      { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 },
     );
   }
 
