@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { QR_TTL_S } from "@/lib/taskShared";
 import type { Drop, LatLng } from "@/types";
 
 // Shown inside ClaimSheet for a merchant TASK drop. The hunter does the task,
@@ -8,14 +9,29 @@ import type { Drop, LatLng } from "@/types";
 // merchant approves (polled) the parent unlocks the normal claim.
 type Step = "intro" | "minting" | "showing" | "approved" | "error";
 
+// Re-mint a few seconds before the server-side nonce actually expires, so the
+// merchant never scans a code that's already dead.
+const REFRESH_AT_S = Math.max(15, QR_TTL_S - 10);
+
 export function TaskUnlock({
   drop, userLocation, address, onApproved,
 }: { drop: Drop; userLocation: LatLng | null; address: string; onApproved: () => void }) {
   const [step, setStep] = useState<Step>("intro");
   const [task, setTask] = useState<string | null>(null);
   const [nonce, setNonce] = useState("");
+  const [secsLeft, setSecsLeft] = useState(0);
   const [err, setErr] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const remintRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Always call the freshest iDidIt from the expiry timer (fresh props/closure).
+  const remintFn = useRef<() => void>(() => {});
+
+  function clearTimers() {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (tickRef.current) clearInterval(tickRef.current);
+    if (remintRef.current) clearTimeout(remintRef.current);
+  }
 
   // Fetch the task text up front so the hunter knows what to do.
   useEffect(() => {
@@ -24,7 +40,7 @@ export function TaskUnlock({
       .then((r) => r.json())
       .then((d) => { if (alive && d?.task) setTask(d.task); })
       .catch(() => {});
-    return () => { alive = false; if (pollRef.current) clearInterval(pollRef.current); };
+    return () => { alive = false; clearTimers(); };
   }, [drop.id]);
 
   async function iDidIt() {
@@ -39,8 +55,10 @@ export function TaskUnlock({
       if (!res.ok) { setErr(d.error ?? "Couldn't create your code — try again."); setStep("error"); return; }
       setNonce(d.nonce); if (d.task) setTask(d.task); setStep("showing");
       startPolling();
+      armExpiry();
     } catch { setErr("Network error — try again."); setStep("error"); }
   }
+  remintFn.current = iDidIt;
 
   function startPolling() {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -49,12 +67,22 @@ export function TaskUnlock({
         const r = await fetch(`/api/task/status?dropId=${drop.id.toString()}&address=${address}`);
         const d = await r.json();
         if (d.approved) {
-          if (pollRef.current) clearInterval(pollRef.current);
+          clearTimers();
           setStep("approved");
           setTimeout(onApproved, 900);
         }
       } catch { /* keep polling */ }
     }, 3000);
+  }
+
+  // Countdown + silent auto re-mint, so a slow merchant scan never dead-ends the
+  // hunter: the QR quietly rotates to a fresh, valid code before it expires.
+  function armExpiry() {
+    if (tickRef.current) clearInterval(tickRef.current);
+    if (remintRef.current) clearTimeout(remintRef.current);
+    setSecsLeft(REFRESH_AT_S);
+    tickRef.current = setInterval(() => setSecsLeft((s) => Math.max(0, s - 1)), 1000);
+    remintRef.current = setTimeout(() => { remintFn.current(); }, REFRESH_AT_S * 1000);
   }
 
   return (
@@ -84,7 +112,7 @@ export function TaskUnlock({
           <p style={{ margin: "12px 0 2px", fontWeight: 800, fontSize: 14 }}>Show this to the merchant to approve</p>
           <p style={{ margin: 0, fontSize: 12, color: "#888" }}>
             <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: "#4ade80", marginRight: 6 }} />
-            Waiting for approval… (code expires in ~2 min)
+            Waiting for approval…{secsLeft > 0 ? ` (auto-refreshes in ${secsLeft}s)` : " (refreshing…)"}
           </p>
           <p style={{ margin: "8px 0 0", fontSize: 11, color: "#bbb", fontFamily: "monospace" }}>{nonce.slice(0, 8)}…</p>
         </div>

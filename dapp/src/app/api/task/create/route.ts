@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
   }
 
   const rec: TaskDropRecord = { spotId, task, createdAt: Math.floor(Date.now() / 1000) };
-  await redis.set(keys.taskDrop(dropId), rec);
+  await Promise.all([
+    redis.set(keys.taskDrop(dropId), rec),
+    redis.lpush(keys.taskDropsBySpot(spotId), dropId),   // index for the merchant's reward list
+  ]);
   return NextResponse.json({ ok: true });
 }

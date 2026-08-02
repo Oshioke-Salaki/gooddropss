@@ -672,6 +672,26 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       </div>
                     ) : null}
 
+                    {/* Merchant-reward heads-up — set expectations before the
+                        hunter arrives, so the on-arrival task isn't a surprise.
+                        Once in range, the TaskUnlock panel takes over. */}
+                    {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && (
+                      <div style={{
+                        background: "#fff", border: "2px solid #111",
+                        borderRadius: 14, padding: "12px 14px",
+                        display: "flex", alignItems: "center", gap: 12,
+                        boxShadow: "2px 2px 0 #BFFD00",
+                      }}>
+                        <span style={{ fontSize: 24, flexShrink: 0 }}>🎁</span>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 900, fontSize: 13.5, color: "#111" }}>Merchant reward</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#666", lineHeight: 1.5 }}>
+                            When you arrive, do a quick task and get the merchant to approve it — then this unlocks.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Walk there */}
                     {!isSelfDrop && !isClose && (
                       <button

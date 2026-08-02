@@ -76,6 +76,7 @@ export const keys = {
   taskApproval:      (dropId: string, root: string) => `gd:task:appr:${dropId}:${root.toLowerCase()}`, // TTL 10m; claim-proof requires it
   taskApprovalsDaily:(spotId: string, date: string) => `gd:task:apprday:${spotId}:${date}`,           // per-merchant daily cap
   taskApprovalLog:   ()                            => `gd:task:log`,                       // audit list (moderation surface)
+  taskDropsBySpot:   (spotId: string)              => `gd:task:byspot:${spotId}`,          // list of a spot's reward dropIds (newest first)
   // Admin-curated map landmarks
   landmark:         (id: string)      => `gd:landmark:${id}`,
   landmarksIndex:   ()                => `gd:landmarks:index`, // Set of ids (idempotent)

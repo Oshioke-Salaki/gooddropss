@@ -3,12 +3,25 @@ import { useEffect, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import clsx from "clsx";
 import { formatG$, shortAddr } from "@/lib/utils";
+import { publicClient } from "@/lib/publicClient";
+import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
+import { DROP_STATUS } from "@/types";
 import { spotActionMessage } from "@/lib/spotAuth";
 import { spotStatus, isSpotActive, merchantCanReactivate, SPOT_STATUS_META } from "@/lib/spotStatus";
 import type { Spot, SpotPayment, SpotStatus } from "@/types";
 import { TaskDropCreator } from "@/components/merchant/TaskDropCreator";
 
 interface SpotStats { count: number; totalWei: string; payments: SpotPayment[] }
+interface RewardRow { dropId: string; task: string; amount: bigint; status: number }
+
+function RewardBadge({ status }: { status: number }) {
+  const s = status === DROP_STATUS.Claimed
+    ? { t: "✅ Claimed", c: "bg-lime border-ink text-ink" }
+    : status === DROP_STATUS.Reclaimed
+    ? { t: "↩︎ Expired", c: "bg-gray-100 border-gray-300 text-gray-500" }
+    : { t: "🟢 Live", c: "bg-white border-ink text-ink" };
+  return <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full border ${s.c} whitespace-nowrap`}>{s.t}</span>;
+}
 const CATEGORIES = ["food", "retail", "services", "transport", "other"];
 
 const TONE: Record<string, string> = {
@@ -40,9 +53,34 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
   const active = isSpotActive(spot);
   const isOwner = !!address && address.toLowerCase() === spot.ownerAddress.toLowerCase();
 
+  const [rewards, setRewards] = useState<RewardRow[]>([]);
+
   useEffect(() => {
     fetch(`/api/spots/${spot.id}/payments`).then((r) => r.json()).then(setStats).catch(() => {});
   }, [spot.id]);
+
+  // Reward drops for this spot + their live claim status (one batched multicall).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const d = await fetch(`/api/task/list?spotId=${spot.id}`).then((r) => r.json());
+        const list: { dropId: string; task?: string }[] = Array.isArray(d.rewards) ? d.rewards : [];
+        if (list.length === 0) { if (alive) setRewards([]); return; }
+        const res = await publicClient.multicall({
+          contracts: list.map((r) => ({
+            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(r.dropId)],
+          })),
+        });
+        const rows: RewardRow[] = list.map((r, i) => {
+          const dd = res[i]?.status === "success" ? (res[i].result as unknown as { amount: bigint; status: number }) : null;
+          return { dropId: r.dropId, task: r.task ?? "Reward", amount: dd?.amount ?? 0n, status: Number(dd?.status ?? 0) };
+        });
+        if (alive) setRewards(rows);
+      } catch { /* best-effort */ }
+    })();
+    return () => { alive = false; };
+  }, [spot.id, showTask]);
 
   async function signAction(action: string): Promise<{ signature: string; timestamp: number } | null> {
     const timestamp = Date.now();
@@ -141,6 +179,26 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
             </div>
           )}
         </>
+      )}
+
+      {/* Reward activity */}
+      {rewards.length > 0 && (
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.08em] text-muted mb-1.5">
+            🎁 Rewards · {rewards.filter((r) => r.status === DROP_STATUS.Claimed).length} claimed · {rewards.filter((r) => r.status === DROP_STATUS.Active).length} live
+          </p>
+          <div className="space-y-1.5">
+            {rewards.slice(0, 8).map((r) => (
+              <div key={r.dropId} className="flex items-center justify-between gap-2 bg-cream border border-border rounded-lg px-3 py-2">
+                <span className="text-xs font-bold truncate">{r.task}</span>
+                <span className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-black">{formatG$(r.amount)} G$</span>
+                  <RewardBadge status={r.status} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {err && <p className="text-xs font-bold text-danger">{err}</p>}
