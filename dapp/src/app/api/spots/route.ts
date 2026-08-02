@@ -15,7 +15,7 @@ const CATEGORIES = ["food", "retail", "services", "transport", "other"];
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, description, category, discount, wallet, ownerAddress, lat, lng } = body;
+    const { name, description, category, discount, wallet, ownerAddress, lat, lng, placeName } = body;
 
     if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 60)
       return NextResponse.json({ error: "Name must be 2–60 characters" }, { status: 400 });
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       wallet:       wallet.toLowerCase(),
       ownerAddress: ownerAddress.toLowerCase(),
       lat, lng,
+      ...(typeof placeName === "string" && placeName.trim() ? { placeName: placeName.trim().slice(0, 80) } : {}),
       createdAt:    now,
       status,
       updatedAt:    now,
@@ -70,6 +71,14 @@ export async function GET(req: NextRequest) {
   try {
     const redis = getRedis();
     if (!redis) return NextResponse.json({ spots: [] });
+
+    // Single spot by id — public (used by the merchant's "pay-here" poster page).
+    const idParam = req.nextUrl.searchParams.get("id");
+    if (idParam) {
+      const raw = await redis.get<string | Spot>(keys.spot(idParam));
+      const spot = raw ? (typeof raw === "string" ? (JSON.parse(raw) as Spot) : raw) : null;
+      return NextResponse.json({ spot });
+    }
 
     const owner = req.nextUrl.searchParams.get("owner");
     const scope = req.nextUrl.searchParams.get("scope");

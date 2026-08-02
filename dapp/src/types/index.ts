@@ -71,6 +71,7 @@ export interface Spot {
   ownerAddress: string;        // who registered the spot
   lat:          number;        // degrees
   lng:          number;        // degrees
+  placeName?:   string;        // human-readable location ("Wankon Estate, Lafia"), shown instead of coords
   createdAt:    number;        // unix seconds
   status?:      SpotStatus;    // absent on legacy spots → treated as "active"
   updatedAt?:   number;        // unix seconds of last status/edit change

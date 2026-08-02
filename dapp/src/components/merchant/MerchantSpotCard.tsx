@@ -10,6 +10,8 @@ import { spotActionMessage } from "@/lib/spotAuth";
 import { spotStatus, isSpotActive, merchantCanReactivate, SPOT_STATUS_META } from "@/lib/spotStatus";
 import type { Spot, SpotPayment, SpotStatus } from "@/types";
 import { TaskDropCreator } from "@/components/merchant/TaskDropCreator";
+import { LocationPickerSheet } from "@/components/LocationPickerSheet";
+import { ShopSheet } from "@/components/ShopSheet";
 
 interface SpotStats { count: number; totalWei: string; payments: SpotPayment[] }
 interface RewardRow { dropId: string; task: string; amount: bigint; status: number }
@@ -47,6 +49,12 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
   const [category, setCategory] = useState(spot.category);
   const [discount, setDiscount] = useState(spot.discount);
   const [wallet, setWallet]     = useState(spot.wallet);
+
+  // Re-pin location (edit form) + customer preview.
+  const [showPicker, setShowPicker] = useState(false);
+  const [editCoords, setEditCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [editPlaceName, setEditPlaceName] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const status = spotStatus(spot);
   const meta = SPOT_STATUS_META[status];
@@ -116,11 +124,15 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
     try {
       const res = await fetch(`/api/spots/${spot.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, description, category, discount, wallet, ...signed }),
+        body: JSON.stringify({
+          name, description, category, discount, wallet,
+          ...(editCoords ? { lat: editCoords.lat, lng: editCoords.lng, placeName: editPlaceName ?? spot.placeName ?? "" } : {}),
+          ...signed,
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { setErr(d.error ?? "Couldn't save — try again."); return; }
-      setEditing(false); onChanged();
+      setEditing(false); setEditCoords(null); setEditPlaceName(null); onChanged();
     } catch { setErr("Network error — try again."); }
     finally { setBusy(null); }
   }
@@ -144,10 +156,28 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {status === "rejected" && <p className="text-xs bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-danger">This business wasn&apos;t approved.{spot.note ? ` — ${spot.note}` : ""}</p>}
 
       <div className="text-xs text-muted space-y-1">
-        <div>📍 {spot.lat.toFixed(4)}°, {spot.lng.toFixed(4)}°</div>
+        <div>📍 {spot.placeName || `${spot.lat.toFixed(4)}°, ${spot.lng.toFixed(4)}°`}</div>
         <div>💳 Payouts → {shortAddr(spot.wallet)}</div>
         {spot.discount && <div>🎁 {spot.discount}</div>}
       </div>
+
+      {/* Onboarding checklist — guide a brand-new shop to its first payment
+          instead of greeting them with a discouraging 0/0. */}
+      {isOwner && (stats?.count ?? 0) === 0 && (
+        <div className="border-2 border-ink rounded-xl p-3 bg-cream space-y-2">
+          <p className="text-[11px] font-black uppercase tracking-[0.08em] text-muted">Get your first payment</p>
+          <Step done>Shop registered</Step>
+          <Step done={active}>{active ? "Approved & live on the map" : "Awaiting admin approval"}</Step>
+          <Step done={false}>Share your shop so customers can pay</Step>
+          <Step done={false}>First G$ payment received</Step>
+          {active && (
+            <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer"
+              className="btn-brutal block text-center py-2 rounded-lg font-black text-sm bg-lime text-ink mt-1" style={{ textDecoration: "none" }}>
+              📢 Get your pay-here poster
+            </a>
+          )}
+        </div>
+      )}
 
       {/* Analytics */}
       <div className="grid grid-cols-2 gap-2">
@@ -215,9 +245,17 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
             <input value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="Offer (e.g. 10% off)" className="border-2 border-ink rounded-lg px-3 py-2 text-sm outline-none" />
           </div>
           <input value={wallet} onChange={(e) => setWallet(e.target.value.trim())} placeholder="Payout wallet 0x…" className="w-full border-2 border-ink rounded-lg px-3 py-2 text-xs font-mono outline-none" />
+          {/* Re-pin location */}
+          <button onClick={() => setShowPicker(true)} className="w-full flex items-center justify-between gap-2 border-2 border-ink rounded-lg px-3 py-2 text-sm font-semibold bg-white text-left">
+            <span className="truncate">📍 {editCoords
+              ? (editPlaceName || `${editCoords.lat.toFixed(5)}, ${editCoords.lng.toFixed(5)}`)
+              : (spot.placeName || `${spot.lat.toFixed(5)}, ${spot.lng.toFixed(5)}`)}</span>
+            <span className="text-xs font-black text-ink/60 shrink-0">change ›</span>
+          </button>
+          {editCoords && <p className="text-[11px] text-ink font-semibold">New location set — save to apply.</p>}
           <div className="flex gap-2">
             <button onClick={saveEdits} disabled={busy === "edit"} className="btn-brutal flex-1 py-2 rounded-lg font-black text-sm bg-lime text-ink disabled:opacity-60">{busy === "edit" ? "Saving…" : "Save"}</button>
-            <button onClick={() => { setEditing(false); setErr(""); }} className="btn-brutal px-4 py-2 rounded-lg font-bold text-sm bg-white">Cancel</button>
+            <button onClick={() => { setEditing(false); setErr(""); setEditCoords(null); setEditPlaceName(null); }} className="btn-brutal px-4 py-2 rounded-lg font-bold text-sm bg-white">Cancel</button>
           </div>
         </div>
       )}
@@ -226,6 +264,8 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {isOwner && !editing && (
         <div className="flex flex-wrap gap-2">
           <button onClick={() => setEditing(true)} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white">✏️ Edit</button>
+          <button onClick={() => setShowPreview(true)} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white">👁 Preview</button>
+          <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer" className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white" style={{ textDecoration: "none" }}>📢 Poster</a>
           {active && (
             <button onClick={() => changeStatus("pause")} disabled={busy === "pause"} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white disabled:opacity-60">
               {busy === "pause" ? "…" : "⏸️ Deactivate"}
@@ -247,6 +287,34 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <button onClick={() => setShowTask(true)} className="btn-brutal w-full py-2.5 rounded-xl font-black text-sm bg-ink text-lime">🎁 Create a reward drop</button>
         )
       )}
+
+      {/* Re-pin map picker — mounted only while open (each holds a live map). */}
+      {showPicker && (
+        <LocationPickerSheet
+          open
+          initialCenter={editCoords ?? { lat: spot.lat, lng: spot.lng }}
+          currentLocation={editCoords ?? { lat: spot.lat, lng: spot.lng }}
+          pinEmoji="🏪"
+          confirmLabel="Update shop location"
+          onConfirm={(lat, lng, place) => { setEditCoords({ lat, lng }); setEditPlaceName(place); setShowPicker(false); }}
+          onClose={() => setShowPicker(false)}
+        />
+      )}
+
+      {/* Customer preview — how the shop looks in the pay sheet (pay disabled). */}
+      <ShopSheet spot={showPreview ? spot : null} userLocation={null} preview onClose={() => setShowPreview(false)} />
+    </div>
+  );
+}
+
+function Step({ done, children }: { done: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className={clsx(
+        "w-4 h-4 rounded-full border-2 flex items-center justify-center text-[9px] font-black shrink-0",
+        done ? "bg-lime border-ink text-ink" : "bg-white border-border text-transparent",
+      )}>{done ? "✓" : ""}</span>
+      <span className={done ? "font-bold text-ink" : "text-muted"}>{children}</span>
     </div>
   );
 }

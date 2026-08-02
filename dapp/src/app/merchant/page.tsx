@@ -48,7 +48,10 @@ export default function MerchantPage() {
   const fetchMySpots = useCallback(() => {
     if (!address) { setMySpots([]); setLoading(false); return; }
     setLoading(true);
-    fetch(`/api/spots?owner=${address}`)
+    // no-store: a merchant must always see the live status of their own shop.
+    // A cached "active" response is exactly what made a paused spot still show
+    // "Live" and then reject the next pause ("Only a live business can be paused").
+    fetch(`/api/spots?owner=${address}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setMySpots(Array.isArray(d.spots) ? d.spots : []))
       .catch(() => {})
@@ -96,6 +99,7 @@ export default function MerchantPage() {
           wallet: wallet || address,
           ownerAddress: address,
           lat: coords.lat, lng: coords.lng,
+          placeName,
         }),
       });
       const body = await res.json();
@@ -246,7 +250,7 @@ export default function MerchantPage() {
                   </button>
                   {coords && (
                     <p className="text-[11px] text-ink mt-1 font-semibold truncate">
-                      📍 {placeName ? `${placeName} · ` : ""}{coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                      📍 {placeName || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`}
                     </p>
                   )}
                   <p className="text-[11px] text-muted mt-1">Drag the pin to your exact shopfront — customers must be within 150m to pay.</p>
@@ -330,6 +334,8 @@ export default function MerchantPage() {
         initialCenter={coords ?? myLoc}
         currentLocation={myLoc}
         followLocation={!coords}
+        pinEmoji="🏪"
+        confirmLabel="Pin my shop here"
         onConfirm={(lat, lng, place) => {
           setCoords({ lat, lng });
           setPlaceName(place);

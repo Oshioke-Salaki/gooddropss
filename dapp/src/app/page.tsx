@@ -81,18 +81,37 @@ export default function HomePage() {
   // Places/Suggestions lists). Read once, then strip the param so a later manual
   // pan isn't yanked back on re-render.
   const [focusCoord, setFocusCoord] = useState<{ lat: number; lng: number } | null>(null);
+  // Deep-link a shop's pay sheet: /?spot=<id> (the merchant's pay-here QR poster).
+  const [spotDeepLinkId, setSpotDeepLinkId] = useState<string | null>(null);
   useEffect(() => {
     try {
       const p = new URLSearchParams(window.location.search);
       const f = p.get("focus");
-      if (!f) return;
-      const [la, ln] = f.split(",").map(Number);
-      if (Number.isFinite(la) && Number.isFinite(ln)) setFocusCoord({ lat: la, lng: ln });
-      p.delete("focus");
+      const s = p.get("spot");
+      if (f) {
+        const [la, ln] = f.split(",").map(Number);
+        if (Number.isFinite(la) && Number.isFinite(ln)) setFocusCoord({ lat: la, lng: ln });
+      }
+      if (s) setSpotDeepLinkId(s);
+      if (!f && !s) return;
+      p.delete("focus"); p.delete("spot");
       const qs = p.toString();
       window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
     } catch { /* ignore malformed params */ }
   }, []);
+
+  // Once spots load, open the deep-linked shop's pay sheet. Fetch it directly if
+  // it isn't in the public (active-only) list — e.g. the poster of a paused shop.
+  useEffect(() => {
+    if (!spotDeepLinkId) return;
+    const found = spots.find((s) => s.id === spotDeepLinkId);
+    if (found) { setSelectedSpot(found); setSpotDeepLinkId(null); return; }
+    fetch(`/api/spots?id=${encodeURIComponent(spotDeepLinkId)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.spot) setSelectedSpot(d.spot); })
+      .catch(() => {})
+      .finally(() => setSpotDeepLinkId(null));
+  }, [spotDeepLinkId, spots]);
 
   useEffect(() => {
     fetchDrops();

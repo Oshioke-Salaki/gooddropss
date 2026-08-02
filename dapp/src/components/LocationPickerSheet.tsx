@@ -59,6 +59,10 @@ export interface Props {
   /** Keep the pin locked onto `currentLocation` (and follow it as GPS sharpens)
    *  until the user drags — used for "pin my shop where I'm standing". */
   followLocation?: boolean;
+  /** Emoji shown inside the map pin (default 💰 for drops; e.g. 🏪 for a shop). */
+  pinEmoji?: string;
+  /** Confirm-button label (default "Drop here"; e.g. "Pin my shop here"). */
+  confirmLabel?: string;
 }
 
 // Default to Lagos if no location known
@@ -74,8 +78,11 @@ export function LocationPickerSheet({
   onClose,
   landmarks = [],
   followLocation = false,
+  pinEmoji = "💰",
+  confirmLabel = "Drop here",
 }: Props) {
   const [query, setQuery]           = useState("");
+  const [showFollowHint, setShowFollowHint] = useState(false);
   const [results, setResults]       = useState<SearchResult[]>([]);
   const [searching, setSearching]   = useState(false);
   const [center, setCenter]         = useState(initialCenter ?? DEFAULT_CENTER);
@@ -105,6 +112,7 @@ export function LocationPickerSheet({
     setDragging(false);
     setFlyTarget(null);
     userMovedRef.current = false;
+    setShowFollowHint(followLocation);
     reverseGeocode(c.lat, c.lng);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -440,9 +448,27 @@ export function LocationPickerSheet({
             flyTarget={flyTarget}
             onCenterChange={handleCenterChange}
             onDragChange={setDragging}
-            onUserInteract={() => { userMovedRef.current = true; }}
+            onUserInteract={() => { userMovedRef.current = true; setShowFollowHint(false); }}
             landmarks={landmarks}
           />
+
+          {/* Follow-mode reassurance — the pin auto-locks onto the merchant's live
+              position and refines as GPS sharpens; this explains the movement so
+              it doesn't read as a glitch, and invites a manual nudge. */}
+          {showFollowHint && (
+            <div
+              style={{
+                position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+                zIndex: 1000, background: "#111", color: "#fff",
+                fontSize: 12, fontWeight: 700, padding: "7px 12px", borderRadius: 100,
+                whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "2px 2px 0 rgba(0,0,0,0.25)",
+                display: "flex", alignItems: "center", gap: 6, pointerEvents: "none",
+              }}
+            >
+              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: "#BFFD00" }} />
+              Locking onto your location — drag to adjust
+            </div>
+          )}
 
           {/* Center pin — stays fixed at map midpoint, lifts when dragging */}
           <div
@@ -471,7 +497,7 @@ export function LocationPickerSheet({
                 transition: "box-shadow 0.15s ease",
               }}
             >
-              💰
+              {pinEmoji}
             </div>
             {/* Pin stem */}
             <div
@@ -600,7 +626,7 @@ export function LocationPickerSheet({
             }}
           >
             <MapPin size={18} color="#111" />
-            <span>Drop here</span>
+            <span>{confirmLabel}</span>
           </button>
         </div>
       </motion.div>

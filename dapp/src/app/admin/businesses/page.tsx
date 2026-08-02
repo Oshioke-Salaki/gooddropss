@@ -88,7 +88,7 @@ export default function AdminBusinesses() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black">{s.name}</p>
-                      <p className="text-xs text-gray-500">{s.category} · owner {shortAddr(s.ownerAddress)} · 📍 {s.lat.toFixed(4)}, {s.lng.toFixed(4)}</p>
+                      <p className="text-xs text-gray-500">{s.category} · owner {shortAddr(s.ownerAddress)} · 📍 {s.placeName || `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`}</p>
                       {s.description && <p className="text-xs text-gray-600 mt-1">{s.description}</p>}
                       {s.note && <p className="text-xs text-red-600 mt-1">note: {s.note}</p>}
                     </div>

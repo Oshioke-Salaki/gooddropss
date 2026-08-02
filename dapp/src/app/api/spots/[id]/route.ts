@@ -63,6 +63,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!ADDR_RE.test(body.wallet)) return NextResponse.json({ error: "Invalid payout wallet" }, { status: 400 });
     next.wallet = String(body.wallet).toLowerCase();
   }
+  // Re-pin location (merchant fixed a wrong pin, or added a place name).
+  if (body.lat !== undefined || body.lng !== undefined) {
+    const lat = Number(body.lat), lng = Number(body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180)
+      return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
+    next.lat = lat; next.lng = lng;
+  }
+  if (body.placeName !== undefined) {
+    const p = String(body.placeName).trim().slice(0, 80);
+    if (p) next.placeName = p; else delete next.placeName;
+  }
   next.updatedAt = Math.floor(Date.now() / 1000);
 
   await redis.set(keys.spot(id), JSON.stringify(next));

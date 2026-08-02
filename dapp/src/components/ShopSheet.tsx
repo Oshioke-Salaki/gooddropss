@@ -27,9 +27,11 @@ interface Props {
   spot: Spot | null;
   userLocation: LatLng | null;
   onClose: () => void;
+  /** Merchant-side "see how customers view it" — pay is disabled. */
+  preview?: boolean;
 }
 
-export function ShopSheet({ spot, userLocation, onClose }: Props) {
+export function ShopSheet({ spot, userLocation, onClose, preview = false }: Props) {
   const { address, isConnected } = useSignedInAccount();
   const { login } = useAuth();
   const { balance } = useGoodDollarProfile();
@@ -177,6 +179,11 @@ export function ShopSheet({ spot, userLocation, onClose }: Props) {
                       {spot.description}
                     </p>
                   )}
+                  {spot.placeName && (
+                    <p style={{ margin: "4px 0 0", color: "#BFFD00", fontSize: 12, fontWeight: 700 }}>
+                      📍 {spot.placeName}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -228,6 +235,17 @@ export function ShopSheet({ spot, userLocation, onClose }: Props) {
                 </>
               ) : (
                 <>
+                  {preview && (
+                    <div style={{
+                      background: "#111", color: "#BFFD00",
+                      border: "2px solid #111", borderRadius: 12,
+                      padding: "10px 14px", fontSize: 12.5, fontWeight: 800,
+                      display: "flex", alignItems: "center", gap: 8,
+                    }}>
+                      👁 Preview — this is how customers see your shop. Payment is disabled here.
+                    </div>
+                  )}
+
                   {/* Proximity gate */}
                   <div style={{
                     background: inRange ? "#BFFD00" : "#fff",
@@ -300,7 +318,20 @@ export function ShopSheet({ spot, userLocation, onClose }: Props) {
                   )}
 
                   {/* Pay CTA */}
-                  {!isConnected ? (
+                  {preview ? (
+                    <button
+                      disabled
+                      style={{
+                        width: "100%", padding: "18px",
+                        background: "#eee", color: "#aaa",
+                        border: "2.5px solid #ddd", borderRadius: 16,
+                        fontWeight: 900, fontSize: 17,
+                        cursor: "not-allowed", fontFamily: "inherit",
+                      }}
+                    >
+                      Preview only
+                    </button>
+                  ) : !isConnected ? (
                     <button
                       onClick={login}
                       style={{
