@@ -20,7 +20,10 @@ export default function AdminBusinesses() {
   const load = useCallback(() => {
     fetch("/api/spots?scope=all")
       .then((r) => r.json())
-      .then((d) => setSpots(Array.isArray(d.spots) ? d.spots : []))
+      .then((d) => {
+        setSpots(Array.isArray(d.spots) ? d.spots : []);
+        window.dispatchEvent(new CustomEvent("gd:businesses-updated"));
+      })
       .catch(() => setSpots([]));
   }, []);
   useEffect(() => { load(); }, [load]);

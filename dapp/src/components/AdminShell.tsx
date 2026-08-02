@@ -2,18 +2,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { Landmark } from "@/types";
+import type { Landmark, Spot } from "@/types";
+import { spotStatus } from "@/lib/spotStatus";
 
 // Responsive admin chrome: a left sidebar on desktop, a sticky horizontal tab
 // strip on mobile. Wraps every /admin/* page (after the password gate) so the
 // whole console shares one navigation surface. Pages keep their own content and
 // dark background; this only owns the nav.
-const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?: "suggestions" | "reports" }[] = [
+const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?: "suggestions" | "reports" | "businesses" }[] = [
   { href: "/admin",             label: "Overview",    icon: "🏠", exact: true },
   { href: "/admin/suggestions", label: "Suggestions", icon: "💡", badge: "suggestions" },
   { href: "/admin/reports",     label: "Reports",     icon: "🚩", badge: "reports" },
   { href: "/admin/places",      label: "Places",      icon: "🏷️" },
-  { href: "/admin/businesses",  label: "Businesses",  icon: "🏪" },
+  { href: "/admin/businesses",  label: "Businesses",  icon: "🏪", badge: "businesses" },
   { href: "/admin/badges",      label: "Badges",      icon: "🏅" },
   { href: "/admin/analytics",   label: "Analytics",   icon: "📊" },
   { href: "/admin/health",      label: "Health",      icon: "🩺" },
@@ -23,6 +24,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pending, setPending] = useState(0);
   const [reports, setReports] = useState(0);
+  const [pendingBiz, setPendingBiz] = useState(0);
 
   // Live badge counts. Suggestions = pending landmarks; Reports = flagged drops.
   // Refresh on the shared update events + a slow interval so they stay honest
@@ -43,15 +45,26 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         .then((r) => (r.ok ? r.json() : { reported: [] }))
         .then((d) => { if (alive && Array.isArray(d.reported)) setReports(d.reported.length); })
         .catch(() => {});
-    const loadAll = () => { loadSuggestions(); loadReports(); };
+    const loadBusinesses = () =>
+      fetch("/api/spots?scope=all")
+        .then((r) => (r.ok ? r.json() : { spots: [] }))
+        .then((d) => {
+          if (!alive) return;
+          const list = Array.isArray(d.spots) ? (d.spots as Spot[]) : [];
+          setPendingBiz(list.filter((s) => spotStatus(s) === "pending").length);
+        })
+        .catch(() => {});
+    const loadAll = () => { loadSuggestions(); loadReports(); loadBusinesses(); };
     loadAll();
     window.addEventListener("gd:landmarks-updated", loadSuggestions);
     window.addEventListener("gd:moderation-updated", loadReports);
+    window.addEventListener("gd:businesses-updated", loadBusinesses);
     const t = setInterval(loadAll, 60_000);
     return () => {
       alive = false;
       window.removeEventListener("gd:landmarks-updated", loadSuggestions);
       window.removeEventListener("gd:moderation-updated", loadReports);
+      window.removeEventListener("gd:businesses-updated", loadBusinesses);
       clearInterval(t);
     };
   }, []);
@@ -74,7 +87,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         >
           {NAV.map((item) => {
             const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-            const badgeCount = item.badge === "suggestions" ? pending : item.badge === "reports" ? reports : 0;
+            const badgeCount = item.badge === "suggestions" ? pending : item.badge === "reports" ? reports : item.badge === "businesses" ? pendingBiz : 0;
             const showBadge = badgeCount > 0;
             return (
               <Link

@@ -37,3 +37,6 @@ Thumbs.db
 
 # AI design skills (installed via skills.sh — tooling, not app code)
 .agents/
+
+# Prize payout ledger (local record of tx hashes)
+dapp/scripts/prize-payouts.json

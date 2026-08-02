@@ -606,3 +606,42 @@ also how new users get their first G$ and first taste of the app.
     `Authorization: Bearer <CRON_SECRET>`.
 - See `dapp/.env.example` for the full, commented list of environment variables.
 - Push features reuse the existing VAPID/web-push setup and Upstash Redis.
+
+---
+
+## 18. Merchant reward drops + business lifecycle (Phase 3)
+
+**What it is.** GoodSpots (businesses) can now post **task-locked reward drops**: a
+hunter completes a real task in-store ("Buy any coffee"), the merchant scans a
+one-time code to approve, and the reward G$ is released. It turns drops into a
+merchant acquisition + loyalty tool — the revenue-facing phase of the roadmap.
+
+**The loop (all off-chain gated; the escrow reuses a normal drop).**
+1. A merchant creates a reward drop from `/merchant` — funds it, pins it at their
+   spot, tags it on-chain as `[T:spotId]`, and stores the task text server-side.
+   The drop shows a **🎁** tag on the map.
+2. A verified hunter within 100m taps **"I did it — show my code"** →
+   `/api/task/qr` mints a **single-use, 2-minute** nonce (after re-checking GPS).
+3. The merchant opens **Scan & approve** (native camera QR reader, with manual
+   entry fallback), which signs and calls `/api/task/approve`. Only the spot owner
+   can approve; the nonce is burned (single-use) and a per-merchant daily cap applies.
+4. `/api/claim-proof` **fails closed** for `[T:]` drops unless a fresh approval
+   exists, then the normal `claimWithProof` runs and the G$ lands.
+
+**Business lifecycle & moderation.** Every business now carries a status —
+`pending → active → paused / suspended / rejected`:
+- **Merchants register into `pending`** (invisible on the map until approved) and
+  can **edit**, **deactivate (pause)**, and **reactivate their own** paused business
+  — all wallet-signed.
+- **Admins** (`/admin/businesses`, with a live pending-count badge) **approve /
+  reject** pending ones, **suspend** any, **reactivate** suspended/paused ones, and
+  **create a business directly** (goes live immediately).
+- **Only an admin can restore an admin-suspended business** — the merchant can't.
+- Legacy spots (no status) are grandfathered as `active`, so nothing pre-existing
+  disappears. Only `active` businesses appear on the map, accept payments, or can
+  run/approve reward drops.
+
+**Why it matters.** It gives a shop a concrete reason to fund drops (foot traffic,
+verified-human customers, provable redemption), while admin approval keeps the map
+trustworthy. Security holds end-to-end: single-use dynamic QR (a photo is useless
+a minute later), owner-only approval, GPS still required, and a fail-closed claim gate.
