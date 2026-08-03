@@ -50,7 +50,7 @@ export function HowRewardsWork() {
           <div className="flex gap-2 bg-lime/40 border border-ink/20 rounded-xl px-3 py-2.5 text-xs text-ink/80 leading-relaxed">
             <ShieldCheck size={15} className="shrink-0 mt-0.5" />
             <span><b>Safe by design:</b> only you can approve your rewards, the customer must be at your shop, and each code
-            is single-use and expires in ~2 minutes — a screenshot is useless. You never pay gas to approve.</span>
+            is single-use and expires in ~5 minutes — a screenshot is useless. You never pay gas to approve.</span>
           </div>
         </div>
       )}

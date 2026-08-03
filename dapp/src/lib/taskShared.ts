@@ -2,7 +2,7 @@
 // browser components and server routes can import them. Server-only bits (nonce
 // minting via node:crypto) live in taskLock.ts, which re-exports everything here.
 
-export const QR_TTL_S            = 120;   // a minted QR is valid for 2 minutes
+export const QR_TTL_S            = 300;   // a minted QR is valid for 5 minutes
 export const APPROVAL_TTL_S      = 600;   // merchant approval unlocks claiming for 10 minutes
 export const QR_COOLDOWN_S       = 20;    // min gap between a hunter minting nonces
 export const MERCHANT_DAILY_CAP  = 200;   // max approvals per merchant per day

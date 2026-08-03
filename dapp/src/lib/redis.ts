@@ -71,7 +71,7 @@ export const keys = {
   // a single-use QR nonce; the merchant (spot owner) scans + approves it, which
   // writes a short-lived approval that /api/claim-proof requires before signing.
   taskDrop:          (dropId: string)              => `gd:task:drop:${dropId}`,           // { spotId, task, createdAt }
-  taskQr:            (nonce: string)               => `gd:task:qr:${nonce}`,              // { dropId, root, spotId } · single-use · TTL 120s
+  taskQr:            (nonce: string)               => `gd:task:qr:${nonce}`,              // { dropId, root, spotId } · single-use · TTL 300s
   taskQrCooldown:    (root: string)                => `gd:task:qrcd:${root.toLowerCase()}`, // anti-spam on nonce minting
   taskApproval:      (dropId: string, root: string) => `gd:task:appr:${dropId}:${root.toLowerCase()}`, // TTL 10m; claim-proof requires it
   taskApprovalsDaily:(spotId: string, date: string) => `gd:task:apprday:${spotId}:${date}`,           // per-merchant daily cap
