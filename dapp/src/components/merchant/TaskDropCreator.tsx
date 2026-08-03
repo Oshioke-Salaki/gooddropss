@@ -10,6 +10,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { isValidTask, cleanTask, TASK_MAX_LEN } from "@/lib/taskShared";
 import type { Spot } from "@/types";
 import { taskCreateMessage } from "@/lib/taskCreateMsg";
+import { Gift, X, PartyPopper } from "lucide-react";
 
 const DURATIONS = [
   { label: "1 day", s: 86_400 },
@@ -129,9 +130,11 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   if (status === "done") {
     return (
       <div className="border-2 border-ink rounded-2xl p-5 bg-lime shadow-brutal text-center">
-        <p className="text-3xl">🎁</p>
-        <p className="font-black text-lg mt-1">Reward drop is live!</p>
-        <p className="text-sm text-ink/70 mt-1">Hunters near {spot.name} will see it. They do the task, you scan their code to approve.</p>
+        <div className="w-14 h-14 mx-auto rounded-full bg-ink text-lime flex items-center justify-center">
+          <PartyPopper size={26} />
+        </div>
+        <p className="font-black text-lg mt-2">Reward drop is live!</p>
+        <p className="text-sm text-ink/70 mt-1">{formatG$(amountWei)} G$ is funded and pinned at {spot.name}. Hunters do the task, you scan their code to approve.</p>
         <button onClick={onClose} className="btn-brutal mt-4 w-full py-3 rounded-xl font-black bg-ink text-lime">Done</button>
       </div>
     );
@@ -140,8 +143,8 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   return (
     <div className="border-2 border-ink rounded-2xl p-4 bg-card shadow-brutal-sm space-y-3">
       <div className="flex items-center justify-between">
-        <p className="font-black text-sm">🎁 New reward drop · {spot.name}</p>
-        <button onClick={onClose} className="w-7 h-7 rounded-full border-2 border-ink font-bold text-xs">✕</button>
+        <p className="flex items-center gap-1.5 font-black text-sm"><Gift size={16} /> New reward drop · {spot.name}</p>
+        <button onClick={onClose} className="w-7 h-7 rounded-full border-2 border-ink flex items-center justify-center"><X size={14} /></button>
       </div>
 
       <label className="block">

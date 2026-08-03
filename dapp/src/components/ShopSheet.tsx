@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useWriteContract } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { parseUnits } from "viem";
-import { Store, Check } from "lucide-react";
+import {
+  Store, Check, Gift, MapPin, Eye, X, UtensilsCrossed, ShoppingBag,
+  Wrench, Bus, type LucideIcon,
+} from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { haversineDistance, formatG$, formatUsdApprox } from "@/lib/utils";
@@ -17,8 +20,8 @@ import type { Spot, LatLng } from "@/types";
 // tight enough that payment still guarantees the merchant real foot traffic.
 const PAY_RADIUS_M = 150;
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  food: "🍲", retail: "🛍️", services: "🔧", transport: "🛺", other: "🏪",
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  food: UtensilsCrossed, retail: ShoppingBag, services: Wrench, transport: Bus, other: Store,
 };
 
 type PayStatus = "idle" | "paying" | "done" | "error";
@@ -138,7 +141,7 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 14, fontWeight: 700,
                 }}
-              >✕</button>
+              ><X size={15} /></button>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{
@@ -146,8 +149,9 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                   fontSize: 9, fontWeight: 900,
                   padding: "3px 10px", borderRadius: 100,
                   letterSpacing: "0.12em", textTransform: "uppercase",
+                  display: "inline-flex", alignItems: "center", gap: 4,
                 }}>
-                  🏪 Accepts G$
+                  <Store size={11} /> Accepts G$
                 </span>
                 {spot.discount && (
                   <span style={{
@@ -155,8 +159,9 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                     fontSize: 9, fontWeight: 900,
                     padding: "3px 10px", borderRadius: 100,
                     letterSpacing: "0.08em", textTransform: "uppercase",
+                    display: "inline-flex", alignItems: "center", gap: 4,
                   }}>
-                    🎁 {spot.discount}
+                    <Gift size={11} /> {spot.discount}
                   </span>
                 )}
               </div>
@@ -166,9 +171,9 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                   width: 52, height: 52, flexShrink: 0,
                   background: "#BFFD00", borderRadius: 14,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 26,
+                  color: "#111",
                 }}>
-                  {CATEGORY_EMOJI[spot.category] ?? "🏪"}
+                  {(() => { const I = CATEGORY_ICON[spot.category] ?? Store; return <I size={26} />; })()}
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <p style={{ margin: 0, color: "#fff", fontWeight: 900, fontSize: 22, lineHeight: 1.15 }}>
@@ -180,8 +185,8 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                     </p>
                   )}
                   {spot.placeName && (
-                    <p style={{ margin: "4px 0 0", color: "#BFFD00", fontSize: 12, fontWeight: 700 }}>
-                      📍 {spot.placeName}
+                    <p style={{ margin: "4px 0 0", color: "#BFFD00", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                      <MapPin size={12} /> {spot.placeName}
                     </p>
                   )}
                 </div>
@@ -242,7 +247,7 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                       padding: "10px 14px", fontSize: 12.5, fontWeight: 800,
                       display: "flex", alignItems: "center", gap: 8,
                     }}>
-                      👁 Preview — this is how customers see your shop. Payment is disabled here.
+                      <Eye size={15} className="shrink-0" /> Preview — this is how customers see your shop. Payment is disabled here.
                     </div>
                   )}
 
@@ -254,7 +259,7 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
                     padding: "13px 16px",
                     display: "flex", alignItems: "center", gap: 12,
                   }}>
-                    <span style={{ fontSize: 24, flexShrink: 0 }}>📍</span>
+                    <MapPin size={22} color="#111" style={{ flexShrink: 0 }} />
                     <div>
                       <p style={{ margin: 0, fontWeight: 900, fontSize: 14, color: "#111" }}>
                         {!userLocation ? "Enable GPS to pay here"

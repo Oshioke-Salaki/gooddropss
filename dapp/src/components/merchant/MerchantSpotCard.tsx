@@ -2,6 +2,10 @@
 import { useEffect, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import clsx from "clsx";
+import {
+  MapPin, Wallet, Gift, Pencil, Eye, Megaphone, Pause, Play, Check, Store,
+  Clock, Ban, XCircle, CheckCircle2, RotateCcw, type LucideIcon,
+} from "lucide-react";
 import { formatG$, shortAddr } from "@/lib/utils";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
@@ -16,13 +20,22 @@ import { ShopSheet } from "@/components/ShopSheet";
 interface SpotStats { count: number; totalWei: string; payments: SpotPayment[] }
 interface RewardRow { dropId: string; task: string; amount: bigint; status: number }
 
+// Lifecycle icon for the spot status badge (no emoji — they render poorly on Android).
+const STATUS_ICON: Record<SpotStatus, LucideIcon> = {
+  active: CheckCircle2, pending: Clock, paused: Pause, suspended: Ban, rejected: XCircle,
+};
+
 function RewardBadge({ status }: { status: number }) {
   const s = status === DROP_STATUS.Claimed
-    ? { t: "✅ Claimed", c: "bg-lime border-ink text-ink" }
+    ? { Icon: CheckCircle2, t: "Claimed", c: "bg-lime border-ink text-ink" }
     : status === DROP_STATUS.Reclaimed
-    ? { t: "↩︎ Expired", c: "bg-gray-100 border-gray-300 text-gray-500" }
-    : { t: "🟢 Live", c: "bg-white border-ink text-ink" };
-  return <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full border ${s.c} whitespace-nowrap`}>{s.t}</span>;
+    ? { Icon: RotateCcw, t: "Expired", c: "bg-gray-100 border-gray-300 text-gray-500" }
+    : { Icon: CheckCircle2, t: "Live", c: "bg-white border-ink text-ink" };
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-full border ${s.c} whitespace-nowrap`}>
+      <s.Icon size={11} /> {s.t}
+    </span>
+  );
 }
 const CATEGORIES = ["food", "retail", "services", "transport", "other"];
 
@@ -58,6 +71,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
 
   const status = spotStatus(spot);
   const meta = SPOT_STATUS_META[status];
+  const StatusIcon = STATUS_ICON[status];
   const active = isSpotActive(spot);
   const isOwner = !!address && address.toLowerCase() === spot.ownerAddress.toLowerCase();
 
@@ -145,20 +159,20 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <p className="font-black text-lg leading-tight">{spot.name}</p>
           {spot.description && <p className="text-xs text-muted mt-0.5">{spot.description}</p>}
         </div>
-        <span className={clsx("shrink-0 text-xs font-bold px-2.5 py-1 rounded-full border-2 whitespace-nowrap", TONE[meta.tone])}>
-          {meta.emoji} {meta.label}
+        <span className={clsx("shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border-2 whitespace-nowrap", TONE[meta.tone])}>
+          <StatusIcon size={12} /> {meta.label}
         </span>
       </div>
 
       {/* Status guidance */}
-      {status === "pending" && <p className="text-xs bg-[#FFF4E0] border border-ink/20 rounded-lg px-3 py-2">🕓 An admin will review this shortly. It goes live once approved.</p>}
-      {status === "suspended" && <p className="text-xs bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-danger font-semibold">🚫 Suspended by an admin. Contact support to restore it.{spot.note ? ` — ${spot.note}` : ""}</p>}
+      {status === "pending" && <p className="flex items-center gap-1.5 text-xs bg-[#FFF4E0] border border-ink/20 rounded-lg px-3 py-2"><Clock size={13} className="shrink-0" /> An admin will review this shortly. It goes live once approved.</p>}
+      {status === "suspended" && <p className="flex items-center gap-1.5 text-xs bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-danger font-semibold"><Ban size={13} className="shrink-0" /> Suspended by an admin. Contact support to restore it.{spot.note ? ` — ${spot.note}` : ""}</p>}
       {status === "rejected" && <p className="text-xs bg-danger/10 border border-danger/30 rounded-lg px-3 py-2 text-danger">This business wasn&apos;t approved.{spot.note ? ` — ${spot.note}` : ""}</p>}
 
       <div className="text-xs text-muted space-y-1">
-        <div>📍 {spot.placeName || `${spot.lat.toFixed(4)}°, ${spot.lng.toFixed(4)}°`}</div>
-        <div>💳 Payouts → {shortAddr(spot.wallet)}</div>
-        {spot.discount && <div>🎁 {spot.discount}</div>}
+        <div className="flex items-center gap-1.5"><MapPin size={13} className="shrink-0" /> {spot.placeName || `${spot.lat.toFixed(4)}°, ${spot.lng.toFixed(4)}°`}</div>
+        <div className="flex items-center gap-1.5"><Wallet size={13} className="shrink-0" /> Payouts → {shortAddr(spot.wallet)}</div>
+        {spot.discount && <div className="flex items-center gap-1.5"><Gift size={13} className="shrink-0" /> {spot.discount}</div>}
       </div>
 
       {/* Onboarding checklist — guide a brand-new shop to its first payment
@@ -172,8 +186,8 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <Step done={false}>First G$ payment received</Step>
           {active && (
             <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer"
-              className="btn-brutal block text-center py-2 rounded-lg font-black text-sm bg-lime text-ink mt-1" style={{ textDecoration: "none" }}>
-              📢 Get your pay-here poster
+              className="btn-brutal flex items-center justify-center gap-1.5 py-2 rounded-lg font-black text-sm bg-lime text-ink mt-1" style={{ textDecoration: "none" }}>
+              <Megaphone size={15} /> Get your pay-here poster
             </a>
           )}
         </div>
@@ -194,7 +208,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {stats && stats.payments.length > 0 && (
         <>
           <button onClick={() => setExpanded((v) => !v)} className="w-full py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-border transition-colors">
-            {expanded ? "Hide" : "Show"} recent payments {expanded ? "▲" : "▼"}
+            {expanded ? "Hide" : "Show"} recent payments {expanded ? "↑" : "↓"}
           </button>
           {expanded && (
             <div className="space-y-1.5">
@@ -214,8 +228,8 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {/* Reward activity */}
       {rewards.length > 0 && (
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.08em] text-muted mb-1.5">
-            🎁 Rewards · {rewards.filter((r) => r.status === DROP_STATUS.Claimed).length} claimed · {rewards.filter((r) => r.status === DROP_STATUS.Active).length} live
+          <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-muted mb-1.5">
+            <Gift size={13} /> Rewards · {rewards.filter((r) => r.status === DROP_STATUS.Claimed).length} claimed · {rewards.filter((r) => r.status === DROP_STATUS.Active).length} live
           </p>
           <div className="space-y-1.5">
             {rewards.slice(0, 8).map((r) => (
@@ -247,7 +261,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <input value={wallet} onChange={(e) => setWallet(e.target.value.trim())} placeholder="Payout wallet 0x…" className="w-full border-2 border-ink rounded-lg px-3 py-2 text-xs font-mono outline-none" />
           {/* Re-pin location */}
           <button onClick={() => setShowPicker(true)} className="w-full flex items-center justify-between gap-2 border-2 border-ink rounded-lg px-3 py-2 text-sm font-semibold bg-white text-left">
-            <span className="truncate">📍 {editCoords
+            <span className="flex items-center gap-1.5 truncate"><MapPin size={14} className="shrink-0" /> {editCoords
               ? (editPlaceName || `${editCoords.lat.toFixed(5)}, ${editCoords.lng.toFixed(5)}`)
               : (spot.placeName || `${spot.lat.toFixed(5)}, ${spot.lng.toFixed(5)}`)}</span>
             <span className="text-xs font-black text-ink/60 shrink-0">change ›</span>
@@ -263,17 +277,17 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {/* Owner actions */}
       {isOwner && !editing && (
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => setEditing(true)} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white">✏️ Edit</button>
-          <button onClick={() => setShowPreview(true)} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white">👁 Preview</button>
-          <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer" className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white" style={{ textDecoration: "none" }}>📢 Poster</a>
+          <button onClick={() => setEditing(true)} className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm bg-white"><Pencil size={15} /> Edit</button>
+          <button onClick={() => setShowPreview(true)} className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm bg-white"><Eye size={15} /> Preview</button>
+          <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer" className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm bg-white" style={{ textDecoration: "none" }}><Megaphone size={15} /> Poster</a>
           {active && (
-            <button onClick={() => changeStatus("pause")} disabled={busy === "pause"} className="btn-brutal px-3 py-2 rounded-xl font-bold text-sm bg-white disabled:opacity-60">
-              {busy === "pause" ? "…" : "⏸️ Deactivate"}
+            <button onClick={() => changeStatus("pause")} disabled={busy === "pause"} className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-sm bg-white disabled:opacity-60">
+              {busy === "pause" ? "…" : <><Pause size={15} /> Deactivate</>}
             </button>
           )}
           {merchantCanReactivate(spot) && (
-            <button onClick={() => changeStatus("reactivate")} disabled={busy === "reactivate"} className="btn-brutal px-3 py-2 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-60">
-              {busy === "reactivate" ? "…" : "▶️ Reactivate"}
+            <button onClick={() => changeStatus("reactivate")} disabled={busy === "reactivate"} className="btn-brutal flex items-center gap-1.5 px-3 py-2 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-60">
+              {busy === "reactivate" ? "…" : <><Play size={15} /> Reactivate</>}
             </button>
           )}
         </div>
@@ -282,9 +296,9 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {/* Reward drops — only when live */}
       {active && (
         showTask ? (
-          <TaskDropCreator spot={spot} onClose={() => setShowTask(false)} onCreated={() => setShowTask(false)} />
+          <TaskDropCreator spot={spot} onClose={() => setShowTask(false)} onCreated={onChanged} />
         ) : (
-          <button onClick={() => setShowTask(true)} className="btn-brutal w-full py-2.5 rounded-xl font-black text-sm bg-ink text-lime">🎁 Create a reward drop</button>
+          <button onClick={() => setShowTask(true)} className="btn-brutal flex items-center justify-center gap-1.5 w-full py-2.5 rounded-xl font-black text-sm bg-ink text-lime"><Gift size={16} /> Create a reward drop</button>
         )
       )}
 
@@ -294,7 +308,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           open
           initialCenter={editCoords ?? { lat: spot.lat, lng: spot.lng }}
           currentLocation={editCoords ?? { lat: spot.lat, lng: spot.lng }}
-          pinEmoji="🏪"
+          pinIcon={<Store size={20} />}
           confirmLabel="Update shop location"
           onConfirm={(lat, lng, place) => { setEditCoords({ lat, lng }); setEditPlaceName(place); setShowPicker(false); }}
           onClose={() => setShowPicker(false)}
@@ -311,9 +325,9 @@ function Step({ done, children }: { done: boolean; children: React.ReactNode }) 
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className={clsx(
-        "w-4 h-4 rounded-full border-2 flex items-center justify-center text-[9px] font-black shrink-0",
-        done ? "bg-lime border-ink text-ink" : "bg-white border-border text-transparent",
-      )}>{done ? "✓" : ""}</span>
+        "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
+        done ? "bg-lime border-ink text-ink" : "bg-white border-border",
+      )}>{done && <Check size={11} strokeWidth={3} />}</span>
       <span className={done ? "font-bold text-ink" : "text-muted"}>{children}</span>
     </div>
   );

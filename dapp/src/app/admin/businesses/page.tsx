@@ -3,6 +3,14 @@ import { useEffect, useState, useCallback } from "react";
 import type { Spot, SpotStatus } from "@/types";
 import { spotStatus, SPOT_STATUS_META } from "@/lib/spotStatus";
 import { shortAddr } from "@/lib/utils";
+import {
+  Store, MapPin, Check, X, Ban, Trash2, Play, Clock, Pause,
+  XCircle, CheckCircle2, type LucideIcon,
+} from "lucide-react";
+
+const STATUS_ICON: Record<SpotStatus, LucideIcon> = {
+  active: CheckCircle2, pending: Clock, paused: Pause, suspended: Ban, rejected: XCircle,
+};
 
 const CATEGORIES = ["food", "retail", "services", "transport", "other"];
 const ORDER: SpotStatus[] = ["pending", "active", "paused", "suspended", "rejected"];
@@ -64,7 +72,7 @@ export default function AdminBusinesses() {
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-black">Businesses 🏪</h1>
+        <h1 className="flex items-center gap-2 text-2xl font-black"><Store size={22} /> Businesses</h1>
         <button onClick={() => setShowCreate((v) => !v)} className="btn-brutal px-3 py-2 rounded-xl font-black text-sm bg-lime text-ink">
           {showCreate ? "Close" : "＋ Create"}
         </button>
@@ -79,16 +87,17 @@ export default function AdminBusinesses() {
 
       {byStatus.map(({ status, items }) => {
         const meta = SPOT_STATUS_META[status];
+        const GroupIcon = STATUS_ICON[status];
         return (
           <div key={status} className="mb-6">
-            <p className="text-xs font-black uppercase tracking-wider text-gray-500 mb-2">{meta.emoji} {meta.label} ({items.length})</p>
+            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-gray-500 mb-2"><GroupIcon size={13} /> {meta.label} ({items.length})</p>
             <div className="space-y-2.5">
               {items.map((s) => (
                 <div key={s.id} className="border-2 border-ink rounded-2xl p-3.5 bg-white shadow-brutal-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-black">{s.name}</p>
-                      <p className="text-xs text-gray-500">{s.category} · owner {shortAddr(s.ownerAddress)} · 📍 {s.placeName || `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`}</p>
+                      <p className="flex items-center gap-1 text-xs text-gray-500">{s.category} · owner {shortAddr(s.ownerAddress)} · <MapPin size={11} className="inline shrink-0" /> {s.placeName || `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`}</p>
                       {s.description && <p className="text-xs text-gray-600 mt-1">{s.description}</p>}
                       {s.note && <p className="text-xs text-red-600 mt-1">note: {s.note}</p>}
                     </div>
@@ -98,26 +107,26 @@ export default function AdminBusinesses() {
                   <div className="flex flex-wrap gap-2 mt-3">
                     {status === "pending" && (
                       <>
-                        <ActBtn onClick={() => act(s.id, "approve")} busy={busy === s.id + "approve"} primary>✓ Approve</ActBtn>
-                        <ActBtn onClick={() => act(s.id, "reject", promptNote())} busy={busy === s.id + "reject"}>✕ Reject</ActBtn>
+                        <ActBtn onClick={() => act(s.id, "approve")} busy={busy === s.id + "approve"} primary><Check size={14} /> Approve</ActBtn>
+                        <ActBtn onClick={() => act(s.id, "reject", promptNote())} busy={busy === s.id + "reject"}><X size={14} /> Reject</ActBtn>
                       </>
                     )}
                     {status === "active" && (
-                      <ActBtn onClick={() => act(s.id, "suspend", promptNote())} busy={busy === s.id + "suspend"}>🚫 Suspend</ActBtn>
+                      <ActBtn onClick={() => act(s.id, "suspend", promptNote())} busy={busy === s.id + "suspend"}><Ban size={14} /> Suspend</ActBtn>
                     )}
                     {status === "paused" && (
                       <>
-                        <ActBtn onClick={() => act(s.id, "reactivate")} busy={busy === s.id + "reactivate"} primary>▶️ Reactivate</ActBtn>
-                        <ActBtn onClick={() => act(s.id, "suspend", promptNote())} busy={busy === s.id + "suspend"}>🚫 Suspend</ActBtn>
+                        <ActBtn onClick={() => act(s.id, "reactivate")} busy={busy === s.id + "reactivate"} primary><Play size={14} /> Reactivate</ActBtn>
+                        <ActBtn onClick={() => act(s.id, "suspend", promptNote())} busy={busy === s.id + "suspend"}><Ban size={14} /> Suspend</ActBtn>
                       </>
                     )}
                     {status === "suspended" && (
-                      <ActBtn onClick={() => act(s.id, "reactivate")} busy={busy === s.id + "reactivate"} primary>▶️ Reactivate</ActBtn>
+                      <ActBtn onClick={() => act(s.id, "reactivate")} busy={busy === s.id + "reactivate"} primary><Play size={14} /> Reactivate</ActBtn>
                     )}
                     {/* Delete — only for hidden (non-live) businesses, so a legit
                         active spot can't be wiped by a stray tap. */}
                     {status !== "active" && (
-                      <ActBtn onClick={() => remove(s.id, s.name)} busy={busy === s.id + "delete"} danger>🗑️ Delete</ActBtn>
+                      <ActBtn onClick={() => remove(s.id, s.name)} busy={busy === s.id + "delete"} danger><Trash2 size={14} /> Delete</ActBtn>
                     )}
                   </div>
                 </div>
@@ -140,7 +149,7 @@ function promptNote(): string | undefined {
 function ActBtn({ children, onClick, busy, primary, danger }: { children: React.ReactNode; onClick: () => void; busy: boolean; primary?: boolean; danger?: boolean }) {
   return (
     <button onClick={onClick} disabled={busy}
-      className={`btn-brutal px-3 py-1.5 rounded-lg font-black text-sm disabled:opacity-60 ${danger ? "bg-red-100 text-red-700 border-red-400" : primary ? "bg-lime text-ink" : "bg-white"}`}>
+      className={`btn-brutal inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-sm disabled:opacity-60 ${danger ? "bg-red-100 text-red-700 border-red-400" : primary ? "bg-lime text-ink" : "bg-white"}`}>
       {busy ? "…" : children}
     </button>
   );

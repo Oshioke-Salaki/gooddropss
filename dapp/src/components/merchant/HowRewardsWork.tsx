@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Gift, Camera, ShieldCheck } from "lucide-react";
 
 // Merchant-facing explainer for reward drops. Collapsible, and remembers if the
 // merchant has dismissed it (so it's helpful once, then out of the way).
@@ -27,28 +28,29 @@ export function HowRewardsWork() {
   return (
     <div className="border-2 border-ink rounded-2xl bg-card shadow-brutal-sm mb-5 overflow-hidden">
       <button onClick={toggle} className="w-full flex items-center justify-between px-4 py-3 text-left">
-        <span className="font-black text-sm">🎁 How reward drops work</span>
-        <span className="text-xs font-bold text-muted">{open ? "Hide ▲" : "Show ▼"}</span>
+        <span className="flex items-center gap-1.5 font-black text-sm"><Gift size={16} /> How reward drops work</span>
+        <span className="text-xs font-bold text-muted">{open ? "Hide ↑" : "Show ↓"}</span>
       </button>
 
       {open && (
         <div className="px-4 pb-4 space-y-2.5">
           <Step n={1} title="Create a reward">
             Fund some G$ and set a task — e.g. <b className="text-ink">&ldquo;Buy any coffee&rdquo;</b>. It drops on the
-            map right at your shop with a 🎁 tag.
+            map right at your shop as a reward.
           </Step>
           <Step n={2} title="A hunter does the task">
             A verified customer completes it in-store, taps <b className="text-ink">&ldquo;I did it&rdquo;</b>, and shows
             you a one-time code on their phone.
           </Step>
           <Step n={3} title="Scan to pay them">
-            Tap <b className="text-ink">📷 Scan &amp; approve</b>, scan their code (or type it), and sign. The reward G$
+            Tap <b className="inline-flex items-center gap-1 text-ink"><Camera size={13} /> Scan &amp; approve</b>, scan their code (or type it), and sign. The reward G$
             lands in their wallet instantly.
           </Step>
 
-          <div className="bg-lime/40 border border-ink/20 rounded-xl px-3 py-2.5 text-xs text-ink/80 leading-relaxed">
-            🔒 <b>Safe by design:</b> only you can approve your rewards, the customer must be at your shop, and each code
-            is single-use and expires in ~2 minutes — a screenshot is useless. You never pay gas to approve.
+          <div className="flex gap-2 bg-lime/40 border border-ink/20 rounded-xl px-3 py-2.5 text-xs text-ink/80 leading-relaxed">
+            <ShieldCheck size={15} className="shrink-0 mt-0.5" />
+            <span><b>Safe by design:</b> only you can approve your rewards, the customer must be at your shop, and each code
+            is single-use and expires in ~2 minutes — a screenshot is useless. You never pay gas to approve.</span>
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
+import { Camera, X, Gift } from "lucide-react";
 import { approveMessage } from "@/lib/taskCreateMsg";
 
 const NONCE_RE = /^[0-9a-f]{32}$/;
@@ -75,7 +76,7 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
         body: JSON.stringify({ nonce, merchantWallet: address, signature }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok && d.ok) setResult({ ok: true, msg: "Approved ✓ — the hunter can claim their reward now." });
+      if (res.ok && d.ok) setResult({ ok: true, msg: "Approved — the hunter can claim their reward now." });
       else setResult({ ok: false, msg: d.error ?? "Couldn't approve — try again." });
     } catch (e: unknown) {
       const m = (e as { shortMessage?: string }).shortMessage ?? "";
@@ -88,8 +89,8 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
   return (
     <div className="border-2 border-ink rounded-2xl p-4 bg-card shadow-brutal-sm space-y-3">
       <div className="flex items-center justify-between">
-        <p className="font-black text-sm">📷 Scan &amp; approve</p>
-        <button onClick={() => { stopCamera(); onClose(); }} className="w-7 h-7 rounded-full border-2 border-ink font-bold text-xs">✕</button>
+        <p className="flex items-center gap-1.5 font-black text-sm"><Camera size={16} /> Scan &amp; approve</p>
+        <button onClick={() => { stopCamera(); onClose(); }} className="w-7 h-7 rounded-full border-2 border-ink flex items-center justify-center"><X size={14} /></button>
       </div>
 
       {result && (
@@ -103,7 +104,7 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
         <video ref={videoRef} playsInline muted className="w-full h-full object-cover" style={{ display: camActive ? "block" : "none" }} />
         {!camActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-            <span className="text-4xl">🎁</span>
+            <Gift size={40} className="text-muted" strokeWidth={1.5} />
             <p className="text-xs text-muted">Point the camera at the hunter&apos;s code, or type it below.</p>
           </div>
         )}

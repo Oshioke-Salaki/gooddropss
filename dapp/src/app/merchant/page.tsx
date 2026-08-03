@@ -1,7 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { Store, MapPin, Check, TrendingUp } from "lucide-react";
+import {
+  Store, MapPin, Check, TrendingUp, UtensilsCrossed, ShoppingBag,
+  Wrench, Bus, Camera, Rocket, Map as MapIcon, type LucideIcon,
+} from "lucide-react";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import type { Spot } from "@/types";
@@ -13,12 +16,12 @@ import { isSpotActive } from "@/lib/spotStatus";
 import { getPositionRobust } from "@/lib/geolocate";
 import clsx from "clsx";
 
-const CATEGORIES = [
-  { id: "food",      label: "🍲 Food & Drink" },
-  { id: "retail",    label: "🛍️ Retail" },
-  { id: "services",  label: "🔧 Services" },
-  { id: "transport", label: "🛺 Transport" },
-  { id: "other",     label: "🏪 Other" },
+const CATEGORIES: { id: string; label: string; Icon: LucideIcon }[] = [
+  { id: "food",      label: "Food & Drink", Icon: UtensilsCrossed },
+  { id: "retail",    label: "Retail",       Icon: ShoppingBag },
+  { id: "services",  label: "Services",     Icon: Wrench },
+  { id: "transport", label: "Transport",    Icon: Bus },
+  { id: "other",     label: "Other",        Icon: Store },
 ];
 
 
@@ -123,14 +126,14 @@ export default function MerchantPage() {
       <Nav />
 
       <div className="max-w-3xl mx-auto px-4 pt-20 pb-8">
-        <h1 className="text-3xl font-black tracking-tight mb-1">GoodSpots 🏪</h1>
+        <h1 className="flex items-center gap-2 text-3xl font-black tracking-tight mb-1"><Store size={26} /> GoodSpots</h1>
         <p className="text-muted text-sm mb-6">
           Accept G$ at your shop. Hunters nearby see you on the map — payment only unlocks when they walk in.
         </p>
 
         {!isConnected ? (
           <div className="border-2 border-ink rounded-2xl p-8 text-center space-y-3 bg-card">
-            <div className="text-5xl">🏪</div>
+            <Store size={48} className="mx-auto" strokeWidth={1.5} />
             <p className="font-bold text-lg">Sign in to register your shop</p>
             <p className="text-sm text-muted">Takes under a minute. No hardware needed — your phone is the terminal.</p>
             <button
@@ -201,11 +204,11 @@ export default function MerchantPage() {
                         key={c.id}
                         onClick={() => setCategory(c.id)}
                         className={clsx(
-                          "px-3 py-2 rounded-xl text-xs font-bold border-2 transition-colors",
+                          "flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border-2 transition-colors",
                           category === c.id ? "bg-ink text-lime border-ink" : "bg-cream text-muted border-border hover:border-ink",
                         )}
                       >
-                        {c.label}
+                        <c.Icon size={14} /> {c.label}
                       </button>
                     ))}
                   </div>
@@ -249,8 +252,8 @@ export default function MerchantPage() {
                     {coords ? "Location pinned — tap to adjust" : "Pin your shop on the map"}
                   </button>
                   {coords && (
-                    <p className="text-[11px] text-ink mt-1 font-semibold truncate">
-                      📍 {placeName || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`}
+                    <p className="flex items-center gap-1.5 text-[11px] text-ink mt-1 font-semibold truncate">
+                      <MapPin size={13} className="shrink-0" /> {placeName || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`}
                     </p>
                   )}
                   <p className="text-[11px] text-muted mt-1">Drag the pin to your exact shopfront — customers must be within 150m to pay.</p>
@@ -273,11 +276,11 @@ export default function MerchantPage() {
                     onClick={handleSubmit}
                     disabled={!canSubmit}
                     className={clsx(
-                      "btn-brutal flex-1 py-3 rounded-xl font-black text-sm",
+                      "btn-brutal flex items-center justify-center gap-1.5 flex-1 py-3 rounded-xl font-black text-sm",
                       canSubmit ? "bg-ink text-lime" : "bg-border text-muted cursor-not-allowed shadow-none",
                     )}
                   >
-                    {submitting ? "Registering…" : "Go live 🚀"}
+                    {submitting ? "Registering…" : <><Rocket size={16} /> Go live</>}
                   </button>
                 </div>
               </div>
@@ -295,7 +298,7 @@ export default function MerchantPage() {
                     onClick={() => setShowScanner(true)}
                     className="btn-brutal w-full py-3 rounded-xl font-black text-sm bg-lime text-ink flex items-center justify-center gap-2"
                   >
-                    📷 Scan &amp; approve a reward
+                    <Camera size={16} /> Scan &amp; approve a reward
                   </button>
                 )}
               </div>
@@ -313,7 +316,7 @@ export default function MerchantPage() {
               </div>
             ) : mySpots.length === 0 ? (
               <div className="text-center py-10 space-y-2 text-muted">
-                <div className="text-4xl">🗺️</div>
+                <MapIcon size={40} className="mx-auto" strokeWidth={1.5} />
                 <p className="font-bold text-ink">No spots yet</p>
                 <p className="text-sm">Register your shop and start accepting G$ today.</p>
               </div>
@@ -334,7 +337,7 @@ export default function MerchantPage() {
         initialCenter={coords ?? myLoc}
         currentLocation={myLoc}
         followLocation={!coords}
-        pinEmoji="🏪"
+        pinIcon={<Store size={20} />}
         confirmLabel="Pin my shop here"
         onConfirm={(lat, lng, place) => {
           setCoords({ lat, lng });

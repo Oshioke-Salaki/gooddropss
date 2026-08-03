@@ -59,8 +59,8 @@ export interface Props {
   /** Keep the pin locked onto `currentLocation` (and follow it as GPS sharpens)
    *  until the user drags — used for "pin my shop where I'm standing". */
   followLocation?: boolean;
-  /** Emoji shown inside the map pin (default 💰 for drops; e.g. 🏪 for a shop). */
-  pinEmoji?: string;
+  /** Content inside the map pin (default 💰 for drops; e.g. a <Store/> icon for a shop). */
+  pinIcon?: React.ReactNode;
   /** Confirm-button label (default "Drop here"; e.g. "Pin my shop here"). */
   confirmLabel?: string;
 }
@@ -78,7 +78,7 @@ export function LocationPickerSheet({
   onClose,
   landmarks = [],
   followLocation = false,
-  pinEmoji = "💰",
+  pinIcon = "💰",
   confirmLabel = "Drop here",
 }: Props) {
   const [query, setQuery]           = useState("");
@@ -497,7 +497,7 @@ export function LocationPickerSheet({
                 transition: "box-shadow 0.15s ease",
               }}
             >
-              {pinEmoji}
+              {pinIcon}
             </div>
             {/* Pin stem */}
             <div
