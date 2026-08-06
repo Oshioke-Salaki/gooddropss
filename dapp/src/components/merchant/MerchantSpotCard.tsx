@@ -16,6 +16,7 @@ import type { Spot, SpotPayment, SpotStatus } from "@/types";
 import { TaskDropCreator } from "@/components/merchant/TaskDropCreator";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { ShopSheet } from "@/components/ShopSheet";
+import { useLandmarks } from "@/hooks/useLandmarks";
 
 interface SpotStats { count: number; totalWei: string; payments: SpotPayment[] }
 interface RewardRow { dropId: string; task: string; amount: bigint; status: number }
@@ -49,6 +50,7 @@ const TONE: Record<string, string> = {
 export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: () => void }) {
   const { address } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const { landmarks } = useLandmarks();
 
   const [stats, setStats] = useState<SpotStats | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -309,6 +311,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           initialCenter={editCoords ?? { lat: spot.lat, lng: spot.lng }}
           currentLocation={editCoords ?? { lat: spot.lat, lng: spot.lng }}
           pinIcon={<Store size={20} />}
+          landmarks={landmarks}
           confirmLabel="Update shop location"
           onConfirm={(lat, lng, place) => { setEditCoords({ lat, lng }); setEditPlaceName(place); setShowPicker(false); }}
           onClose={() => setShowPicker(false)}

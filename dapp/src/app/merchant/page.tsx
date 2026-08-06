@@ -12,6 +12,7 @@ import { MerchantSpotCard } from "@/components/merchant/MerchantSpotCard";
 import { TaskScanner } from "@/components/merchant/TaskScanner";
 import { HowRewardsWork } from "@/components/merchant/HowRewardsWork";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
+import { useLandmarks } from "@/hooks/useLandmarks";
 import { isSpotActive } from "@/lib/spotStatus";
 import { getPositionRobust } from "@/lib/geolocate";
 import clsx from "clsx";
@@ -28,6 +29,7 @@ const CATEGORIES: { id: string; label: string; Icon: LucideIcon }[] = [
 export default function MerchantPage() {
   const { address, isConnected } = useSignedInAccount();
   const { login } = useAuth();
+  const { landmarks } = useLandmarks();
 
   const [mySpots, setMySpots]   = useState<Spot[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -337,6 +339,7 @@ export default function MerchantPage() {
         initialCenter={coords ?? myLoc}
         currentLocation={myLoc}
         followLocation={!coords}
+        landmarks={landmarks}
         pinIcon={<Store size={20} />}
         confirmLabel="Pin my shop here"
         onConfirm={(lat, lng, place) => {
