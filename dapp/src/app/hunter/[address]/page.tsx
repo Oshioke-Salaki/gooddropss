@@ -14,8 +14,10 @@ import { BadgeWall } from "@/components/BadgeWall";
 import { Avatar } from "@/components/Avatar";
 import { formatG$, shortAddr, getDropRarity, RARITY, gpsToDeg, type DropRarity } from "@/lib/utils";
 import { HunterFindsMap, type FindPoint } from "@/components/HunterFindsMap";
+import { getRedis, keys } from "@/lib/redis";
+import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { type Drop } from "@/types";
-import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award } from "lucide-react";
+import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award, Users } from "lucide-react";
 
 interface PageProps { params: Promise<{ address: string }> }
 
@@ -73,16 +75,28 @@ function computeAchievements(created: Drop[], claimed: Drop[]): Achievement[] {
 }
 
 
+// People this identity has referred (identity-root scoped, Sybil-proof). Read
+// straight from Redis since this is a server component.
+async function getReferralCount(address: string): Promise<number> {
+  const redis = getRedis();
+  if (!redis) return 0;
+  try {
+    const root = await resolveIdentityRoot(address);
+    return (await redis.scard(keys.referralsOf(root))) ?? 0;
+  } catch { return 0; }
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const RARITY_ORDER: DropRarity[] = ["legendary", "rare", "uncommon", "common"];
 
 export default async function HunterPage({ params }: PageProps) {
   const { address } = await params;
-  const [profile, username, avatarPreset] = await Promise.all([
+  const [profile, username, avatarPreset, referralCount] = await Promise.all([
     fetchHunterProfile(address),
     getUsername(address),
     getUserAvatar(address),
+    getReferralCount(address),
   ]);
   if (!profile) notFound();
 
@@ -158,6 +172,9 @@ export default async function HunterPage({ params }: PageProps) {
               🏆 {earned.length} / {achievements.length} core badges
             </div>
             <HunterStreakBadge address={address} />
+            <div className="flex items-center gap-1.5 bg-card border-2 border-ink rounded-full px-3.5 py-1 text-xs font-black shadow-brutal-sm">
+              <Users size={13} /> {referralCount} referred
+            </div>
           </div>
         </div>
 
