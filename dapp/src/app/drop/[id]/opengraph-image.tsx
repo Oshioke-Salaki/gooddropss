@@ -5,6 +5,10 @@ import { DROP_STATUS } from "@/types";
 
 export const contentType = "image/png";
 export const size        = { width: 1200, height: 630 };
+// A drop's preview (amount, rarity, clue) is fixed at creation, so cache the
+// rendered PNG for an hour. Image generation (satori/resvg) is CPU-heavy, and
+// social crawlers re-fetch link previews often — this stops needless re-renders.
+export const revalidate  = 3600;
 
 export default async function DropOgImage({
   params,
