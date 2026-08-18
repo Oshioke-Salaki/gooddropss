@@ -242,6 +242,7 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
       }
 
       setFirstDropId(nextDropId); // last created = first stop (entry point)
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };

@@ -420,6 +420,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
         if (!ok) return; // bindRiddle set status → "riddleFailed" (resume UI)
       }
 
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
@@ -471,6 +472,7 @@ export function CreateDropSheet({ open, userLocation, onClose, onSuccess, campai
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setMultiProgress({ done: qty, failed: 0, total: qty });
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("done");
     } catch (e: unknown) {
       const fe = friendlyClaimError(e);

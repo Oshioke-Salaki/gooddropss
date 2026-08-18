@@ -329,6 +329,7 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
         });
         await publicClient.waitForTransactionReceipt({ hash: tx });
       }
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };

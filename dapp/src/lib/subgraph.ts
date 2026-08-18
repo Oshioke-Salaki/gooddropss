@@ -212,6 +212,34 @@ export async function fetchHunterProfile(address: string): Promise<HunterStats |
   }
 }
 
+// Cheap "has this wallet done a basic task yet?" check — true if it has claimed
+// a drop OR created one. Used to gate referral crediting on real activity (not a
+// bare sign-up), so ambassadors only get credit for hunters who actually engage.
+// Queries the connected wallet directly (a fresh invitee uses one wallet), so it
+// stays a tiny 2-row lookup rather than the full identity-root aggregation.
+export async function fetchHasActivity(address: string): Promise<boolean> {
+  if (!SUBGRAPH_URL) return false;
+  const a = address.toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(a)) return false;
+  const query = `{
+    claimed: drops(first: 1, where: { claimer: "${a}", status: 1 }) { id }
+    created: drops(first: 1, where: { dropper: "${a}" }) { id }
+  }`;
+  try {
+    const res = await fetch(SUBGRAPH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    if (!res.ok) return false;
+    const json = await res.json();
+    const d = json.data ?? {};
+    return (d.claimed?.length ?? 0) > 0 || (d.created?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Fetches all drops using cursor pagination (1 000 per page).
 export async function fetchAllDrops(): Promise<Drop[]> {
   if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");

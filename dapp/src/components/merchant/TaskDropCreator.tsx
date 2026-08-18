@@ -81,6 +81,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
         args: [degToGps(spot.lat), degToGps(spot.lng), amountWei, expiry, hint],
       });
       const rc = await publicClient.waitForTransactionReceipt({ hash: dTx });
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
 
       // 3. Extract the new dropId from the DropCreated event.
       let dropId: string | null = null;
