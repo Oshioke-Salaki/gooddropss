@@ -21,9 +21,11 @@ import { ArrowLeft, Target, Coins, Zap, Star, Crown, Shield, Award, Users } from
 
 interface PageProps { params: Promise<{ address: string }> }
 
-// Identity-scoped profile aggregates all drops (fetchAllDrops) + a root multicall;
-// cache the rendered page for 60s so it's not recomputed on every hit.
-export const revalidate = 60;
+// Identity-scoped profile aggregates all drops (fetchAllDrops) + a root multicall
+// — expensive to recompute. A profile barely changes minute to minute, so cache
+// the rendered page for 5 min: fewer regenerations = much less Active CPU, and
+// crawlers hitting many hunter URLs no longer each trigger a full re-scan.
+export const revalidate = 300;
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
 

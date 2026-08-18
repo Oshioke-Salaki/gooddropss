@@ -241,8 +241,22 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
 }
 
 // Fetches all drops using cursor pagination (1 000 per page).
+// Server-only micro-cache. Profile pages (/hunter/[address]) and /api/badges both
+// pull the ENTIRE drop set + resolve roots on every render — crawlers and bursts
+// then re-run that full scan back to back, which is the main driver of Vercel
+// Active CPU. Reusing one fetch+parse per serverless instance for a short window
+// collapses those repeats. The browser (live map) is never cached — a just-claimed
+// drop must reflect immediately (useDrops re-fetches to confirm the claim).
+let _allDropsCache: { at: number; data: Drop[] } | null = null;
+const ALL_DROPS_TTL_MS = 45_000;
+
 export async function fetchAllDrops(): Promise<Drop[]> {
   if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
+
+  const isServer = typeof window === "undefined";
+  if (isServer && _allDropsCache && Date.now() - _allDropsCache.at < ALL_DROPS_TTL_MS) {
+    return _allDropsCache.data;
+  }
 
   const all: Drop[] = [];
   let lastId = "0";
@@ -271,5 +285,7 @@ export async function fetchAllDrops(): Promise<Drop[]> {
   // identity), last write wins.
   const byId = new Map<string, Drop>();
   for (const d of all) byId.set(d.id.toString(), d);
-  return [...byId.values()];
+  const deduped = [...byId.values()];
+  if (isServer) _allDropsCache = { at: Date.now(), data: deduped };
+  return deduped;
 }

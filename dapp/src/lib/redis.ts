@@ -27,6 +27,10 @@ export const keys = {
   hunterNearbyCd:   (address: string) => `gd:hunter:nearbycd:${address.toLowerCase()}`,
   reverifyReminded: (address: string) => `gd:reverify:reminded:${address.toLowerCase()}`,
   reverifyCursor:   ()                => `gd:reverify:cursor`,
+  // Cross-instance cache of wallet → GoodDollar identity root. Roots change only
+  // on connect/disconnect, so this is safe to cache for a day and saves an RPC
+  // read on nearly every stats API call (a big Active-CPU saver on Vercel).
+  identityRoot:     (addr: string)    => `gd:idroot:${addr.toLowerCase()}`,
   // Presence ledger — GPS-verified claims per identity root (the badge/set/API substrate)
   presence:         (root: string)    => `gd:presence:${root.toLowerCase()}`,
   // Presence badges — custom defs + sets (hashes), earned (zset: id→earnedAt), holder counts

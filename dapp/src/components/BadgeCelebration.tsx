@@ -10,7 +10,9 @@ interface EarnedBadge { name: string; emoji: string }
 export async function checkBadgesAfterClaim(address: string | undefined) {
   if (!address) return;
   try {
-    const res = await fetch(`/api/badges?address=${address.toLowerCase()}`);
+    // fresh=1 + no-store: this runs right after a claim to award + celebrate a new
+    // badge, so it must hit the function, never a CDN-cached wall.
+    const res = await fetch(`/api/badges?address=${address.toLowerCase()}&fresh=1`, { cache: "no-store" });
     const d = await res.json();
     if (!Array.isArray(d.newlyEarned) || d.newlyEarned.length === 0) return;
     const byId = new Map((d.badges as { id: string; name: string; emoji: string }[]).map((b) => [b.id, b]));

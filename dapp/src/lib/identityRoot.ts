@@ -1,5 +1,6 @@
 import { createPublicClient, http } from "viem";
 import { celo } from "viem/chains";
+import { getRedis, keys } from "@/lib/redis";
 
 // GoodDollar Identity contract (Celo mainnet)
 const IDENTITY_ADDRESS = "0xC361A6E67822a0EDc17D899227dd9FC50BD62F42" as const;
@@ -70,6 +71,16 @@ export async function resolveIdentityRoot(address: string): Promise<string> {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.root;
 
+  // Cross-instance layer: a cold serverless instance can reuse a root another
+  // instance already resolved, instead of an RPC read on every request.
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const cached = await redis.get<string>(keys.identityRoot(key));
+      if (cached && ADDR_RE.test(cached)) { cache.set(key, { root: cached, at: Date.now() }); return cached; }
+    } catch { /* fall through to chain */ }
+  }
+
   try {
     const root = (await client.readContract({
       address: IDENTITY_ADDRESS,
@@ -87,6 +98,9 @@ export async function resolveIdentityRoot(address: string): Promise<string> {
       if (oldest !== undefined) cache.delete(oldest);
     }
     cache.set(key, { root: resolved, at: Date.now() });
+    // A real root is permanent (24h); a self-mapping (unverified/unlinked) can
+    // still change when the wallet later verifies, so keep it short (10m).
+    if (redis) redis.set(keys.identityRoot(key), resolved, { ex: resolved === key ? 600 : 86_400 }).catch(() => {});
     return resolved;
   } catch {
     return key; // RPC down — degrade to the raw address, don't block the caller

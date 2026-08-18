@@ -41,6 +41,14 @@ async function loadSets(redis: NonNullable<ReturnType<typeof getRedis>>): Promis
 // earned on THIS call so the client can celebrate.
 export async function GET(req: NextRequest) {
   const address = req.nextUrl.searchParams.get("address");
+  // `fresh=1` bypasses the CDN cache — used by the post-claim celebration and a
+  // hunter viewing their OWN wall, which must reflect a just-earned badge at once.
+  // Everyone else (viewing others' profiles, crawlers) gets a 60s CDN cache, so
+  // repeat views don't re-invoke this function — a direct cut to Active CPU.
+  const fresh = req.nextUrl.searchParams.get("fresh") === "1";
+  const cacheHeader = fresh
+    ? "no-store"
+    : "public, s-maxage=60, stale-while-revalidate=300";
   if (!address || !ADDR_RE.test(address))
     return NextResponse.json({ error: "Invalid address" }, { status: 400 });
 
@@ -102,7 +110,9 @@ export async function GET(req: NextRequest) {
       minted: minted.has(d.id),
     }));
 
-    return NextResponse.json({ badges, sets, newlyEarned });
+    const res = NextResponse.json({ badges, sets, newlyEarned });
+    res.headers.set("Cache-Control", cacheHeader);
+    return res;
   } catch (e) {
     console.error("[badges/get]", e);
     return NextResponse.json({ badges: [], sets: [], newlyEarned: [] });

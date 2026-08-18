@@ -25,7 +25,10 @@ export function BadgeWall({ address }: { address: string }) {
   const [saveErr, setSaveErr] = useState("");
 
   function load() {
-    fetch(`/api/badges?address=${address.toLowerCase()}`)
+    // Your own wall stays fresh (a just-earned badge shows at once); other people's
+    // walls (the ones crawlers/visitors hit most) use the 60s CDN cache.
+    const url = `/api/badges?address=${address.toLowerCase()}${isOwn ? "&fresh=1" : ""}`;
+    fetch(url, isOwn ? { cache: "no-store" } : undefined)
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.badges)) setBadges(d.badges);
