@@ -12,10 +12,15 @@ import { isAdminAddress } from "@/lib/admins";
 // Admin wallets live in one shared allowlist — see lib/admins.ts.
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-// Manual prize adjustment: competition prizes count as circulation but aren't in
-// the subgraph (they're plain G$ transfers). Week 1: hunters (239,316) +
-// droppers (239,316) = 478,632 G$ paid from the prize wallet.
-const PRIZE_G_DISTRIBUTED = 478_632n * 10n ** 18n;
+// Manual adjustment: G$ paid out of the reward wallet (0x4412…6605) counts as
+// circulation but isn't in the subgraph (they're plain G$ transfers). This is the
+// full on-chain outflow from that wallet, matching Dune:
+//   Week-1 prizes   478,632  (hunters 239,316 + droppers 239,316)
+//   Reward transfer 200,000  (Aug 6 → 0x4f649e…3091)
+//   Misc/early           75
+//   ─────────────────────────
+//   Total           678,707
+const PRIZE_G_DISTRIBUTED = 678_707n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
@@ -344,6 +349,7 @@ export default function AnalyticsPage() {
               <Stat
                 label="G$ circulated"
                 value={`${formatG$(m.circulatedWei)}`}
+                sub={`claims + ${formatG$(PRIZE_G_DISTRIBUTED)} rewards`}
                 accent
               />
               <Stat
