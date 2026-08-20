@@ -348,7 +348,7 @@ export default function AnalyticsPage() {
             >
               <Stat
                 label="G$ circulated"
-                value={`${formatG$(m.circulatedWei)}`}
+                value={(Number(m.circulatedWei) / 1e18).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 sub={`claims + ${formatG$(PRIZE_G_DISTRIBUTED)} rewards`}
                 accent
               />
