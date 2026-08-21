@@ -15,12 +15,13 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 // Manual adjustment: G$ paid out of the reward wallet (0x4412…6605) counts as
 // circulation but isn't in the subgraph (they're plain G$ transfers). This is the
 // full on-chain outflow from that wallet, matching Dune:
-//   Week-1 prizes   478,632  (hunters 239,316 + droppers 239,316)
-//   Reward transfer 200,000  (Aug 6 → 0x4f649e…3091)
-//   Misc/early           75
-//   ─────────────────────────
-//   Total           678,707
-const PRIZE_G_DISTRIBUTED = 678_707n * 10n ** 18n;
+//   Week-1 prizes    478,632  (hunters 239,316 + droppers 239,316)
+//   Reward transfer  200,000  (Aug 6 → 0x4f649e…3091)
+//   Misc/early            75
+//   Sprint prizes    498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
+//   ──────────────────────────
+//   Total          1,176,707
+const PRIZE_G_DISTRIBUTED = 1_176_707n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
@@ -348,8 +349,12 @@ export default function AnalyticsPage() {
             >
               <Stat
                 label="G$ circulated"
-                value={(Number(m.circulatedWei) / 1e18).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                sub={`claims + ${formatG$(PRIZE_G_DISTRIBUTED)} rewards`}
+                value={(Number(m.circulatedWei) / 1e18).toLocaleString(
+                  "en-US",
+                  { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                )}
+                // sub={`claims + ${formatG$(PRIZE_G_DISTRIBUTED)} rewards`}
+                sub={`claims`}
                 accent
               />
               <Stat
