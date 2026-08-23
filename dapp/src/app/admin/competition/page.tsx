@@ -7,6 +7,10 @@ import { Loader2, Save, Send, RefreshCw, ExternalLink } from "lucide-react";
 
 interface Config { id: string; startsAt: number; endsAt: number; potWei: string; perReferralWei: string; threshold: number }
 interface LogEntry { root: string; to?: string; wei: string; tx: string; at: string; status: string; username: string | null }
+interface Status {
+  balancesOk: boolean; outstandingWei: string; settleableWei: string; potRemainingWei: string;
+  walletBalWei: string; gasWei: string; canSettle: boolean; lowGas: boolean;
+}
 const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 interface PayoutResult {
   ok: boolean; reason?: string;
@@ -34,6 +38,7 @@ export default function AdminCompetitionPage() {
   const [endsAt, setEndsAt] = useState("");
   const [spentWei, setSpentWei] = useState("0");
   const [log, setLog] = useState<LogEntry[]>([]);
+  const [status, setStatus] = useState<Status | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState<"" | "save" | "pay">("");
   const [result, setResult] = useState<PayoutResult | null>(null);
@@ -49,6 +54,7 @@ export default function AdminCompetitionPage() {
     }).catch(() => {});
     fetch("/api/comp/leaderboard").then((r) => r.json()).then((d) => setSpentWei(d.potSpentWei ?? "0")).catch(() => {});
     fetch("/api/comp/log").then((r) => r.json()).then((d) => setLog(Array.isArray(d.entries) ? d.entries : [])).catch(() => {});
+    fetch("/api/comp/status").then((r) => r.json()).then((s) => setStatus(s?.error ? null : s)).catch(() => {});
   }, []);
   useEffect(() => { if (isAdmin) loadConfig(); }, [isAdmin, loadConfig]);
 
@@ -125,13 +131,43 @@ export default function AdminCompetitionPage() {
 
       {/* Manual payout */}
       <div className="border-2 border-ink rounded-2xl p-4 bg-white shadow-brutal-sm space-y-3">
-        <p className="text-sm text-gray-600">Payouts run automatically as referrals land. Use this after topping up the reward wallet to settle anything outstanding immediately.</p>
+        <p className="text-sm text-gray-600">Payouts run automatically as referrals land. Use this after topping up the reward wallet to settle everything outstanding (including any that previously failed) at once.</p>
+
+        {/* Live balances / owed */}
+        {status && (
+          <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="border border-gray-200 rounded-lg py-2"><div className="font-black text-sm">{fmtG(status.settleableWei)}</div><div className="text-gray-500">Outstanding G$</div></div>
+            <div className="border border-gray-200 rounded-lg py-2"><div className="font-black text-sm">{fmtG(status.walletBalWei)}</div><div className="text-gray-500">Wallet G$</div></div>
+            <div className={`border rounded-lg py-2 ${status.lowGas ? "border-red-400" : "border-gray-200"}`}><div className="font-black text-sm">{(Number(status.gasWei) / 1e18).toFixed(3)}</div><div className="text-gray-500">CELO gas</div></div>
+          </div>
+        )}
+
         <div className="flex gap-2">
-          <button onClick={payNow} disabled={busy === "pay"} className="btn-brutal flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-60">
+          <button
+            onClick={payNow}
+            disabled={busy === "pay" || !status?.canSettle}
+            className="btn-brutal flex items-center justify-center gap-2 flex-1 py-2.5 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+          >
             {busy === "pay" ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Pay outstanding now
           </button>
           <button onClick={loadConfig} className="btn-brutal px-3 py-2.5 rounded-xl bg-white" aria-label="Refresh"><RefreshCw size={16} /></button>
         </div>
+
+        {/* Why the button is disabled */}
+        {status && !status.canSettle && (
+          <p className="text-xs text-orange-600 font-semibold">
+            {BigInt(status.settleableWei) === 0n
+              ? "Nothing outstanding to settle right now."
+              : status.lowGas
+              ? "Low on CELO gas — top up the reward wallet with CELO before settling."
+              : BigInt(status.walletBalWei) < BigInt(status.settleableWei)
+              ? `Reward wallet holds ${fmtG(status.walletBalWei)} G$ — top up ${fmtG(String(BigInt(status.settleableWei) - BigInt(status.walletBalWei)))} more to settle the ${fmtG(status.settleableWei)} G$ outstanding.`
+              : !status.balancesOk
+              ? "Couldn't read the reward wallet balance — check RPC and refresh."
+              : "Not ready."}
+          </p>
+        )}
+        {status?.canSettle && <p className="text-xs text-green-700 font-semibold">Ready to settle {fmtG(status.settleableWei)} G$.</p>}
         {result && (
           <div className="text-xs space-y-1 border-t border-gray-200 pt-2">
             <p><b>{result.paid.length}</b> paid · <b>{result.outstanding.length}</b> outstanding · <b>{result.errors.length}</b> errors</p>

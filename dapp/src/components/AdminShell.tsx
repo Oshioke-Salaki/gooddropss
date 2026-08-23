@@ -17,6 +17,7 @@ const NAV: { href: string; label: string; icon: string; exact?: boolean; badge?:
   { href: "/admin/businesses",  label: "Businesses",  icon: "🏪", badge: "businesses" },
   { href: "/admin/badges",      label: "Badges",      icon: "🏅" },
   { href: "/admin/analytics",   label: "Analytics",   icon: "📊" },
+  { href: "/admin/competition", label: "Competition", icon: "🎁" },
   { href: "/admin/health",      label: "Health",      icon: "🩺" },
 ];
 
