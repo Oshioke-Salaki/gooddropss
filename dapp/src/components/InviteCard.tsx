@@ -1,8 +1,11 @@
 "use client";
-import { useState } from "react";
-import { Copy, Check, Share2, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Copy, Check, Share2, Users, Trophy } from "lucide-react";
 import { useReferral } from "@/hooks/useReferral";
 import { recruiterTier } from "@/lib/referral";
+
+interface CompState { live: boolean; perRef: number; threshold: number }
 
 // "Invite friends" surface — a hunter's personal invite link, how many people
 // they've brought in, and their recruiter tier. Density is the whole game: every
@@ -10,7 +13,20 @@ import { recruiterTier } from "@/lib/referral";
 export function InviteCard() {
   const { count, inviteLink } = useReferral();
   const [copied, setCopied] = useState(false);
+  const [comp, setComp] = useState<CompState | null>(null);
   const tier = recruiterTier(count);
+
+  // Surface the live referral competition so the invite link is shared with the
+  // reward front-and-center.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/comp/config").then((r) => r.json()).then((c) => {
+      if (!alive || !c?.startsAt) return;
+      const now = Math.floor(Date.now() / 1000);
+      setComp({ live: now >= c.startsAt && now < c.endsAt, perRef: Math.round(Number(c.perReferralWei) / 1e18), threshold: c.threshold });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   if (!inviteLink) return null;
 
@@ -23,7 +39,9 @@ export function InviteCard() {
   }
 
   async function share() {
-    const text = "Come hunt real G$ on GoodDrops with me 💰";
+    const text = comp?.live
+      ? `Join me on GoodDrops and hunt real G$ — I earn ${comp.perRef} G$ for every friend who plays.`
+      : "Come hunt real G$ on GoodDrops with me.";
     if (typeof navigator !== "undefined" && navigator.share) {
       try { await navigator.share({ title: "GoodDrops", text, url: inviteLink }); return; } catch { /* cancelled */ }
     }
@@ -46,6 +64,20 @@ export function InviteCard() {
         </span>
       </div>
 
+      {comp?.live && (
+        <Link href="/competition" style={{
+          display: "flex", alignItems: "center", gap: 8, textDecoration: "none",
+          marginTop: 14, background: "#BFFD0018", border: "1.5px solid #BFFD0055",
+          borderRadius: 12, padding: "10px 12px",
+        }}>
+          <Trophy size={16} color="#BFFD00" style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: "#fff", lineHeight: 1.4 }}>
+            Competition live — earn {comp.perRef.toLocaleString()} G$ per referral ({comp.threshold} to unlock)
+          </span>
+          <span style={{ color: "#BFFD00", fontSize: 16 }}>→</span>
+        </Link>
+      )}
+
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "14px 0 4px" }}>
         <span style={{ fontSize: 40, fontWeight: 900, lineHeight: 1, color: "#BFFD00" }}>{count}</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#9a9da8" }}>
@@ -53,7 +85,7 @@ export function InviteCard() {
         </span>
       </div>
       <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "#9a9da8" }}>
-        Every neighbour you bring makes more drops appear near everyone. 🌍
+        Every neighbour you bring makes more drops appear near everyone.
       </p>
 
       {/* Link + copy */}

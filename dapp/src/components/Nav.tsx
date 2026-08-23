@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
-import { Map, Package, Trophy, Flame } from "lucide-react";
+import { Map, Package, Trophy, Users } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -21,7 +21,7 @@ const links = [
   { href: "/", label: "Map" },
   { href: "/my-drops", label: "My Drops" },
   { href: "/leaderboard", label: "Rankings" },
-  { href: "/campus-sprint", label: "Campus Sprint" },
+  { href: "/competition", label: "Referrals" },
   { href: "/merchant", label: "Spots 🏪" },
   { href: "/sponsor", label: "Sponsor ⭐" },
 ];
@@ -592,7 +592,7 @@ export function BottomNav() {
     { href: "/", label: "Map", Icon: Map },
     { href: "/my-drops", label: "My Drops", Icon: Package },
     { href: "/leaderboard", label: "Rankings", Icon: Trophy },
-    { href: "/campus-sprint", label: "Sprint", Icon: Flame },
+    { href: "/competition", label: "Referrals", Icon: Users },
   ];
 
   return (

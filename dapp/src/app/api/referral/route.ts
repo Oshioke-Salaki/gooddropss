@@ -1,10 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { recoverMessageAddress } from "viem";
 import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { referralAcceptMessage, REF_ADDR_RE } from "@/lib/referral";
+import { fetchHasActivity } from "@/lib/subgraph";
+import { getCompConfig, inCompWindow } from "@/lib/competition";
+import { runCompPayout } from "@/lib/compPayout";
 
 export const runtime = "nodejs";
+// The credit response returns fast; the opportunistic payout sweep runs in after()
+// and needs room to broadcast + confirm a transfer, so widen the invocation budget.
+export const maxDuration = 60;
 
 const SIG_WINDOW = 24 * 60 * 60 * 1000;
 
@@ -75,6 +81,12 @@ export async function POST(req: NextRequest) {
   if (!(await isVerifiedHuman(invitee)))
     return NextResponse.json({ error: "Verify with GoodDollar first." }, { status: 403 });
 
+  // And they must have actually done a task (claimed or created a drop) — we credit
+  // active humans, not bare sign-ups. The client only calls after a task; this is the
+  // server-side backstop, and the exact bar the referral competition pays out on.
+  if (!(await fetchHasActivity(invitee)))
+    return NextResponse.json({ error: "Do a task first — claim or create a drop.", needsTask: true }, { status: 409 });
+
   const [inviteeRoot, referrerRoot] = await Promise.all([
     resolveIdentityRoot(invitee),
     resolveIdentityRoot(referrer),
@@ -94,8 +106,27 @@ export async function POST(req: NextRequest) {
 
     await redis.set(keys.referredBy(inviteeRoot), referrerRoot);
     const added = await redis.sadd(keys.referralsOf(referrerRoot), inviteeRoot);
-    // Keep the leaderboard in step (only when it was a genuinely new member).
-    if (added) await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
+    // Keep the all-time leaderboard in step, and stamp WHEN it was credited so the
+    // time-boxed competition can window it — only for a genuinely new member.
+    if (added) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
+      await redis.zadd(keys.referralCredited(referrerRoot), { score: nowSec, member: inviteeRoot });
+      // Remember the wallet this referrer is actively using (the one their invite
+      // link was made from) — competition payouts go there, not to the id root.
+      await redis.set(keys.compPayoutWallet(referrerRoot), referrer.toLowerCase());
+      // If it lands inside the live competition window, enroll the referrer so the
+      // payout worker and leaderboard can enumerate participants cheaply.
+      try {
+        const cfg = await getCompConfig(redis);
+        if (inCompWindow(cfg, nowSec)) {
+          await redis.sadd(keys.compParticipants(), referrerRoot);
+          // Settle promptly — the sweep is idempotent + globally locked, so firing it
+          // after the response is safe (and a no-op below the 5-referral threshold).
+          after(() => runCompPayout().catch(() => {}));
+        }
+      } catch { /* enrollment is best-effort; attribution is already saved */ }
+    }
 
     return NextResponse.json({ ok: true, referrer: referrerRoot });
   } catch (e) {
