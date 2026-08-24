@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { inviteUrl } from "@/lib/referral";
-import { Users, Trophy, Gift, Wallet, Copy, Check, ChevronDown, ChevronUp, ArrowUpRight } from "lucide-react";
+import { Users, Trophy, Gift, Wallet, Copy, Check, ChevronDown, ChevronUp, ArrowUpRight, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 
 interface Invitee { root: string; username: string | null }
@@ -60,11 +60,20 @@ export default function CompetitionPage() {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const [refreshing, setRefreshing] = useState(false);
   const load = useCallback(() => {
     const q = address ? `?address=${address}` : "";
-    fetch(`/api/comp/leaderboard${q}`, { cache: "no-store" }).then((r) => r.json()).then(setData).catch(() => {});
+    return fetch(`/api/comp/leaderboard${q}`, { cache: "no-store" }).then((r) => r.json()).then(setData).catch(() => {});
   }, [address]);
   useEffect(() => { load(); }, [load]);
+
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    // Spin for at least a beat so the tap always feels responsive, even on a fast fetch.
+    await Promise.all([load(), new Promise((r) => setTimeout(r, 500))]);
+    setRefreshing(false);
+  }
 
   const now = useNow();
   const cfg = data?.config;
@@ -199,6 +208,15 @@ export default function CompetitionPage() {
         <div className="flex items-center gap-2 mb-3">
           <Trophy size={18} />
           <p className="font-black text-lg">Leaderboard</p>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh leaderboard"
+            title="Refresh"
+            className="ml-auto w-9 h-9 rounded-full border-2 border-ink bg-card shadow-brutal-sm flex items-center justify-center hover:bg-lime active:translate-y-px transition-colors disabled:opacity-60"
+          >
+            <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+          </button>
         </div>
 
         {!data ? (
