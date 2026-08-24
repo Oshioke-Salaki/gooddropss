@@ -60,7 +60,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // wallets (id = rdns); prefer those and drop the generic `injected` fallback.
   const nonMagic = connectors.filter((c) => c.id !== "magic");
   const named    = nonMagic.filter((c) => c.id !== "injected");
-  const walletConnectors: readonly Connector[] = named.length > 0 ? named : nonMagic;
+  // A bare `injected` connector only connects when the browser actually exposes a
+  // wallet provider (an extension, or an in-app wallet browser like Valora/MiniPay/
+  // MetaMask). Plain mobile Safari has none, so attempting it silently fails and the
+  // button looks dead — drop it there so we can show real guidance instead.
+  const hasInjectedProvider =
+    typeof window !== "undefined" && typeof (window as { ethereum?: unknown }).ethereum !== "undefined";
+  const injectedFallback = hasInjectedProvider ? nonMagic.filter((c) => c.id === "injected") : [];
+  const walletConnectors: readonly Connector[] = named.length > 0 ? named : injectedFallback;
 
   useEffect(() => { if (open && isConnected) onClose(); }, [open, isConnected, onClose]);
   useEffect(() => {
@@ -269,24 +276,29 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
               <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
             </div>
 
-            {/* Wallet */}
+            {/* Wallet — always tappable; when no provider is present we explain
+                what to do rather than dead-tapping (the old mobile-Safari bug). */}
             <button
               onClick={() => {
+                if (walletConnectors.length === 0) {
+                  setErr("No wallet found in this browser. Open GoodDrops inside your wallet app (Valora, MiniPay, MetaMask), or just use Google or email above — it creates a wallet for you automatically.");
+                  return;
+                }
                 if (walletConnectors.length === 1) pick(walletConnectors[0]);
                 else setView("wallets");
               }}
-              disabled={busy || walletConnectors.length === 0}
+              disabled={busy}
               style={{
                 width: "100%", padding: "14px",
                 background: "#fff", color: "#111",
                 border: "2px solid #111", borderRadius: 14,
-                fontWeight: 800, fontSize: 14, cursor: "pointer",
+                fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
                 fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                opacity: walletConnectors.length === 0 ? 0.5 : 1,
+                opacity: busy ? 0.6 : 1,
               }}
             >
               <Wallet size={16} />
-              {walletConnectors.length === 0 ? "No wallet detected" : "Connect a wallet"}
+              Connect a wallet
               {walletConnectors.length > 1 && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
             </button>
 

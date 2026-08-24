@@ -1,6 +1,6 @@
 import { createConfig, http, type CreateConnectorFn } from "wagmi";
 import { celo } from "viem/chains";
-import { injected } from "wagmi/connectors";
+import { injected, walletConnect } from "wagmi/connectors";
 import { dedicatedWalletConnector } from "@magiclabs/wagmi-connector";
 
 const CELO_RPC = "https://forno.celo.org";
@@ -35,6 +35,26 @@ if (typeof window !== "undefined") {
       },
     }) as unknown as CreateConnectorFn,
   );
+
+  // WalletConnect — lets mobile users connect an existing wallet (Valora, MiniPay,
+  // MetaMask, …) straight from a normal browser: it deep-links into the wallet app
+  // or shows a QR on desktop. Client-only (it touches window/IndexedDB), and
+  // skipped cleanly when the project id is unset so the build never breaks.
+  const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+  if (wcProjectId) {
+    connectors.push(
+      walletConnect({
+        projectId: wcProjectId,
+        showQrModal: true,
+        metadata: {
+          name: "GoodDrops",
+          description: "Hide and hunt real G$ anywhere in the world.",
+          url: window.location.origin,
+          icons: [`${window.location.origin}/icon`],
+        },
+      }),
+    );
+  }
 }
 
 export const wagmiConfig = createConfig({
