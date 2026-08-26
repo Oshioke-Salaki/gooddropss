@@ -151,8 +151,8 @@ export function WalletModal({ address, isVerified, onDisconnect, onClose, onOpen
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address, username, signature, timestamp }),
       });
-      const data = await res.json();
-      if (!res.ok) { setSaveError(data.error ?? "Failed"); return; }
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) { setSaveError((data as { error?: string }).error ?? "Couldn't save that name. Try again."); return; }
 
       invalidateProfile(address);
       // Re-fetch to update UI

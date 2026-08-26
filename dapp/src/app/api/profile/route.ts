@@ -83,28 +83,35 @@ export async function POST(req: NextRequest) {
   // Store under the signer's GoodDollar identity ROOT, so the name follows the
   // person across every linked wallet. The signature proves ownership of `address`;
   // its root is resolved on-chain, so a user can only ever affect their own identity.
-  const root        = await resolveIdentityRoot(address.toLowerCase());
-  const profileKey  = `gd:profile:${root}`;
-  const usernameLow = username.toLowerCase();
-  const nameKey     = `gd:username:${usernameLow}`;
+  // Wrapped so a transient Redis/RPC blip returns a JSON error, never an empty 500
+  // (which surfaced on the client as "Unexpected end of JSON input").
+  try {
+    const root        = await resolveIdentityRoot(address.toLowerCase());
+    const profileKey  = `gd:profile:${root}`;
+    const usernameLow = username.toLowerCase();
+    const nameKey     = `gd:username:${usernameLow}`;
 
-  // Uniqueness — but allow re-claiming your OWN name. Resolve the stored value's
-  // identity root so a legacy wallet-keyed reservation still recognises its owner
-  // (new reservations store the root, which resolves to itself).
-  const existing = await redis.get<string>(nameKey);
-  if (existing && (await resolveIdentityRoot(existing.toLowerCase())) !== root) {
-    return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+    // Uniqueness — but allow re-claiming your OWN name. Resolve the stored value's
+    // identity root so a legacy wallet-keyed reservation still recognises its owner
+    // (new reservations store the root, which resolves to itself).
+    const existing = await redis.get<string>(nameKey);
+    if (existing && (await resolveIdentityRoot(existing.toLowerCase())) !== root) {
+      return NextResponse.json({ error: "Username already taken" }, { status: 409 });
+    }
+
+    // Release the old username if the user is changing it.
+    const oldProfile = await redis.get<{ username: string }>(profileKey);
+    if (oldProfile?.username && oldProfile.username.toLowerCase() !== usernameLow) {
+      await redis.del(`gd:username:${oldProfile.username.toLowerCase()}`);
+    }
+
+    // Persist (identity-scoped).
+    await redis.set(nameKey, root);
+    await redis.set(profileKey, { username, createdAt: Date.now() });
+
+    return NextResponse.json({ username });
+  } catch (e) {
+    console.error("[profile/post]", e);
+    return NextResponse.json({ error: "Couldn't save your name right now — please try again." }, { status: 500 });
   }
-
-  // Release the old username if the user is changing it.
-  const oldProfile = await redis.get<{ username: string }>(profileKey);
-  if (oldProfile?.username && oldProfile.username.toLowerCase() !== usernameLow) {
-    await redis.del(`gd:username:${oldProfile.username.toLowerCase()}`);
-  }
-
-  // Persist (identity-scoped).
-  await redis.set(nameKey, root);
-  await redis.set(profileKey, { username, createdAt: Date.now() });
-
-  return NextResponse.json({ username });
 }
