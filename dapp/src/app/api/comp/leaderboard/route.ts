@@ -102,5 +102,10 @@ export async function GET(req: NextRequest) {
     potSpentWei: spent.toString(),
     participants,
     you,
+  }, {
+    // Served from Vercel's CDN for ~2 min (keyed by the full URL, incl. ?address),
+    // so the every-60s polls mostly hit the edge instead of invoking a function.
+    // The manual refresh button cache-busts for instant fresh data.
+    headers: { "Cache-Control": "public, s-maxage=110, stale-while-revalidate=300" },
   });
 }

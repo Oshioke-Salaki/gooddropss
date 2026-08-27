@@ -97,9 +97,14 @@ export async function GET(req: NextRequest) {
       .map((s) => (typeof s === "string" ? (JSON.parse(s) as Spot) : s));
 
     // Public map (no owner, not admin-all) shows only live spots.
-    if (!owner && scope !== "all") spots = spots.filter(isSpotActive);
+    const publicMap = !owner && scope !== "all";
+    if (publicMap) spots = spots.filter(isSpotActive);
 
-    return NextResponse.json({ spots });
+    // The public shop list changes slowly — CDN-cache it so every map visit doesn't
+    // invoke a function. Owner/admin views stay uncached (they need live status).
+    return NextResponse.json({ spots }, publicMap
+      ? { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" } }
+      : undefined);
   } catch (e) {
     console.error("[spots/get]", e);
     return NextResponse.json({ spots: [] });

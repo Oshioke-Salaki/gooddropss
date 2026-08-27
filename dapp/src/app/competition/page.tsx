@@ -61,9 +61,15 @@ export default function CompetitionPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
-  const load = useCallback(() => {
-    const q = address ? `?address=${address}` : "";
-    return fetch(`/api/comp/leaderboard${q}`, { cache: "no-store" }).then((r) => r.json()).then(setData).catch(() => {});
+  // Normal polls go through Vercel's CDN (the response is cached ~2 min), so most
+  // don't hit a function at all. A manual refresh cache-busts to force fresh data.
+  const load = useCallback((force = false) => {
+    const p = new URLSearchParams();
+    if (address) p.set("address", address);
+    if (force) p.set("_", String(Date.now()));
+    const q = p.toString() ? `?${p}` : "";
+    return fetch(`/api/comp/leaderboard${q}`, force ? { cache: "reload" } : undefined)
+      .then((r) => r.json()).then(setData).catch(() => {});
   }, [address]);
   useEffect(() => { load(); }, [load]);
 
@@ -71,7 +77,7 @@ export default function CompetitionPage() {
     if (refreshing) return;
     setRefreshing(true);
     // Spin for at least a beat so the tap always feels responsive, even on a fast fetch.
-    await Promise.all([load(), new Promise((r) => setTimeout(r, 500))]);
+    await Promise.all([load(true), new Promise((r) => setTimeout(r, 500))]);
     setRefreshing(false);
   }
 
@@ -84,7 +90,7 @@ export default function CompetitionPage() {
   const pollActive = !cfg || now < cfg.endsAt + 300;
   useEffect(() => {
     if (!pollActive) return;
-    const id = setInterval(load, 30_000);
+    const id = setInterval(load, 60_000);
     const onVis = () => { if (document.visibilityState === "visible") load(); };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };

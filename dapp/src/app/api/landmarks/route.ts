@@ -38,10 +38,15 @@ export async function GET(req: NextRequest) {
       .map(parseLandmark)
       .filter((l): l is Landmark => l !== null);
 
-    if (req.nextUrl.searchParams.get("scope") !== "all") {
+    const isPublic = req.nextUrl.searchParams.get("scope") !== "all";
+    if (isPublic) {
       landmarks = landmarks.filter((l) => l.status === "active");
     }
-    return NextResponse.json({ landmarks });
+    // The public map skeleton changes rarely — let the CDN serve it for 5 min so
+    // it isn't re-fetched from a function on every visit. Admin (scope=all) stays live.
+    return NextResponse.json({ landmarks }, isPublic
+      ? { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } }
+      : undefined);
   } catch (e) {
     console.error("[landmarks/get]", e);
     return NextResponse.json({ landmarks: [] });

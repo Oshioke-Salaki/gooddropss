@@ -121,9 +121,11 @@ export async function POST(req: NextRequest) {
         const cfg = await getCompConfig(redis);
         if (inCompWindow(cfg, nowSec)) {
           await redis.sadd(keys.compParticipants(), referrerRoot);
-          // Settle promptly — the sweep is idempotent + globally locked, so firing it
-          // after the response is safe (and a no-op below the 5-referral threshold).
-          after(() => runCompPayout().catch(() => {}));
+          // Only run the (heavier) payout sweep once this referrer can actually be
+          // owed — i.e. they've reached the threshold. Below that there's nothing to
+          // pay, so we skip it to avoid needless worker runs on every early referral.
+          const count = await redis.zcount(keys.referralCredited(referrerRoot), cfg.startsAt, cfg.endsAt);
+          if (count >= cfg.threshold) after(() => runCompPayout().catch(() => {}));
         }
       } catch { /* enrollment is best-effort; attribution is already saved */ }
     }

@@ -59,7 +59,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     window.addEventListener("gd:landmarks-updated", loadSuggestions);
     window.addEventListener("gd:moderation-updated", loadReports);
     window.addEventListener("gd:businesses-updated", loadBusinesses);
-    const t = setInterval(loadAll, 60_000);
+    const t = setInterval(loadAll, 120_000);
     return () => {
       alive = false;
       window.removeEventListener("gd:landmarks-updated", loadSuggestions);
