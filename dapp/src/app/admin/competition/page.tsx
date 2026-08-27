@@ -40,6 +40,10 @@ export default function AdminCompetitionPage() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [msg, setMsg] = useState("");
+  const [refReferrer, setRefReferrer] = useState("");
+  const [refInvitee, setRefInvitee] = useState("");
+  const [crediting, setCrediting] = useState(false);
+  const [creditMsg, setCreditMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<"" | "save" | "pay">("");
   const [result, setResult] = useState<PayoutResult | null>(null);
 
@@ -74,6 +78,23 @@ export default function AdminCompetitionPage() {
       loadConfig();
     } catch { setMsg("Network error"); }
     finally { setBusy(""); }
+  }
+
+  async function creditReferral() {
+    if (crediting || !refReferrer.trim() || !refInvitee.trim()) return;
+    setCrediting(true); setCreditMsg(null);
+    try {
+      const res = await fetch("/api/comp/credit", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ referrer: refReferrer.trim(), invitee: refInvitee.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { setCreditMsg({ ok: false, text: d.error ?? "Couldn't credit that referral." }); return; }
+      setCreditMsg({ ok: true, text: d.message ?? "Credited." });
+      setRefInvitee("");
+      loadConfig();
+    } catch { setCreditMsg({ ok: false, text: "Network error." }); }
+    finally { setCrediting(false); }
   }
 
   async function payNow() {
@@ -180,6 +201,24 @@ export default function AdminCompetitionPage() {
       </div>
 
       {msg && <p className="text-sm font-bold mt-3">{msg}</p>}
+
+      {/* Recover a referral — for links the automatic flow missed (e.g. the Redis
+          outage). Same anti-cheat rules as the live path, so it can't credit fakes. */}
+      <div className="border-2 border-ink rounded-2xl p-4 bg-white shadow-brutal-sm mt-5 space-y-3">
+        <p className="text-xs font-black uppercase tracking-wide text-gray-500">Recover a referral</p>
+        <p className="text-sm text-gray-600">Use @username or 0x address. The invitee must be a verified human who has claimed or created a drop, and not already referred by someone else.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="text-xs font-black uppercase tracking-wide text-gray-500">Referrer (gets credit)</span>
+            <input className={`mt-1 ${inp}`} placeholder="@samuel" value={refReferrer} onChange={(e) => setRefReferrer(e.target.value)} /></label>
+          <label className="block"><span className="text-xs font-black uppercase tracking-wide text-gray-500">Invitee (was referred)</span>
+            <input className={`mt-1 ${inp}`} placeholder="@rahimat" value={refInvitee} onChange={(e) => setRefInvitee(e.target.value)} /></label>
+        </div>
+        <button onClick={creditReferral} disabled={crediting || !refReferrer.trim() || !refInvitee.trim()}
+          className="btn-brutal flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-black text-sm bg-ink text-lime disabled:opacity-60">
+          {crediting ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Credit referral
+        </button>
+        {creditMsg && <p className={`text-xs font-bold ${creditMsg.ok ? "text-green-700" : "text-red-600"}`}>{creditMsg.text}</p>}
+      </div>
 
       {/* Payout log — audit trail, newest first */}
       <div className="border-2 border-ink rounded-2xl p-4 bg-white shadow-brutal-sm mt-5">
