@@ -5,19 +5,20 @@ import { useAccount } from "wagmi";
 import { Nav, BottomNav } from "@/components/Nav";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { inviteUrl } from "@/lib/referral";
-import { Users, Trophy, Gift, Wallet, Copy, Check, ChevronDown, ChevronUp, ArrowUpRight, RefreshCw } from "lucide-react";
+import { Users, Trophy, Gift, Copy, Check, ChevronDown, ChevronUp, ArrowUpRight, RefreshCw, MapPin, Star } from "lucide-react";
 import clsx from "clsx";
 
-interface Invitee { root: string; username: string | null }
+interface ClaimerRef { root: string; username: string | null; referred: boolean; gG: number }
 interface Participant {
-  root: string; username: string | null; referralCount: number;
-  owedWei: string; paidWei: string; outstandingWei: string; invitees: Invitee[];
+  root: string; username: string | null;
+  reach: number; referred: number; score: number; dropsClaimed: number; gDropped: number;
+  rank: number; prizeG: number; claimers: ClaimerRef[];
 }
 interface Data {
   ok: boolean;
+  mode: "tiered" | "flat";
   phase: "upcoming" | "live" | "ended";
-  config: { startsAt: number; endsAt: number; potWei: string; perReferralWei: string; threshold: number };
-  potSpentWei: string;
+  config: { startsAt: number; endsAt: number; potWei: string; tiers: number[]; minDropWei: string | null };
   participants: Participant[];
   you: (Participant & { rank: number | null }) | null;
 }
@@ -54,15 +55,19 @@ function CountBox({ value, unit }: { value: number; unit: string }) {
   );
 }
 
+const rankBg = (rank: number) =>
+  rank === 1 ? "bg-[#FFD700] border-ink text-ink"
+  : rank === 2 ? "bg-[#C0C0C0] border-ink text-ink"
+  : rank === 3 ? "bg-[#CD7F32] border-ink text-white"
+  : "bg-border text-muted";
+
 export default function CompetitionPage() {
   const { address } = useAccount();
   const [data, setData] = useState<Data | null>(null);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
-
   const [refreshing, setRefreshing] = useState(false);
-  // Normal polls go through Vercel's CDN (the response is cached ~2 min), so most
-  // don't hit a function at all. A manual refresh cache-busts to force fresh data.
+
   const load = useCallback((force = false) => {
     const p = new URLSearchParams();
     if (address) p.set("address", address);
@@ -76,7 +81,6 @@ export default function CompetitionPage() {
   async function refresh() {
     if (refreshing) return;
     setRefreshing(true);
-    // Spin for at least a beat so the tap always feels responsive, even on a fast fetch.
     await Promise.all([load(true), new Promise((r) => setTimeout(r, 500))]);
     setRefreshing(false);
   }
@@ -85,8 +89,6 @@ export default function CompetitionPage() {
   const cfg = data?.config;
   const phase = data?.phase ?? "upcoming";
 
-  // Poll while the contest is live (+5 min grace so the final board settles), and
-  // refresh instantly when the tab regains focus.
   const pollActive = !cfg || now < cfg.endsAt + 300;
   useEffect(() => {
     if (!pollActive) return;
@@ -102,11 +104,9 @@ export default function CompetitionPage() {
   const mins = Math.floor((remaining % 3600) / 60), secs = remaining % 60;
 
   const potWei = cfg?.potWei ?? "0";
-  const spentWei = data?.potSpentWei ?? "0";
-  const remainingWei = cfg ? (BigInt(potWei) - BigInt(spentWei) > 0n ? (BigInt(potWei) - BigInt(spentWei)).toString() : "0") : "0";
-  const threshold = cfg?.threshold ?? 5;
-  const perRef = cfg?.perReferralWei ?? (6500n * 10n ** 18n).toString();
-  const pctSpent = cfg && BigInt(potWei) > 0n ? Math.min(100, Number((BigInt(spentWei) * 100n) / BigInt(potWei))) : 0;
+  const tiers = cfg?.tiers ?? [];
+  const winners = tiers.length;
+  const minDropG = cfg?.minDropWei ? Math.round(Number(cfg.minDropWei) / 1e18) : 0;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz";
   const myLink = address ? inviteUrl(origin, address) : "";
@@ -126,26 +126,15 @@ export default function CompetitionPage() {
         {/* Hero */}
         <div className="bg-ink text-cream border-2 border-ink rounded-2xl p-5 shadow-brutal mb-5 text-center">
           <div className="inline-flex items-center gap-1.5 bg-lime text-ink font-black text-xs px-3 py-1 rounded-full mb-3">
-            <Users size={13} /> REFERRAL COMPETITION
+            <Trophy size={13} /> THE BIG DROP · OUR BIGGEST EVER
           </div>
           <p className="font-black text-4xl leading-none">{fmtG(potWei)} <span className="text-lime">G$</span></p>
           <p className="text-sm text-cream/70 mt-2 leading-relaxed">
-            Refer verified hunters who claim or drop. Hit {threshold} referrals to unlock{" "}
-            <span className="text-lime font-bold">{fmtG(perRef)} G$</span> each — paid straight to your wallet.
+            Drop real G$ for people and get them to <span className="text-lime font-bold">claim it</span>. The more
+            <span className="text-lime font-bold"> different people</span> claim your drops, the higher you climb.
+            The <span className="text-lime font-bold">top {winners}</span> split the pot.
           </p>
 
-          {/* Pot progress */}
-          <div className="mt-4 text-left">
-            <div className="flex items-center justify-between text-[11px] font-bold text-cream/70 mb-1">
-              <span>{fmtG(spentWei)} G$ paid out</span>
-              <span>{fmtG(remainingWei)} G$ left</span>
-            </div>
-            <div className="h-2.5 bg-cream/15 rounded-full overflow-hidden">
-              <div className="h-full bg-lime rounded-full transition-all" style={{ width: `${pctSpent}%` }} />
-            </div>
-          </div>
-
-          {/* Countdown */}
           <div className="mt-4">
             <p className="text-[11px] font-black uppercase tracking-wider text-lime mb-2">
               {phase === "upcoming" ? "Starts in" : phase === "live" ? "Ends in" : "Competition ended"}
@@ -166,19 +155,33 @@ export default function CompetitionPage() {
           <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5">
             <p className="font-black text-base mb-3">How it works</p>
             <ol className="space-y-2.5">
-              <HowStep n={1}>Copy your invite link below and share it with friends.</HowStep>
-              <HowStep n={2}>A friend joins through your link, verifies with GoodDollar (one face scan), then claims or creates a drop.</HowStep>
-              <HowStep n={3}>That counts as <span className="font-bold text-ink">one referral</span>. Each person only ever counts once.</HowStep>
-              <HowStep n={4}>Reach <span className="font-bold text-ink">{threshold} referrals</span> to unlock — you earn <span className="font-bold text-ink">{fmtG(perRef)} G$</span> for every one ({(threshold * Math.round(Number(perRef) / 1e18)).toLocaleString()} G$ for the first {threshold}).</HowStep>
-              <HowStep n={5}>Every referral after that is another {fmtG(perRef)} G$ — paid <span className="font-bold text-ink">straight to your wallet</span>, automatically.</HowStep>
+              <HowStep n={1}>Get G$ into your wallet (your ambassador lead funds you), then <span className="font-bold text-ink">drop</span> it around town — {minDropG > 0 ? <>at least <span className="font-bold text-ink">{minDropG.toLocaleString()} G$</span> per drop</> : "any amount"}.</HowStep>
+              <HowStep n={2}>Send a <span className="font-bold text-ink">different person</span> to each drop and make sure they <span className="font-bold text-ink">claim it</span>. Every new person who claims one of your drops = <span className="font-bold text-ink">1 point</span>.</HowStep>
+              <HowStep n={3}>Invite brand-new people with your link below. When someone <span className="font-bold text-ink">you referred</span> claims your drop, it counts <span className="font-bold text-ink">double</span>.</HowStep>
+              <HowStep n={4}>Reach as many <span className="font-bold text-ink">different</span> people as you can. The <span className="font-bold text-ink">top {winners}</span> split {fmtG(potWei)} G$.</HowStep>
             </ol>
-            <p className="text-xs text-muted mt-3 leading-relaxed">
-              Ends {new Date(cfg.endsAt * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}, or when the {fmtG(potWei)} G$ pot runs out — whichever comes first.
+            <p className="mt-3 text-xs text-muted leading-relaxed">
+              Dropping to the same one or two people over and over doesn&apos;t help — each person only counts once.
+              Both the dropper and the claimer must be GoodDollar-verified.
             </p>
           </div>
         )}
 
-        {/* Your invite link */}
+        {/* Prize tiers */}
+        {tiers.length > 0 && (
+          <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5">
+            <p className="text-[11px] font-black uppercase tracking-[0.08em] text-muted mb-2">Prizes · top {winners}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {tiers.map((g, i) => (
+                <span key={i} className={clsx("inline-flex items-center gap-1 border-2 border-ink rounded-full px-2.5 py-1 text-xs font-black", rankBg(i + 1))}>
+                  #{i + 1} · {g.toLocaleString()} G$
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Your invite link + position */}
         {address ? (
           <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5">
             <p className="text-[11px] font-black uppercase tracking-wider text-muted mb-2">Your invite link</p>
@@ -191,15 +194,11 @@ export default function CompetitionPage() {
             {you && (
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                 <span className="font-bold">{you.rank ? `You're #${you.rank}` : "Not on the board yet"}</span>
-                <span className="text-muted">{you.referralCount} referral{you.referralCount === 1 ? "" : "s"}</span>
-                <span className="text-muted">Earned {fmtG(you.paidWei)} G$</span>
-                {BigInt(you.outstandingWei) > 0n && (
-                  <span className="inline-flex items-center gap-1 text-xs font-black text-ink bg-[#FFF4E0] border border-ink rounded-full px-2 py-0.5">
-                    <Wallet size={12} /> {fmtG(you.outstandingWei)} G$ pending
+                <span className="text-muted">{you.score} pt{you.score === 1 ? "" : "s"} · {you.reach} reached{you.referred > 0 ? ` · ${you.referred} referred` : ""}</span>
+                {you.prizeG > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-black text-ink bg-lime border border-ink rounded-full px-2 py-0.5">
+                    <Gift size={12} /> in the money: {you.prizeG.toLocaleString()} G$
                   </span>
-                )}
-                {you.rank === null && you.referralCount > 0 && you.referralCount < threshold && (
-                  <span className="text-muted">{threshold - you.referralCount} more to unlock</span>
                 )}
               </div>
             )}
@@ -214,13 +213,8 @@ export default function CompetitionPage() {
         <div className="flex items-center gap-2 mb-3">
           <Trophy size={18} />
           <p className="font-black text-lg">Leaderboard</p>
-          <button
-            onClick={refresh}
-            disabled={refreshing}
-            aria-label="Refresh leaderboard"
-            title="Refresh"
-            className="ml-auto w-9 h-9 rounded-full border-2 border-ink bg-card shadow-brutal-sm flex items-center justify-center hover:bg-lime active:translate-y-px transition-colors disabled:opacity-60"
-          >
+          <button onClick={refresh} disabled={refreshing} aria-label="Refresh leaderboard" title="Refresh"
+            className="ml-auto w-9 h-9 rounded-full border-2 border-ink bg-card shadow-brutal-sm flex items-center justify-center hover:bg-lime active:translate-y-px transition-colors disabled:opacity-60">
             <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
           </button>
         </div>
@@ -230,62 +224,57 @@ export default function CompetitionPage() {
         ) : participants.length === 0 ? (
           <div className="text-center py-14 space-y-2">
             <Users size={40} className="mx-auto text-muted" strokeWidth={1.5} />
-            <p className="font-bold">No referrals yet</p>
-            <p className="text-sm text-muted">{phase === "live" ? "Share your link to get on the board." : "The competition hasn't started."}</p>
+            <p className="font-bold">Nobody on the board yet</p>
+            <p className="text-sm text-muted">{phase === "live" ? "Drop G$ for people around you and get them to claim it." : "The competition hasn't started."}</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {participants.map((p, i) => {
-              const rank = i + 1, top3 = rank <= 3;
+            {participants.map((p) => {
               const isMe = !!you && you.root === p.root;
-              const unlocked = p.referralCount >= threshold;
+              const top3 = p.rank <= 3;
               const open = expanded === p.root;
-              const rankBg = rank === 1 ? "bg-[#FFD700] border-ink text-ink"
-                : rank === 2 ? "bg-[#C0C0C0] border-ink text-ink"
-                : rank === 3 ? "bg-[#CD7F32] border-ink text-white"
-                : "bg-border text-muted";
               return (
                 <div key={p.root} className={clsx("border-2 border-ink rounded-2xl min-w-0", isMe ? "bg-lime shadow-brutal" : "bg-card shadow-brutal-sm")}>
                   <div className="flex items-center gap-3 px-3 py-3">
-                    <div className={clsx("w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-black shrink-0", rankBg)}>{rank}</div>
+                    <div className={clsx("w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-black shrink-0", rankBg(p.rank))}>{p.rank}</div>
                     <ProfileAvatar address={p.root} size={34} ringColor={top3 ? "#111" : "#d6d5cf"} />
                     <Link href={`/hunter/${p.root}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
                       <div className="font-bold text-sm truncate">{nameOrShort(p.username, p.root)}</div>
-                      <div className="text-xs opacity-70 font-medium">
-                        {unlocked ? <>Earned {fmtG(p.paidWei)} G${BigInt(p.outstandingWei) > 0n && <> · <span className="font-bold">{fmtG(p.outstandingWei)} pending</span></>}</>
-                          : <>{threshold - p.referralCount} more to unlock</>}
+                      <div className="text-xs opacity-70 font-medium truncate">
+                        {p.reach} reached{p.referred > 0 ? ` · ${p.referred} referred` : ""} · {p.gDropped.toLocaleString()} G$ moved
                       </div>
                     </Link>
                     <div className="text-right shrink-0">
-                      <div className="font-black text-xl leading-none tabular-nums">{p.referralCount}</div>
-                      <div className="text-[11px] opacity-70 font-semibold uppercase tracking-wide">referrals</div>
+                      <div className="font-black text-xl leading-none tabular-nums">{p.score}</div>
+                      <div className="text-[11px] opacity-70 font-semibold uppercase tracking-wide">points</div>
                     </div>
-                    <button
-                      onClick={() => setExpanded(open ? null : p.root)}
-                      aria-label={open ? "Hide referred users" : "Show referred users"}
-                      className="w-8 h-8 rounded-lg border-2 border-ink flex items-center justify-center shrink-0 bg-cream"
-                    >
+                    <button onClick={() => setExpanded(open ? null : p.root)} aria-label={open ? "Hide" : "Show people who claimed"}
+                      className="w-8 h-8 rounded-lg border-2 border-ink flex items-center justify-center shrink-0 bg-cream">
                       {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
                   </div>
-
                   {open && (
                     <div className="px-3 pb-3 pt-0">
-                      <p className="text-[11px] font-black uppercase tracking-wider text-muted mb-2">Referred hunters ({p.invitees.length})</p>
+                      <p className="text-[11px] font-black uppercase tracking-wider text-muted mb-2">
+                        Claimed your drops ({p.claimers.length}){p.prizeG > 0 ? <span className="text-ink"> · in the money: {p.prizeG.toLocaleString()} G$</span> : ""}
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {p.invitees.map((iv) => (
-                          <Link
-                            key={iv.root}
-                            href={`/hunter/${iv.root}`}
-                            className="inline-flex items-center gap-1 bg-cream border-2 border-ink rounded-full pl-2 pr-2.5 py-1 text-xs font-bold hover:bg-lime transition-colors"
-                          >
-                            <ProfileAvatar address={iv.root} size={16} ringColor="#111" />
-                            {nameOrShort(iv.username, iv.root)}
+                        {p.claimers.map((c) => (
+                          <Link key={c.root} href={`/hunter/${c.root}`}
+                            className={clsx("inline-flex items-center gap-1 border-2 border-ink rounded-full pl-2 pr-2.5 py-1 text-xs font-bold transition-colors",
+                              c.referred ? "bg-lime hover:bg-lime/80" : "bg-cream hover:bg-lime")}
+                            title={c.referred ? "You referred this person — counts double" : undefined}>
+                            <ProfileAvatar address={c.root} size={16} ringColor="#111" />
+                            {nameOrShort(c.username, c.root)}
+                            {c.referred && <Star size={11} className="fill-ink" />}
                             <ArrowUpRight size={11} className="opacity-60" />
                           </Link>
                         ))}
-                        {p.invitees.length === 0 && <span className="text-xs text-muted">—</span>}
+                        {p.claimers.length === 0 && <span className="text-xs text-muted">—</span>}
                       </div>
+                      {p.claimers.some((c) => c.referred) && (
+                        <p className="mt-2 text-[11px] text-muted flex items-center gap-1"><Star size={10} className="fill-ink" /> = someone you referred (counts double)</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -295,8 +284,8 @@ export default function CompetitionPage() {
         )}
 
         <div className="mt-6 flex items-start gap-2 text-xs text-muted leading-relaxed">
-          <Gift size={14} className="shrink-0 mt-0.5" />
-          <p>Only verified hunters who claim or create a drop count as referrals. Rewards are paid automatically from the reward wallet; if the wallet is topped up between payouts, any pending amount settles on the next run.</p>
+          <MapPin size={14} className="shrink-0 mt-0.5" />
+          <p>You score by reaching real, different people: each distinct verified person who claims one of your drops is 1 point, and someone you referred counts double. The same person can never count twice — so trading G$ back and forth with one friend goes nowhere. Prizes for the top {winners} are paid to your wallet when the competition ends.</p>
         </div>
       </div>
       <BottomNav />

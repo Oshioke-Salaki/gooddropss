@@ -1,0 +1,72 @@
+{
+  "0x82a6c050f58cbc4002cd11a2862b11400e430b8d": {
+    "handle": "Blackbutler",
+    "rank": 1,
+    "g$": 200000,
+    "txHash": "0x7ac9fde66b81f39b8a78b7cadad27f3e086b1ebf823d73947553906a3c0905bc",
+    "at": "2026-08-21T06:39:50.258Z"
+  },
+  "0xc2c2885a36ccf297bea31be2ff2fdc13101b21f1": {
+    "handle": "Ghostbusters",
+    "rank": 2,
+    "g$": 120000,
+    "txHash": "0x21588ef99f5d3d804547a1cd4cdc02b7170e695ab6e8ea46cf34bdf9e6557d68",
+    "at": "2026-08-21T06:39:52.060Z"
+  },
+  "0x199cdc1ca5efc16e2f41e66b047b0305e2bd7ebf": {
+    "handle": "Shadow",
+    "rank": 3,
+    "g$": 80000,
+    "txHash": "0xa6cb1d909dd7df1a344700ce7e7af4793d85e75e934a737bdca9afe21beb3b4d",
+    "at": "2026-08-21T06:39:53.875Z"
+  },
+  "0x1b007dd8f96ac3cd74dda2e2766f017dc70d2a1d": {
+    "handle": "Natasha",
+    "rank": 4,
+    "g$": 14000,
+    "txHash": "0x87c97d17e106148eb3929b6101327c8ae3232150eae7c95e7d022c55d04a298b",
+    "at": "2026-08-21T06:39:56.427Z"
+  },
+  "0x80f9f37d92bb0cbbfa0efebe9dbd6e519ed872f8": {
+    "handle": "bigbounty",
+    "rank": 5,
+    "g$": 14000,
+    "txHash": "0x9c6fb2191a702fce266e58c8c8bd07173ec491053ff2325e1598ac0eaeb1c66c",
+    "at": "2026-08-21T06:40:51.839Z"
+  },
+  "0xf4efb99a1205dd4cd4249bc92a8b0e53aa373dd2": {
+    "handle": "spicyBeatz",
+    "rank": 6,
+    "g$": 14000,
+    "txHash": "0xab9e960c6409f58e270a87515aa46b312bf9f68d8e2c1ab0e700653727c276cc",
+    "at": "2026-08-21T06:40:54.321Z"
+  },
+  "0x6218a69c190227d6005f84a1517eb31a6c170bce": {
+    "handle": "Emme",
+    "rank": 7,
+    "g$": 14000,
+    "txHash": "0x775c3e9911110f0715de6db35f1bb176b33af99e5bf595d582f5b2138e33f6f9",
+    "at": "2026-08-21T06:40:56.327Z"
+  },
+  "0x85685c0064ee848931350382846e76c7610db04d": {
+    "handle": "MR9",
+    "rank": 8,
+    "g$": 14000,
+    "txHash": "0x8054f8e5c0abf03bd4e67e01d210948250d11fa3334383ae59828ba687386886",
+    "at": "2026-08-21T06:40:58.177Z"
+  },
+  "0xe2d38281be8833d79f0d4ea50367b35986d77ba7": {
+    "handle": "Abuammar",
+    "rank": 9,
+    "g$": 14000,
+    "txHash": "0xd266d17e9d38ae74f24282fdaf2da011a1e3acf316e0aa4a0acb92646de1a321",
+    "at": "2026-08-21T06:41:00.433Z"
+  },
+  "0x9a30217d31dea57a220d7fc62ccae007e6535566": {
+    "handle": "Chubs",
+    "rank": 10,
+    "g$": 14000,
+    "txHash": "0x11b8a17d5f976283a9162dbc812a96fc1633694ba64ba4687c1d92947fc35c70",
+    "at": "2026-08-21T06:41:02.982Z"
+  }
+}

@@ -6,8 +6,8 @@ import { getCompConfig, setCompConfig, type CompConfig } from "@/lib/competition
 export const runtime = "nodejs";
 
 // GET  /api/comp/config          → current config (public; non-sensitive)
-// POST /api/comp/config (admin)  → update pot / per-referral / threshold / dates.
-// Body accepts whole G$ for pot & perReferral, and ISO strings or unix seconds
+// POST /api/comp/config (admin)  → update pot / dates / tiers / min-drop / bonus.
+// Body accepts whole G$ for pot, minDrop & tiers, and ISO strings or unix seconds
 // for dates. Every field is optional — only what you send is changed.
 export async function GET() {
   const redis = getRedis();
@@ -28,19 +28,26 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(n) || n < 0) return bad("pot");
     patch.potWei = (BigInt(Math.round(n)) * 10n ** 18n).toString();
   }
-  if (b.perReferral !== undefined) {
-    const n = Number(b.perReferral);
-    if (!Number.isFinite(n) || n <= 0) return bad("perReferral");
-    patch.perReferralWei = (BigInt(Math.round(n)) * 10n ** 18n).toString();
-  }
-  if (b.threshold !== undefined) {
-    const n = Number(b.threshold);
-    if (!Number.isInteger(n) || n < 1) return bad("threshold");
-    patch.threshold = n;
-  }
   if (b.startsAt !== undefined) { const t = toUnix(b.startsAt); if (t === null) return bad("startsAt"); patch.startsAt = t; }
   if (b.endsAt !== undefined) { const t = toUnix(b.endsAt); if (t === null) return bad("endsAt"); patch.endsAt = t; }
   if (typeof b.id === "string" && b.id.trim()) patch.id = b.id.trim().slice(0, 64);
+  if (b.tiers !== undefined) {
+    // Accept an array of numbers or a comma-separated string of whole-G$ prizes.
+    const raw = Array.isArray(b.tiers) ? b.tiers : String(b.tiers).split(",");
+    const tiers = raw.map((x: unknown) => Number(String(x).trim())).filter((n: number) => Number.isFinite(n) && n >= 0);
+    if (tiers.length === 0) return bad("tiers");
+    patch.tiers = tiers;
+  }
+  if (b.minDrop !== undefined) {
+    const n = Number(b.minDrop);
+    if (!Number.isFinite(n) || n < 0) return bad("minDrop");
+    patch.minDropWei = (BigInt(Math.round(n)) * 10n ** 18n).toString();
+  }
+  if (b.referralBonusWeight !== undefined) {
+    const n = Number(b.referralBonusWeight);
+    if (!Number.isFinite(n) || n < 0) return bad("referralBonusWeight");
+    patch.referralBonusWeight = n;
+  }
 
   if (patch.startsAt !== undefined && patch.endsAt !== undefined && patch.endsAt <= patch.startsAt) {
     return bad("endsAt (must be after startsAt)");

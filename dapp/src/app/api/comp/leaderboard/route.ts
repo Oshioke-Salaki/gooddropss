@@ -1,111 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRedis, keys } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
-import { getCompConfig, owedWei, compPhase, windowScoreRange } from "@/lib/competition";
+import { getCompConfig, compPhase, tierPrizeG } from "@/lib/competition";
+import { computeReach } from "@/lib/competitionV2";
 
 export const runtime = "nodejs";
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+// Served from Vercel's CDN (keyed by the full URL, incl. ?address) so the every-60s
+// polls mostly hit the edge instead of a function. The refresh button cache-busts.
+const CDN = { "Cache-Control": "public, s-maxage=110, stale-while-revalidate=300" };
 
-interface Invitee { root: string; username: string | null }
-interface Participant {
-  root: string;
-  username: string | null;
-  referralCount: number;
-  owedWei: string;
-  paidWei: string;
-  outstandingWei: string;
-  invitees: Invitee[];
-}
+interface ClaimerRef { root: string; username: string | null; referred: boolean; gG: number }
 
-// GET /api/comp/leaderboard[?address=0x…] — public, read-only. All amounts are
-// computed here (server-authoritative); the page only renders them. When an
-// address is supplied, a `you` block with that person's stats + rank is included.
+// GET /api/comp/leaderboard[?address=0x…] — public, read-only, server-authoritative.
+// Rank by REACH: distinct verified people who claimed a drop you created (someone
+// you also referred counts extra). The top N split the pot at the end.
 export async function GET(req: NextRequest) {
   const redis = getRedis();
   const now = Math.floor(Date.now() / 1000);
+  const address = req.nextUrl.searchParams.get("address");
 
-  if (!redis) {
-    return NextResponse.json({ ok: false, phase: "upcoming", participants: [], potSpentWei: "0", you: null });
-  }
+  if (!redis) return NextResponse.json({ ok: false, phase: "upcoming", participants: [], you: null });
 
   const cfg = await getCompConfig(redis);
-  const spent = BigInt((await redis.get<string>(keys.compPotSpent())) ?? "0");
-  const phase = compPhase(cfg, spent, now);
-  const wr = windowScoreRange(cfg);
+  const phase = compPhase(cfg, now);
+  const board = await computeReach(cfg);
 
-  const roots = (await redis.smembers(keys.compParticipants())) ?? [];
+  const allRoots = [...new Set(board.flatMap((a) => [a.root, ...a.claimers.map((c) => c.root)]))];
+  const nameOf = await usernames(redis, allRoots);
 
-  // Per participant: in-window count, invitee roots, and amount paid — in parallel.
-  const raw = await Promise.all(roots.map(async (root) => {
-    const [count, invitees, paidStr] = await Promise.all([
-      redis.zcount(keys.referralCredited(root), wr.min, wr.max),
-      redis.zrange<string[]>(keys.referralCredited(root), wr.min, wr.max, { byScore: true }),
-      redis.get<string>(keys.compPaid(root)),
-    ]);
-    return { root, count: count ?? 0, invitees: (invitees ?? []).slice(0, 100), paid: BigInt(paidStr ?? "0") };
+  const participants = board.map((a, i) => ({
+    root: a.root,
+    username: nameOf.get(a.root) ?? null,
+    reach: a.reach,
+    referred: a.referred,
+    score: a.score,
+    dropsClaimed: a.dropsClaimed,
+    gDropped: a.gDropped,
+    rank: i + 1,
+    prizeG: tierPrizeG(cfg, i + 1),
+    claimers: a.claimers.slice(0, 100).map((c) => ({
+      root: c.root, username: nameOf.get(c.root) ?? null, referred: c.referred, gG: c.gG,
+    }) as ClaimerRef),
   }));
 
-  const rows = raw.filter((r) => r.count > 0);
-
-  // Resolve @usernames for every referrer + invitee in a single batched read.
-  const allRoots = [...new Set(rows.flatMap((r) => [r.root, ...r.invitees]))];
-  const profiles = allRoots.length
-    ? await redis.mget<({ username?: string } | null)[]>(...allRoots.map((r) => `gd:profile:${r}`))
-    : [];
-  const nameOf = new Map<string, string | null>();
-  allRoots.forEach((r, i) => nameOf.set(r, profiles[i]?.username ?? null));
-
-  const participants: Participant[] = rows
-    .map((r) => {
-      const owed = owedWei(r.count, cfg);
-      const outstanding = owed > r.paid ? owed - r.paid : 0n;
-      return {
-        root: r.root,
-        username: nameOf.get(r.root) ?? null,
-        referralCount: r.count,
-        owedWei: owed.toString(),
-        paidWei: r.paid.toString(),
-        outstandingWei: outstanding.toString(),
-        invitees: r.invitees.map((iv) => ({ root: iv, username: nameOf.get(iv) ?? null })),
-      };
-    })
-    .sort((a, b) => b.referralCount - a.referralCount || (BigInt(b.owedWei) > BigInt(a.owedWei) ? 1 : -1));
-
-  // Optional "you" block — the caller's own standing (resolved by identity root).
-  let you: (Participant & { rank: number | null }) | null = null;
-  const address = req.nextUrl.searchParams.get("address");
+  type P = (typeof participants)[number];
+  let you: P | { root: string; username: string | null; reach: number; referred: number; score: number; dropsClaimed: number; gDropped: number; rank: null; prizeG: number; claimers: ClaimerRef[] } | null = null;
   if (address && ADDR_RE.test(address)) {
     const root = await resolveIdentityRoot(address.toLowerCase());
-    const existing = participants.find((p) => p.root === root);
-    if (existing) {
-      you = { ...existing, rank: participants.findIndex((p) => p.root === root) + 1 };
-    } else {
-      // Not on the board yet (0 in-window referrals) — still report a zeroed block.
-      you = {
-        root, username: nameOf.get(root) ?? null, referralCount: 0,
-        owedWei: "0", paidWei: "0", outstandingWei: "0", invitees: [], rank: null,
-      };
-    }
+    const idx = participants.findIndex((p) => p.root === root);
+    you = idx >= 0 ? participants[idx]
+      : { root, username: nameOf.get(root) ?? null, reach: 0, referred: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
   }
 
   return NextResponse.json({
-    ok: true,
-    phase,
-    config: {
-      startsAt: cfg.startsAt,
-      endsAt: cfg.endsAt,
-      potWei: cfg.potWei,
-      perReferralWei: cfg.perReferralWei,
-      threshold: cfg.threshold,
-    },
-    potSpentWei: spent.toString(),
-    participants,
-    you,
-  }, {
-    // Served from Vercel's CDN for ~2 min (keyed by the full URL, incl. ?address),
-    // so the every-60s polls mostly hit the edge instead of invoking a function.
-    // The manual refresh button cache-busts for instant fresh data.
-    headers: { "Cache-Control": "public, s-maxage=110, stale-while-revalidate=300" },
-  });
+    ok: true, mode: "tiered", phase,
+    config: { startsAt: cfg.startsAt, endsAt: cfg.endsAt, potWei: cfg.potWei, tiers: cfg.tiers, minDropWei: cfg.minDropWei ?? null },
+    participants, you,
+  }, { headers: CDN });
+}
+
+// Batch-resolve @usernames for a set of identity roots.
+async function usernames(redis: NonNullable<ReturnType<typeof getRedis>>, roots: string[]): Promise<Map<string, string | null>> {
+  const nameOf = new Map<string, string | null>();
+  if (roots.length === 0) return nameOf;
+  const profiles = await redis.mget<({ username?: string } | null)[]>(...roots.map((r) => `gd:profile:${r}`));
+  roots.forEach((r, i) => nameOf.set(r, profiles[i]?.username ?? null));
+  return nameOf;
 }

@@ -1,13 +1,11 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { fetchHasActivity } from "@/lib/subgraph";
 import { getCompConfig } from "@/lib/competition";
-import { runCompPayout } from "@/lib/compPayout";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
@@ -17,7 +15,9 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 //   • invitee is a verified GoodDollar human
 //   • invitee has actually done a task (claimed or created a drop)
 //   • invitee isn't already referred by someone else (first-referrer-wins)
-// Body: { referrer, invitee } — each a @username or a 0x address.
+// The restored referral link earns the competition's double-count bonus when the
+// invitee claims one of the referrer's drops. Body: { referrer, invitee } — each a
+// @username or a 0x address.
 export async function POST(req: NextRequest) {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const redis = getRedis();
@@ -67,10 +67,6 @@ export async function POST(req: NextRequest) {
   if (added) await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
   const wallet = await redis.get<string>(keys.compPayoutWallet(referrerRoot));
   if (!wallet) await redis.set(keys.compPayoutWallet(referrerRoot), refAddr);
-  await redis.sadd(keys.compParticipants(), referrerRoot);
-
-  // Pay promptly if this pushes the referrer past the threshold.
-  after(() => runCompPayout().catch(() => {}));
 
   return NextResponse.json({
     ok: true,

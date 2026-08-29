@@ -5,7 +5,7 @@ import { Copy, Check, Share2, Users, Trophy } from "lucide-react";
 import { useReferral } from "@/hooks/useReferral";
 import { recruiterTier } from "@/lib/referral";
 
-interface CompState { live: boolean; perRef: number; threshold: number }
+interface CompState { live: boolean; potG: number }
 
 // "Invite friends" surface — a hunter's personal invite link, how many people
 // they've brought in, and their recruiter tier. Density is the whole game: every
@@ -16,14 +16,14 @@ export function InviteCard() {
   const [comp, setComp] = useState<CompState | null>(null);
   const tier = recruiterTier(count);
 
-  // Surface the live referral competition so the invite link is shared with the
-  // reward front-and-center.
+  // Surface the live competition so the invite link is shared with the prize
+  // front-and-center.
   useEffect(() => {
     let alive = true;
     fetch("/api/comp/config").then((r) => r.json()).then((c) => {
       if (!alive || !c?.startsAt) return;
       const now = Math.floor(Date.now() / 1000);
-      setComp({ live: now >= c.startsAt && now < c.endsAt, perRef: Math.round(Number(c.perReferralWei) / 1e18), threshold: c.threshold });
+      setComp({ live: now >= c.startsAt && now < c.endsAt, potG: Math.round(Number(c.potWei) / 1e18) });
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -40,7 +40,7 @@ export function InviteCard() {
 
   async function share() {
     const text = comp?.live
-      ? `Join me on GoodDrops and hunt real G$ — I earn ${comp.perRef} G$ for every friend who plays.`
+      ? `Join me on GoodDrops and grab real G$ I've dropped for you — ${comp.potG.toLocaleString()} G$ competition is live!`
       : "Come hunt real G$ on GoodDrops with me.";
     if (typeof navigator !== "undefined" && navigator.share) {
       try { await navigator.share({ title: "GoodDrops", text, url: inviteLink }); return; } catch { /* cancelled */ }
@@ -72,7 +72,7 @@ export function InviteCard() {
         }}>
           <Trophy size={16} color="#BFFD00" style={{ flexShrink: 0 }} />
           <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: "#fff", lineHeight: 1.4 }}>
-            Competition live — earn {comp.perRef.toLocaleString()} G$ per referral ({comp.threshold} to unlock)
+            {comp.potG.toLocaleString()} G$ competition live — drop for people &amp; get them to claim
           </span>
           <span style={{ color: "#BFFD00", fontSize: 16 }}>→</span>
         </Link>

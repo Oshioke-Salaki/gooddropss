@@ -1,16 +1,11 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { recoverMessageAddress } from "viem";
 import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { referralAcceptMessage, REF_ADDR_RE } from "@/lib/referral";
 import { fetchHasActivity } from "@/lib/subgraph";
-import { getCompConfig, inCompWindow } from "@/lib/competition";
-import { runCompPayout } from "@/lib/compPayout";
 
 export const runtime = "nodejs";
-// The credit response returns fast; the opportunistic payout sweep runs in after()
-// and needs room to broadcast + confirm a transfer, so widen the invocation budget.
-export const maxDuration = 60;
 
 const SIG_WINDOW = 24 * 60 * 60 * 1000;
 
@@ -112,22 +107,9 @@ export async function POST(req: NextRequest) {
       const nowSec = Math.floor(Date.now() / 1000);
       await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
       await redis.zadd(keys.referralCredited(referrerRoot), { score: nowSec, member: inviteeRoot });
-      // Remember the wallet this referrer is actively using (the one their invite
-      // link was made from) — competition payouts go there, not to the id root.
+      // Remember the wallet this person is actively using (the one their invite link
+      // was made from) — competition prizes are paid there when possible, not the root.
       await redis.set(keys.compPayoutWallet(referrerRoot), referrer.toLowerCase());
-      // If it lands inside the live competition window, enroll the referrer so the
-      // payout worker and leaderboard can enumerate participants cheaply.
-      try {
-        const cfg = await getCompConfig(redis);
-        if (inCompWindow(cfg, nowSec)) {
-          await redis.sadd(keys.compParticipants(), referrerRoot);
-          // Only run the (heavier) payout sweep once this referrer can actually be
-          // owed — i.e. they've reached the threshold. Below that there's nothing to
-          // pay, so we skip it to avoid needless worker runs on every early referral.
-          const count = await redis.zcount(keys.referralCredited(referrerRoot), cfg.startsAt, cfg.endsAt);
-          if (count >= cfg.threshold) after(() => runCompPayout().catch(() => {}));
-        }
-      } catch { /* enrollment is best-effort; attribution is already saved */ }
     }
 
     return NextResponse.json({ ok: true, referrer: referrerRoot });

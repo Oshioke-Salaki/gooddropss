@@ -94,16 +94,11 @@ export const keys = {
   // competition window referrals by time; also the badge/expand source.
   referralCredited:  (referrerRoot: string) => `gd:ref:credited:${referrerRoot.toLowerCase()}`,
 
-  // ── Referral competition (time-boxed, real-money payouts) ─────────────────
+  // ── Drop competition (reach) ──────────────────────────────────────────────
   compConfig:        ()                      => `gd:comp:config`,                  // JSON CompConfig (admin-editable)
-  compParticipants:  ()                      => `gd:comp:participants`,            // Set of referrer roots with ≥1 in-window referral
-  compPaid:          (referrerRoot: string)  => `gd:comp:paid:${referrerRoot.toLowerCase()}`, // string wei already paid to this referrer
-  // The wallet a referrer's payout is sent to — their CURRENT GoodDrops wallet
-  // (the address their invite link was generated from), refreshed on each credit.
+  // The wallet a winner's prize is paid to — their CURRENT GoodDrops wallet (the
+  // address their invite link was generated from), refreshed on each referral.
   compPayoutWallet:  (referrerRoot: string)  => `gd:comp:wallet:${referrerRoot.toLowerCase()}`,
-  compPotSpent:      ()                      => `gd:comp:pot:spent`,               // string wei paid out in total (pot draw-down)
-  compPayoutLog:     ()                      => `gd:comp:payouts`,                 // audit list (newest first)
-  compPayoutLock:    ()                      => `gd:comp:payout:lock`,             // global run lock — serialises the payout worker
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

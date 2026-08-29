@@ -1,37 +1,51 @@
 import type { Redis } from "@upstash/redis";
 
-// ── Referral competition ────────────────────────────────────────────────────
-// A time-boxed referral contest funded from the reward wallet. All money math is
-// server-authoritative and derived from the immutable referral ledger; the client
-// only ever DISPLAYS what the server computes.
+// ── Drop competition (REACH) ─────────────────────────────────────────────────
+// A time-boxed, real-money contest funded from the reward wallet. Everything the
+// client shows is computed server-side from on-chain data + the referral map.
 //
-// Rules (all config-driven, editable by an admin so the pot can flip to 1M/1.5M):
-//   • A referral counts only if it was CREDITED inside [startsAt, endsAt), and the
-//     invitee is a GoodDollar-verified human who did a task (enforced at credit time).
-//   • Nothing is owed until a referrer reaches `threshold` referrals. At/after that,
-//     owed = count × perReferral (flat). e.g. threshold 5 → 5×6,500 = 32,500, then
-//     +6,500 each additional referral.
-//   • Payouts draw down the pot; the contest ends at endsAt OR when the pot is empty,
-//     whichever comes first.
+// Rules (all config-driven, admin-editable):
+//   • You score by REACH: the number of DISTINCT GoodDollar-verified people who
+//     CLAIMED a drop YOU created, in-window, worth ≥ minDrop. Each person counts
+//     once — so trading G$ with the same friend all day gets you nowhere.
+//   • A claimer you also REFERRED is worth an extra `referralBonusWeight` points.
+//   • Both dropper and claimer must be verified (claiming is verification-gated
+//     on-chain; droppers are verified in the scoring).
+//   • The top N (one prize per `tiers` entry) split the pot, paid once at the end.
 
 export interface CompConfig {
   id: string;
   startsAt: number;        // unix seconds (inclusive)
   endsAt: number;          // unix seconds (exclusive)
   potWei: string;          // total prize pool, stringified wei
-  perReferralWei: string;  // paid per qualifying referral, stringified wei
-  threshold: number;       // referrals required before ANY payout
+  tiers: number[];         // whole-G$ prize per rank (index 0 = 1st place); length = paid places
+  minDropWei?: string;         // a claimed drop only counts if it moved ≥ this much G$
+  referralBonusWeight?: number; // extra points per distinct claimer you also referred
 }
 
-// Times are WAT (UTC+1, Nigeria — no DST). Mon 24 Aug 12:00 → Fri 28 Aug 12:00, 2026.
+// Reach-mode defaults, applied when a stored config predates these fields.
+export const MIN_DROP_WEI_DEFAULT = (100n * 10n ** 18n).toString(); // 100 G$
+export const REFERRAL_BONUS_WEIGHT_DEFAULT = 1;
+
+// Season 2 — "THE BIG DROP". Times are WAT (UTC+1, Nigeria — no DST): Mon 31 Aug
+// 12:00 → Sat 5 Sep 18:00, 2026. Top-N split a 1,000,000 G$ pot, paid once at the
+// end. All admin-editable.
 export const COMP_DEFAULT: CompConfig = {
-  id: "referral-sprint-2026-08",
-  startsAt: Math.floor(Date.parse("2026-08-24T12:00:00+01:00") / 1000),
-  endsAt: Math.floor(Date.parse("2026-08-28T12:00:00+01:00") / 1000),
-  potWei: (500_000n * 10n ** 18n).toString(),
-  perReferralWei: (6_500n * 10n ** 18n).toString(),
-  threshold: 5,
+  id: "big-drop-2026-09",
+  startsAt: Math.floor(Date.parse("2026-08-31T12:00:00+01:00") / 1000),
+  endsAt: Math.floor(Date.parse("2026-09-05T18:00:00+01:00") / 1000),
+  potWei: (1_000_000n * 10n ** 18n).toString(),
+  minDropWei: MIN_DROP_WEI_DEFAULT,
+  referralBonusWeight: REFERRAL_BONUS_WEIGHT_DEFAULT,
+  // 10 winners, min prize 80,000 G$, sums to exactly 1,000,000 G$. Edit in the admin.
+  tiers: [200_000, 120_000, 105_000, 90_000, 85_000, 80_000, 80_000, 80_000, 80_000, 80_000],
 };
+
+// Whole-G$ prize for a 1-indexed rank (0 if outside the tiers). Length of `tiers`
+// is the number of paid places.
+export function tierPrizeG(cfg: CompConfig, rank: number): number {
+  return rank >= 1 && rank <= cfg.tiers.length ? cfg.tiers[rank - 1] : 0;
+}
 
 const CONFIG_KEY = "gd:comp:config";
 
@@ -50,29 +64,17 @@ export async function setCompConfig(redis: Redis, patch: Partial<CompConfig>): P
   return next;
 }
 
-// Amount a referrer is owed IN TOTAL for `count` in-window referrals (flat rate,
-// gated by threshold). Payment tracking (paid/outstanding) is layered on top.
-export function owedWei(count: number, cfg: CompConfig): bigint {
-  if (count < cfg.threshold) return 0n;
-  return BigInt(count) * BigInt(cfg.perReferralWei);
-}
-
 export type CompPhase = "upcoming" | "live" | "ended";
 
-export function compPhase(cfg: CompConfig, spentWei: bigint, nowSec: number): CompPhase {
+// Reach pays once at the end, so the pot never depletes during the run — the phase
+// is purely time-based.
+export function compPhase(cfg: CompConfig, nowSec: number): CompPhase {
   if (nowSec < cfg.startsAt) return "upcoming";
-  if (nowSec >= cfg.endsAt || BigInt(cfg.potWei) - spentWei <= 0n) return "ended";
+  if (nowSec >= cfg.endsAt) return "ended";
   return "live";
 }
 
-// A referral credited at `tsSec` counts toward the contest only inside the window.
+// True if `tsSec` falls inside the competition window.
 export function inCompWindow(cfg: CompConfig, tsSec: number): boolean {
   return tsSec >= cfg.startsAt && tsSec < cfg.endsAt;
-}
-
-// ZSET score bounds for the window (both inclusive; the exact-boundary second is
-// immaterial). Used identically by the leaderboard (zrange/zcount) and the payout
-// worker so the two can never disagree on a referrer's count.
-export function windowScoreRange(cfg: CompConfig): { min: number; max: number } {
-  return { min: cfg.startsAt, max: cfg.endsAt };
 }

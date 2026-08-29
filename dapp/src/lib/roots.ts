@@ -27,6 +27,38 @@ interface RedisLite {
 }
 interface KeysLite { identityRoot: (a: string) => string }
 
+/**
+ * Of the given identity roots, return the set that are GoodDollar-verified humans
+ * (getWhitelistedRoot != 0). A verified person's root maps to itself (non-zero); an
+ * unverified wallet that resolveRoots left as self maps to zero — so this cleanly
+ * separates the two. FAIL-OPEN: on a total RPC failure every root is treated as
+ * verified, so an RPC blip can never wrongly wipe the leaderboard. Used to enforce
+ * "only verified droppers can rank" in the reach competition (claimers are already
+ * verified by the on-chain claim gate).
+ */
+export async function filterVerified(roots: string[]): Promise<Set<string>> {
+  const uniq = [...new Set(roots.map((a) => a.toLowerCase()))];
+  const ok = new Set<string>();
+  if (uniq.length === 0) return ok;
+  try {
+    const results = await publicClient.multicall({
+      contracts: uniq.map((a) => ({
+        address: IDENTITY, abi, functionName: "getWhitelistedRoot", args: [a as `0x${string}`],
+      })),
+      allowFailure: true,
+    });
+    uniq.forEach((a, i) => {
+      const r = results[i];
+      if (r.status !== "success") { ok.add(a); return; } // per-call failure → fail-open
+      const root = (r.result as string).toLowerCase();
+      if (root && root !== ZERO) ok.add(a);
+    });
+  } catch {
+    uniq.forEach((a) => ok.add(a)); // total failure → fail-open
+  }
+  return ok;
+}
+
 export async function resolveRoots(addresses: string[]): Promise<Map<string, string>> {
   const uniq = [...new Set(addresses.map((a) => a.toLowerCase()))];
   const map = new Map<string, string>();
