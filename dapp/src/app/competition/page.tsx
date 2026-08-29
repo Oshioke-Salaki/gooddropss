@@ -23,7 +23,7 @@ interface Data {
   ok: boolean;
   phase: "upcoming" | "live" | "ended";
   stats: Stats;
-  config: { startsAt: number; endsAt: number; potWei: string; tiers: number[]; minDropWei: string | null; downlineWeights: number[] | null };
+  config: { startsAt: number; endsAt: number; potWei: string; tiers: number[]; minDropWei: string | null; downlineWeights: number[] | null; referralBonusWeight: number | null };
   participants: Participant[];
   you: (Participant & { rank: number | null }) | null;
 }
@@ -126,6 +126,8 @@ export default function CompetitionPage() {
   const minDropG = cfg?.minDropWei ? Math.round(Number(cfg.minDropWei) / 1e18) : 0;
   const dw = cfg?.downlineWeights ?? [0.25, 0.1];
   const l1Pct = Math.round((dw[0] ?? 0) * 100), l2Pct = Math.round((dw[1] ?? 0) * 100);
+  const refWeight = cfg?.referralBonusWeight ?? 1;
+  const refPts = `${refWeight} point${refWeight === 1 ? "" : "s"}`;
   const stats = data?.stats;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz";
@@ -195,7 +197,7 @@ export default function CompetitionPage() {
                 <ol className="space-y-2.5">
                   <HowStep n={1}><span className="font-bold text-ink">Drop</span> G$ around town{minDropG > 0 ? <> (at least <span className="font-bold text-ink">{minDropG.toLocaleString()} G$</span> a drop)</> : ""} and get people to claim it. Each <span className="font-bold text-ink">different person</span> who claims your drop = <span className="font-bold text-ink">1 point</span>.</HowStep>
                   <HowStep n={2}><span className="font-bold text-ink">Claim</span> other people&apos;s drops too. Each <span className="font-bold text-ink">different person</span> whose drop you claim = <span className="font-bold text-ink">1 point</span>.</HowStep>
-                  <HowStep n={3}><span className="font-bold text-ink">Refer</span> new people with your link. Each friend who joins, verifies, and plays = <span className="font-bold text-ink">1 point</span>.</HowStep>
+                  <HowStep n={3}><span className="font-bold text-ink">Refer</span> new people with your link. Each friend who joins, verifies, and plays = <span className="font-bold text-ink">{refPts}</span>.</HowStep>
                   <HowStep n={4}><span className="font-bold text-ink">Grow a team.</span> You also earn <span className="font-bold text-ink">{l1Pct}%</span> of the points your referrals score, and <span className="font-bold text-ink">{l2Pct}%</span> of the points <span className="italic">their</span> referrals score. Build an active network and it lifts your score too.</HowStep>
                 </ol>
                 <p className="mt-3 text-xs text-muted leading-relaxed">

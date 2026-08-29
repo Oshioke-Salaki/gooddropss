@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
     config: {
       startsAt: cfg.startsAt, endsAt: cfg.endsAt, potWei: cfg.potWei, tiers: cfg.tiers,
       minDropWei: cfg.minDropWei ?? null, downlineWeights: cfg.downlineWeights ?? null,
+      referralBonusWeight: cfg.referralBonusWeight ?? null,
     },
     participants, you,
   }, { headers: CDN });
