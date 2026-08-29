@@ -175,10 +175,12 @@ export async function readIdentityStatus(
 
 // Verified, but the clock is running out.
 //
-// On the SHORT rung we warn immediately and continuously — a 3-day window is too
-// tight for a "last 2 days" threshold to be any use, and the whole point is to
-// catch the user BEFORE the cliff rather than explain it afterwards.
+// Only warn when re-verification is genuinely imminent — i.e. the 3-day PROBATION
+// cliff, where a fresh verification lapses fast and the whole point is to catch the
+// user before it. A normal 6-month verification shows NO countdown: nagging someone
+// for two weeks who can still claim fine is just noise. They're told once it has
+// actually lapsed (the "lapsed" banner), which is when they truly need to act.
 export function isExpiringSoon(s: IdentityStatus): boolean {
   if (s.state !== "verified") return false;
-  return s.isProbation ? true : s.daysLeft <= 14;
+  return s.isProbation;
 }
