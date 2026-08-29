@@ -10,6 +10,7 @@ import { HunterStreakBadge } from "@/components/HunterStreakBadge";
 import { HunterRank } from "@/components/HunterRank";
 import { ShareableHunterCard } from "@/components/ShareableHunterCard";
 import { OwnProfileInvite } from "@/components/OwnProfileInvite";
+import { OwnerDropsCard } from "@/components/OwnerDropsCard";
 import { BadgeWall } from "@/components/BadgeWall";
 import { Avatar } from "@/components/Avatar";
 import { formatG$, shortAddr, getDropRarity, RARITY, gpsToDeg, type DropRarity } from "@/lib/utils";
@@ -217,8 +218,9 @@ export default async function HunterPage({ params }: PageProps) {
           </div>
         )}
 
-        {/* Invite friends — own profile only. Density is the growth engine. */}
-        <div className="mt-3 md:max-w-xl md:mx-auto">
+        {/* Own profile only: manage your drops + invite friends. */}
+        <div className="mt-3 md:max-w-xl md:mx-auto space-y-3">
+          <OwnerDropsCard profileAddress={address} />
           <OwnProfileInvite profileAddress={address} />
         </div>
 

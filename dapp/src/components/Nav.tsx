@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
-import { Map, Package, Trophy, Gift } from "lucide-react";
+import { Map, Trophy, Gift } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -19,7 +19,6 @@ import clsx from "clsx";
 
 const links = [
   { href: "/", label: "Map" },
-  { href: "/my-drops", label: "My Drops" },
   { href: "/leaderboard", label: "Rankings" },
   { href: "/competition", label: "Competition" },
   { href: "/merchant", label: "Spots 🏪" },
@@ -589,7 +588,6 @@ export function BottomNav() {
 
   const items = [
     { href: "/", label: "Map", Icon: Map },
-    { href: "/my-drops", label: "My Drops", Icon: Package },
     { href: "/leaderboard", label: "Rankings", Icon: Trophy },
     { href: "/competition", label: "Competition", Icon: Gift },
   ];
