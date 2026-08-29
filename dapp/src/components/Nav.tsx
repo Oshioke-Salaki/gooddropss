@@ -23,7 +23,6 @@ const links = [
   { href: "/leaderboard", label: "Rankings" },
   { href: "/competition", label: "Competition" },
   { href: "/merchant", label: "Spots 🏪" },
-  { href: "/sponsor", label: "Sponsor ⭐" },
 ];
 
 // ── Wallet button ─────────────────────────────────────────────────────────────

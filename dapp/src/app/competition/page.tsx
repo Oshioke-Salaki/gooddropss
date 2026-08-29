@@ -161,7 +161,7 @@ export default function CompetitionPage() {
               <HowStep n={4}>Reach as many <span className="font-bold text-ink">different</span> people as you can. The <span className="font-bold text-ink">top {winners}</span> split {fmtG(potWei)} G$.</HowStep>
             </ol>
             <p className="mt-3 text-xs text-muted leading-relaxed">
-              Dropping to the same one or two people over and over doesn&apos;t help — each person only counts once.
+              Each person counts once, so reaching new people is how you climb — dropping for the same few again won&apos;t add more points.
               Both the dropper and the claimer must be GoodDollar-verified.
             </p>
           </div>
@@ -285,7 +285,7 @@ export default function CompetitionPage() {
 
         <div className="mt-6 flex items-start gap-2 text-xs text-muted leading-relaxed">
           <MapPin size={14} className="shrink-0 mt-0.5" />
-          <p>You score by reaching real, different people: each distinct verified person who claims one of your drops is 1 point, and someone you referred counts double. The same person can never count twice — so trading G$ back and forth with one friend goes nowhere. Prizes for the top {winners} are paid to your wallet when the competition ends.</p>
+          <p>You score by reaching real, different people: each distinct verified person who claims one of your drops is 1 point, and someone you referred counts double. Each person counts once, so the way to climb is to reach <span className="font-semibold text-ink">more different people</span> — dropping for the same few again is fine, it just won&apos;t add more points. Prizes for the top {winners} are paid to your wallet when the competition ends.</p>
         </div>
       </div>
       <BottomNav />

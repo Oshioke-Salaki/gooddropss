@@ -3,8 +3,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Store, MapPin, Check, TrendingUp, UtensilsCrossed, ShoppingBag,
-  Wrench, Bus, Camera, Rocket, Map as MapIcon, type LucideIcon,
+  Wrench, Bus, Camera, Rocket, Map as MapIcon, Megaphone, ArrowRight, type LucideIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { Nav, BottomNav } from "@/components/Nav";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import type { Spot } from "@/types";
@@ -327,6 +328,20 @@ export default function MerchantPage() {
                 {mySpots.map((s) => <MerchantSpotCard key={s.id} spot={s} onChanged={fetchMySpots} />)}
               </div>
             )}
+
+            {/* Secondary path for brands/events — batch drop campaigns live here now,
+                not in the main nav. Kept one tap away for whoever actually needs it. */}
+            <Link href="/sponsor"
+              className="mt-6 flex items-center gap-3 border-2 border-ink rounded-2xl p-4 bg-white shadow-brutal-sm hover:bg-cream transition-colors">
+              <div className="w-10 h-10 rounded-xl border-2 border-ink bg-lime flex items-center justify-center shrink-0">
+                <Megaphone size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-black text-sm leading-tight">Running an event or brand campaign?</p>
+                <p className="text-xs text-muted leading-snug">Drop lots of G$ across an area at once and track claims — launch a campaign.</p>
+              </div>
+              <ArrowRight size={18} className="shrink-0 text-muted" />
+            </Link>
           </>
         )}
       </div>
