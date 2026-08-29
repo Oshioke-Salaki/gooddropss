@@ -67,6 +67,8 @@ export async function POST(req: NextRequest) {
   if (added) await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
   const wallet = await redis.get<string>(keys.compPayoutWallet(referrerRoot));
   if (!wallet) await redis.set(keys.compPayoutWallet(referrerRoot), refAddr);
+  // Backdated into the window, so the referrer belongs in the leaderboard universe.
+  await redis.sadd(keys.compReferrers(), referrerRoot);
 
   return NextResponse.json({
     ok: true,

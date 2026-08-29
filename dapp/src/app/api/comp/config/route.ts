@@ -48,6 +48,13 @@ export async function POST(req: NextRequest) {
     if (!Number.isFinite(n) || n < 0) return bad("referralBonusWeight");
     patch.referralBonusWeight = n;
   }
+  if (b.downlineWeights !== undefined) {
+    // Array of numbers or comma-separated fractions (e.g. "0.25, 0.1"). Each 0..1.
+    const raw = Array.isArray(b.downlineWeights) ? b.downlineWeights : String(b.downlineWeights).split(",");
+    const w = raw.map((x: unknown) => Number(String(x).trim())).filter((n: number) => Number.isFinite(n) && n >= 0 && n <= 1);
+    if (w.length === 0) return bad("downlineWeights");
+    patch.downlineWeights = w.slice(0, 2);
+  }
 
   if (patch.startsAt !== undefined && patch.endsAt !== undefined && patch.endsAt <= patch.startsAt) {
     return bad("endsAt (must be after startsAt)");

@@ -61,7 +61,7 @@ console.log("");
 
 for (const w of winners) {
   const handle = w.username ? `@${w.username}` : `${w.root.slice(0, 8)}…`;
-  const tag = `#${w.rank} ${handle.padEnd(16)} ${w.prizeG.toLocaleString().padStart(8)} G$  → ${w.payout}  (${w.score} pts · ${w.reach} reached)`;
+  const tag = `#${w.rank} ${handle.padEnd(16)} ${w.prizeG.toLocaleString().padStart(8)} G$  → ${w.payout}  (${w.score} pts: ${w.reach}r+${w.claims}c+${w.refs}ref+${w.depth ?? 0}net)`;
   if (ledger[w.root.toLowerCase()]?.txHash) { console.log(`⏭  ${tag}  paid: ${ledger[w.root.toLowerCase()].txHash}`); continue; }
   if (!SEND) { console.log(`•  ${tag}`); continue; }
   try {

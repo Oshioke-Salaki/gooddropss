@@ -6,7 +6,7 @@ import { Loader2, Save, Send, ExternalLink } from "lucide-react";
 
 interface Config {
   id: string; startsAt: number; endsAt: number; potWei: string;
-  tiers?: number[]; minDropWei?: string; referralBonusWeight?: number;
+  tiers?: number[]; minDropWei?: string; referralBonusWeight?: number; downlineWeights?: number[];
 }
 
 const toLocalInput = (unix: number) => {
@@ -26,6 +26,7 @@ export default function AdminCompetitionPage() {
   const [tiers, setTiers] = useState("");
   const [minDrop, setMinDrop] = useState("");
   const [bonus, setBonus] = useState("");
+  const [downline, setDownline] = useState("");
   const [msg, setMsg] = useState("");
   const [refReferrer, setRefReferrer] = useState("");
   const [refInvitee, setRefInvitee] = useState("");
@@ -42,6 +43,7 @@ export default function AdminCompetitionPage() {
       setTiers(Array.isArray(c.tiers) ? c.tiers.join(", ") : "");
       setMinDrop(c.minDropWei ? String(Math.round(Number(c.minDropWei) / 1e18)) : "");
       setBonus(String(c.referralBonusWeight ?? 1));
+      setDownline(Array.isArray(c.downlineWeights) ? c.downlineWeights.join(", ") : "");
     }).catch(() => {});
   }, []);
   useEffect(() => { if (isAdmin) loadConfig(); }, [isAdmin, loadConfig]);
@@ -57,6 +59,7 @@ export default function AdminCompetitionPage() {
           ...(tiers.trim() ? { tiers } : {}),
           ...(minDrop.trim() ? { minDrop: Number(minDrop) } : {}),
           ...(bonus.trim() ? { referralBonusWeight: Number(bonus) } : {}),
+          ...(downline.trim() ? { downlineWeights: downline } : {}),
         }),
       });
       const d = await res.json();
@@ -124,10 +127,13 @@ export default function AdminCompetitionPage() {
             {tierList.length} winners · tiers sum to {tierSum.toLocaleString()} G${sumMismatch ? ` — does not match the ${fmtG(potWei)} G$ pot` : " (matches pot)"}.
           </span>
         </label>
-        <label className="block"><span className="text-xs font-black uppercase tracking-wide text-gray-500">Referral bonus weight</span>
-          <input className={`mt-1 ${inp}`} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="1" />
-          <span className="mt-1 block text-[11px] text-gray-500">Score = distinct verified people who claimed your drops (≥ min drop) + bonus × those you also referred. Only claimed drops count; both dropper and claimer must be verified.</span>
-        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block"><span className="text-xs font-black uppercase tracking-wide text-gray-500">Points per referral</span>
+            <input className={`mt-1 ${inp}`} type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="1" /></label>
+          <label className="block"><span className="text-xs font-black uppercase tracking-wide text-gray-500">Downline bonus (L1, L2)</span>
+            <input className={`mt-1 ${inp}`} type="text" value={downline} onChange={(e) => setDownline(e.target.value)} placeholder="0.25, 0.1" /></label>
+        </div>
+        <span className="block text-[11px] text-gray-500">Score = people who claimed your drops (reach) + people whose drops you claimed (claim) + referral-weight × people you referred + downline bonus (a fraction of your referrals&apos; score, and their referrals&apos; score). Fractions 0–1, e.g. 0.25 = 25%. Every side must be verified; only drops ≥ min drop count.</span>
         <button onClick={save} disabled={busy === "save"} className="btn-brutal flex items-center justify-center gap-2 w-full py-2.5 rounded-xl font-black text-sm bg-ink text-lime disabled:opacity-60">
           {busy === "save" ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save config
         </button>

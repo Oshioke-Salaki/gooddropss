@@ -2,104 +2,192 @@ import { fetchAllDrops } from "@/lib/subgraph";
 import { resolveRoots, filterVerified } from "@/lib/roots";
 import { getRedis, keys } from "@/lib/redis";
 import { DROP_STATUS } from "@/types";
-import { MIN_DROP_WEI_DEFAULT, REFERRAL_BONUS_WEIGHT_DEFAULT, type CompConfig } from "@/lib/competition";
+import {
+  MIN_DROP_WEI_DEFAULT, REFERRAL_BONUS_WEIGHT_DEFAULT, DOWNLINE_WEIGHTS_DEFAULT,
+  type CompConfig,
+} from "@/lib/competition";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 export interface ReachClaimer {
-  root: string;        // the person who claimed your drop(s)
-  referred: boolean;   // did YOU refer them? (worth a bonus point)
+  root: string;        // a person who claimed your drop(s)
+  referred: boolean;   // did YOU refer them? (badge only)
   gG: number;          // total G$ that reached them via your claimed drops (whole G$)
 }
 
-export interface ReachEntry {
-  root: string;          // dropper identity root (payout target) — always a VERIFIED human
-  reach: number;         // distinct verified people who claimed your in-window drops
-  referred: number;      // of those, how many you also referred
-  score: number;         // reach + weight × referred  (the leaderboard rank key)
-  dropsClaimed: number;  // how many of your drops got claimed (for display)
+export interface ScoreEntry {
+  root: string;          // identity root (payout target) — always a VERIFIED human
+  reach: number;         // distinct verified people who claimed YOUR in-window drops
+  claims: number;        // distinct verified people whose in-window drops YOU claimed
+  refs: number;          // verified people you referred DURING the window
+  depth: number;         // network bonus points from your downline's activity
+  downline: number;      // how many downline members contributed to that bonus
+  base: number;          // reach + claims + refWeight × refs (your own activity)
+  score: number;         // base + depth  (the rank key)
+  dropsClaimed: number;  // how many of your drops got claimed (display)
   gDropped: number;      // total G$ that actually reached people (whole G$)
   claimers: ReachClaimer[];
 }
 
-// ── v3 metric: "REACH" ───────────────────────────────────────────────────────
-// For each dropper, the number of DISTINCT verified humans who CLAIMED a drop that
-// dropper CREATED, with the claim inside the window and the drop worth ≥ minDrop.
-// A claimer the dropper also REFERRED is worth an extra point (referral bonus), so
-// bringing NEW people and getting them to claim scores highest.
+export interface CompStats {
+  gCirculated: number;   // whole G$ that reached people via in-window claims
+  drops: number;         // drops created in-window
+  claims: number;        // drops claimed in-window
+  referredUsers: number; // people referred in-window
+}
+
+export interface ScoreBoard { entries: ScoreEntry[]; stats: CompStats }
+
+const EMPTY: ScoreBoard = { entries: [], stats: { gCirculated: 0, drops: 0, claims: 0, referredUsers: 0 } };
+const addTo = (m: Map<string, Set<string>>, k: string, v: string) => {
+  let s = m.get(k); if (!s) { s = new Set(); m.set(k, s); } s.add(v);
+};
+
+// ── Competition scoring ──────────────────────────────────────────────────────
+// Four ways to earn, folded into one score:
+//   • REACH   — distinct verified people who CLAIMED a drop YOU created
+//   • CLAIMS  — distinct verified people whose drops YOU claimed
+//   • REFS    — verified people you REFERRED during the window
+//   • DEPTH   — a fraction of your referees' base score (level 1) and your
+//               referees' referees' base score (level 2) — a network bonus.
+//   base  = reach + claims + refWeight × refs
+//   score = base + downlineWeights[0]·Σ base(L1) + downlineWeights[1]·Σ base(L2)
 //
-// Why this is airtight and moves real G$:
-//   • Every claimer is a GoodDollar-verified human — claiming reverts on-chain for
-//     the unverified — and all of a person's wallets collapse to ONE identity root,
-//     so one human can never be counted twice.
-//   • Droppers are verified too (filterVerified) — only real humans can rank/win.
-//   • Counted once PER DISTINCT CLAIMER → two people ping-ponging G$ between
-//     themselves are each stuck at reach = 1 forever, no matter how much they cycle.
-//     You only climb by reaching MORE different people.
-//   • Only CLAIMED drops count → "dropping only" (drops nobody claims) earns nothing,
-//     which forces droppers to push their people to actually claim.
-//   • Stateless — recomputed from the subgraph + referral map on every read, so
-//     there's no ledger to corrupt and nothing to farm between reads.
-export async function computeReach(cfg: CompConfig): Promise<ReachEntry[]> {
+// Airtight & bounded:
+//   • Every claimer is GoodDollar-verified on-chain; droppers are verified too.
+//     A drop→claim pair only counts when BOTH are verified real humans, and all
+//     of one person's wallets collapse to one identity root — no double counting.
+//   • REACH/CLAIMS are DISTINCT-people counts → a 2-person G$ loop is capped at
+//     reach 1 + claim 1 each and can't out-score someone who reaches many people.
+//   • The referral tree is verified + immutable (first-referrer-wins). DEPTH is
+//     only 2 levels, uses each downline member's BASE (never their depth, so no
+//     runaway cascade), and never credits a node through itself (cycle guard).
+// Fast: one cached subgraph read, one cached root multicall, one verification
+// multicall, and a handful of batched Redis ops (mget/pipeline) — no per-user
+// round-trips. Stateless: recomputed each read, nothing to corrupt or farm.
+export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   const redis = getRedis();
-  if (!redis) return [];
+  if (!redis) return EMPTY;
 
   const minWei = BigInt(cfg.minDropWei ?? MIN_DROP_WEI_DEFAULT);
-  const weight = cfg.referralBonusWeight ?? REFERRAL_BONUS_WEIGHT_DEFAULT;
+  const refWeight = cfg.referralBonusWeight ?? REFERRAL_BONUS_WEIGHT_DEFAULT;
+  const dw = cfg.downlineWeights?.length ? cfg.downlineWeights : DOWNLINE_WEIGHTS_DEFAULT;
+  const l1 = dw[0] ?? 0, l2 = dw[1] ?? 0;
 
   const drops = await fetchAllDrops();
-  const claims = drops.filter(
-    (d) => d.status === DROP_STATUS.Claimed && d.claimer !== ZERO
-      && d.claimedAt >= cfg.startsAt && d.claimedAt < cfg.endsAt
-      && d.amount >= minWei,
-  );
-  if (claims.length === 0) return [];
+  const inWin = (t: number) => t >= cfg.startsAt && t < cfg.endsAt;
 
-  // Collapse each participating wallet to its identity root (batched multicall + cache).
+  // ── Competition-wide stats (all in-window claims, independent of scoring) ──
+  const claimsAll = drops.filter((d) => d.status === DROP_STATUS.Claimed && d.claimer !== ZERO && inWin(d.claimedAt));
+  const stats: CompStats = {
+    gCirculated: Math.round(Number(claimsAll.reduce((s, d) => s + d.amount, 0n) / 10n ** 18n)),
+    drops: drops.filter((d) => inWin(d.createdAt)).length,
+    claims: claimsAll.length,
+    referredUsers: 0, // filled after refs are counted
+  };
+
+  // ── Scoring set: in-window claims of drops worth ≥ minDrop ──
+  const claimed = claimsAll.filter((d) => d.amount >= minWei);
+  if (claimed.length === 0 && (await redis.scard(keys.compReferrers())) === 0) return { entries: [], stats };
+
   const addrs = new Set<string>();
-  for (const d of claims) { addrs.add(d.dropper.toLowerCase()); addrs.add(d.claimer.toLowerCase()); }
+  for (const d of claimed) { addrs.add(d.dropper.toLowerCase()); addrs.add(d.claimer.toLowerCase()); }
   const roots = await resolveRoots([...addrs]);
   const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
 
-  // dropperRoot → (claimerRoot → G$ received) plus a claimed-drop tally.
-  const byDropper = new Map<string, { claimers: Map<string, bigint>; drops: number }>();
-  for (const d of claims) {
+  const dropperClaimers = new Map<string, Map<string, bigint>>();
+  const claimerDroppers = new Map<string, Set<string>>();
+  const dropCount = new Map<string, number>();
+  for (const d of claimed) {
     const dr = rootOf(d.dropper), cl = rootOf(d.claimer);
-    if (dr === cl) continue; // claiming your own drop never counts
-    const e = byDropper.get(dr) ?? { claimers: new Map<string, bigint>(), drops: 0 };
-    e.claimers.set(cl, (e.claimers.get(cl) ?? 0n) + d.amount);
-    e.drops += 1;
-    byDropper.set(dr, e);
+    if (dr === cl) continue;
+    let m = dropperClaimers.get(dr); if (!m) { m = new Map(); dropperClaimers.set(dr, m); }
+    m.set(cl, (m.get(cl) ?? 0n) + d.amount);
+    addTo(claimerDroppers, cl, dr);
+    dropCount.set(dr, (dropCount.get(dr) ?? 0) + 1);
   }
-  if (byDropper.size === 0) return [];
 
-  // Only VERIFIED droppers may rank (claimers are already verified by the claim gate).
-  const verified = await filterVerified([...byDropper.keys()]);
+  const enrolledReferrers = ((await redis.smembers<string[]>(keys.compReferrers())) ?? []).map((r) => r.toLowerCase());
 
-  // Who referred each distinct claimer (batched) — for the referral bonus.
-  const allClaimers = [...new Set([...byDropper.values()].flatMap((e) => [...e.claimers.keys()]))];
-  const referredBy = allClaimers.length
-    ? await redis.mget<(string | null)[]>(...allClaimers.map((c) => keys.referredBy(c)))
-    : [];
-  const referrerOf = new Map<string, string | null>();
-  allClaimers.forEach((c, i) => referrerOf.set(c, referredBy[i] ? referredBy[i]!.toLowerCase() : null));
+  // ── Referral tree: parent (referredBy) of every candidate, then grandparents ──
+  const candidates = [...new Set([...dropperClaimers.keys(), ...claimerDroppers.keys(), ...enrolledReferrers])];
+  if (candidates.length === 0) return { entries: [], stats };
 
-  const entries: ReachEntry[] = [];
-  for (const [dropper, e] of byDropper) {
-    if (!verified.has(dropper)) continue;
-    const claimers: ReachClaimer[] = [...e.claimers.entries()].map(([root, wei]) => ({
-      root,
-      referred: referrerOf.get(root) === dropper,
-      gG: Math.round(Number(wei / 10n ** 16n) / 100), // wei → whole G$ (2-dp precision, then round)
-    }));
-    const referred = claimers.filter((c) => c.referred).length;
+  const parentRaw = await redis.mget<(string | null)[]>(...candidates.map((c) => keys.referredBy(c)));
+  const parentOf = new Map<string, string | null>();
+  candidates.forEach((c, i) => parentOf.set(c, parentRaw[i] ? parentRaw[i]!.toLowerCase() : null));
+
+  const parents = [...new Set(candidates.map((c) => parentOf.get(c)).filter((x): x is string => !!x))];
+  const gpRaw = parents.length ? await redis.mget<(string | null)[]>(...parents.map((p) => keys.referredBy(p))) : [];
+  const grandOf = new Map<string, string | null>(); // referredBy of each parent
+  parents.forEach((p, i) => grandOf.set(p, gpRaw[i] ? gpRaw[i]!.toLowerCase() : null));
+  const grandparents = [...new Set(parents.map((p) => grandOf.get(p)).filter((x): x is string => !!x))];
+
+  // ── Verify everyone (candidates + ancestors) in one multicall ──
+  const verified = await filterVerified([...new Set([...candidates, ...parents, ...grandparents])]);
+  const verifiedCandidates = candidates.filter((c) => verified.has(c));
+
+  // ── In-window referral counts — one pipelined round-trip ──
+  const refsOf = new Map<string, number>();
+  if (verifiedCandidates.length) {
+    const pipe = redis.pipeline();
+    for (const r of verifiedCandidates) pipe.zcount(keys.referralCredited(r), cfg.startsAt, cfg.endsAt);
+    const counts = await pipe.exec<number[]>();
+    verifiedCandidates.forEach((r, i) => refsOf.set(r, Number(counts[i] ?? 0)));
+  }
+  stats.referredUsers = [...refsOf.values()].reduce((s, n) => s + n, 0);
+
+  // ── Base score per verified candidate ──
+  interface Base { reach: number; claims: number; refs: number; base: number; gDropped: number; dropsClaimed: number; claimers: ReachClaimer[] }
+  const baseOf = new Map<string, Base>();
+  for (const root of verifiedCandidates) {
+    const cm = dropperClaimers.get(root);
+    const claimers: ReachClaimer[] = cm
+      ? [...cm.entries()].filter(([cl]) => verified.has(cl)).map(([cl, wei]) => ({
+          root: cl, referred: parentOf.get(cl) === root, gG: Math.round(Number(wei / 10n ** 16n) / 100),
+        }))
+      : [];
     const reach = claimers.length;
+    const claims = claimerDroppers.get(root) ? [...claimerDroppers.get(root)!].filter((dr) => verified.has(dr)).length : 0;
+    const refs = refsOf.get(root) ?? 0;
+    const base = reach + claims + refWeight * refs;
     const gDropped = claimers.reduce((s, c) => s + c.gG, 0);
-    // Referred claimers first, then by G$ received — nicest badge order in the UI.
     claimers.sort((a, b) => Number(b.referred) - Number(a.referred) || b.gG - a.gG);
-    entries.push({ root: dropper, reach, referred, score: reach + weight * referred, dropsClaimed: e.drops, gDropped, claimers });
+    baseOf.set(root, { reach, claims, refs, base, gDropped, dropsClaimed: dropCount.get(root) ?? 0, claimers });
   }
 
-  // Rank: score desc, then real G$ moved, then raw reach.
-  return entries.sort((a, b) => b.score - a.score || b.gDropped - a.gDropped || b.reach - a.reach);
+  // ── Depth (network) bonus: credit ancestors for each active node's base ──
+  const depthOf = new Map<string, number>();
+  const downlineOf = new Map<string, Set<string>>();
+  for (const [node, b] of baseOf) {
+    if (b.base <= 0) continue;
+    const p1 = parentOf.get(node) ?? null;
+    if (!p1 || p1 === node || !verified.has(p1)) continue;
+    depthOf.set(p1, (depthOf.get(p1) ?? 0) + l1 * b.base);
+    addTo(downlineOf, p1, node);
+    const p2 = grandOf.get(p1) ?? null;
+    if (!p2 || p2 === node || p2 === p1 || !verified.has(p2)) continue;
+    depthOf.set(p2, (depthOf.get(p2) ?? 0) + l2 * b.base);
+    addTo(downlineOf, p2, node);
+  }
+
+  // ── Assemble entries: verified candidates + any verified ancestor who earned depth ──
+  const allRoots = new Set<string>([...baseOf.keys(), ...depthOf.keys()]);
+  const entries: ScoreEntry[] = [];
+  for (const root of allRoots) {
+    const b = baseOf.get(root);
+    const depth = Math.round((depthOf.get(root) ?? 0) * 100) / 100;
+    const base = b?.base ?? 0;
+    const score = Math.round((base + depth) * 100) / 100;
+    if (score <= 0) continue;
+    entries.push({
+      root,
+      reach: b?.reach ?? 0, claims: b?.claims ?? 0, refs: b?.refs ?? refsOf.get(root) ?? 0,
+      depth, downline: downlineOf.get(root)?.size ?? 0, base,
+      score, dropsClaimed: b?.dropsClaimed ?? 0, gDropped: b?.gDropped ?? 0, claimers: b?.claimers ?? [],
+    });
+  }
+
+  entries.sort((a, b) => b.score - a.score || b.gDropped - a.gDropped || b.reach - a.reach || a.root.localeCompare(b.root));
+  return { entries, stats };
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { getCompConfig, compPhase, tierPrizeG } from "@/lib/competition";
-import { computeReach } from "@/lib/competitionV2";
+import { computeScores } from "@/lib/competitionV2";
 
 export const runtime = "nodejs";
 
@@ -25,16 +25,20 @@ export async function GET(req: NextRequest) {
 
   const cfg = await getCompConfig(redis);
   const phase = compPhase(cfg, now);
-  const board = await computeReach(cfg);
+  const { entries, stats } = await computeScores(cfg);
 
-  const allRoots = [...new Set(board.flatMap((a) => [a.root, ...a.claimers.map((c) => c.root)]))];
+  const allRoots = [...new Set(entries.flatMap((a) => [a.root, ...a.claimers.map((c) => c.root)]))];
   const nameOf = await usernames(redis, allRoots);
 
-  const participants = board.map((a, i) => ({
+  const participants = entries.map((a, i) => ({
     root: a.root,
     username: nameOf.get(a.root) ?? null,
     reach: a.reach,
-    referred: a.referred,
+    claims: a.claims,
+    refs: a.refs,
+    depth: a.depth,
+    downline: a.downline,
+    base: a.base,
     score: a.score,
     dropsClaimed: a.dropsClaimed,
     gDropped: a.gDropped,
@@ -46,17 +50,20 @@ export async function GET(req: NextRequest) {
   }));
 
   type P = (typeof participants)[number];
-  let you: P | { root: string; username: string | null; reach: number; referred: number; score: number; dropsClaimed: number; gDropped: number; rank: null; prizeG: number; claimers: ClaimerRef[] } | null = null;
+  let you: P | { root: string; username: string | null; reach: number; claims: number; refs: number; depth: number; downline: number; base: number; score: number; dropsClaimed: number; gDropped: number; rank: null; prizeG: number; claimers: ClaimerRef[] } | null = null;
   if (address && ADDR_RE.test(address)) {
     const root = await resolveIdentityRoot(address.toLowerCase());
     const idx = participants.findIndex((p) => p.root === root);
     you = idx >= 0 ? participants[idx]
-      : { root, username: nameOf.get(root) ?? null, reach: 0, referred: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
+      : { root, username: nameOf.get(root) ?? null, reach: 0, claims: 0, refs: 0, depth: 0, downline: 0, base: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
   }
 
   return NextResponse.json({
-    ok: true, mode: "tiered", phase,
-    config: { startsAt: cfg.startsAt, endsAt: cfg.endsAt, potWei: cfg.potWei, tiers: cfg.tiers, minDropWei: cfg.minDropWei ?? null },
+    ok: true, mode: "tiered", phase, stats,
+    config: {
+      startsAt: cfg.startsAt, endsAt: cfg.endsAt, potWei: cfg.potWei, tiers: cfg.tiers,
+      minDropWei: cfg.minDropWei ?? null, downlineWeights: cfg.downlineWeights ?? null,
+    },
     participants, you,
   }, { headers: CDN });
 }

@@ -20,16 +20,22 @@ export interface CompConfig {
   potWei: string;          // total prize pool, stringified wei
   tiers: number[];         // whole-G$ prize per rank (index 0 = 1st place); length = paid places
   minDropWei?: string;         // a claimed drop only counts if it moved ≥ this much G$
-  referralBonusWeight?: number; // extra points per distinct claimer you also referred
+  referralBonusWeight?: number; // points awarded per verified person referred in-window
+  // Downline (network) bonus: you earn a fraction of your referees' base score,
+  // and a smaller fraction of your referees' referees'. [level1, level2].
+  downlineWeights?: number[];
 }
 
 // Reach-mode defaults, applied when a stored config predates these fields.
 export const MIN_DROP_WEI_DEFAULT = (100n * 10n ** 18n).toString(); // 100 G$
-export const REFERRAL_BONUS_WEIGHT_DEFAULT = 1;
+export const REFERRAL_BONUS_WEIGHT_DEFAULT = 1.5;
+export const DOWNLINE_WEIGHTS_DEFAULT = [0.25, 0.1]; // 25% of L1's score, 10% of L2's
 
 // Season 2 — "THE BIG DROP". Times are WAT (UTC+1, Nigeria — no DST): Mon 31 Aug
-// 12:00 → Sat 5 Sep 18:00, 2026. Top-N split a 1,000,000 G$ pot, paid once at the
-// end. All admin-editable.
+// 12:00 → Sat 5 Sep 18:00, 2026. Score = distinct people who claimed your drops
+// (drop) + distinct people whose drops you claimed (claim) + people you referred
+// in-window (refer). Top-N split a 1,000,000 G$ pot, paid once at the end. All
+// admin-editable.
 export const COMP_DEFAULT: CompConfig = {
   id: "big-drop-2026-09",
   startsAt: Math.floor(Date.parse("2026-08-31T12:00:00+01:00") / 1000),
@@ -37,6 +43,7 @@ export const COMP_DEFAULT: CompConfig = {
   potWei: (1_000_000n * 10n ** 18n).toString(),
   minDropWei: MIN_DROP_WEI_DEFAULT,
   referralBonusWeight: REFERRAL_BONUS_WEIGHT_DEFAULT,
+  downlineWeights: DOWNLINE_WEIGHTS_DEFAULT,
   // 10 winners, min prize 80,000 G$, sums to exactly 1,000,000 G$. Edit in the admin.
   tiers: [200_000, 120_000, 105_000, 90_000, 85_000, 80_000, 80_000, 80_000, 80_000, 80_000],
 };

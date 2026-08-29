@@ -96,6 +96,7 @@ export const keys = {
 
   // ── Drop competition (reach) ──────────────────────────────────────────────
   compConfig:        ()                      => `gd:comp:config`,                  // JSON CompConfig (admin-editable)
+  compReferrers:     ()                      => `gd:comp:referrers`,               // Set of roots with ≥1 in-window referral — leaderboard universe for pure referrers
   // The wallet a winner's prize is paid to — their CURRENT GoodDrops wallet (the
   // address their invite link was generated from), refreshed on each referral.
   compPayoutWallet:  (referrerRoot: string)  => `gd:comp:wallet:${referrerRoot.toLowerCase()}`,
