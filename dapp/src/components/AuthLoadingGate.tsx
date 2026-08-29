@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Loader2 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import { Loader2 } from "lucide-react";
 // only a real reload does, which is exactly when a connected user is re-loading.
 export function AuthLoadingGate() {
   const { status } = useAccount();
+  const pathname = usePathname();
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -21,7 +23,9 @@ export function AuthLoadingGate() {
     return () => clearTimeout(t);
   }, [status]);
 
-  if (done) return null;
+  // The admin console is gated by its own password cookie, not the wallet session,
+  // so a wallet-session loader there is misleading — skip it on /admin.
+  if (done || pathname?.startsWith("/admin")) return null;
 
   return (
     <div
