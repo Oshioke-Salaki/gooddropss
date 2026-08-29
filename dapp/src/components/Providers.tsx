@@ -5,6 +5,7 @@ import { celo } from "viem/chains";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
+import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { SetNameSheet } from "@/components/SetNameSheet";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
@@ -60,6 +61,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiProvider config={wagmiConfig} reconnectOnMount>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          <AuthLoadingGate />
           <QueryCacheManager />
           <ChainGuard />
           <ReferralCapture />
