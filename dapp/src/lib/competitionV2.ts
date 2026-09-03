@@ -128,15 +128,19 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   //   • verified right now (filterVerified), OR
   //   • ever seen verified earlier this competition (persisted set), OR
   //   • a claimer of an in-window drop — claiming reverts on-chain unless verified,
-  //     so the claim itself is permanent proof (covers people who lapsed before the
-  //     first scoring run too).
+  //     so the claim is permanent proof, OR
+  //   • someone who was referred (referredBy set) — referral crediting requires the
+  //     invitee to pass verification, so the credit is permanent proof too.
+  // The last two are read from durable history (subgraph + referral map), so a
+  // lapsed person's already-earned points are restored automatically on recompute —
+  // no migration needed — and nobody unverified can slip in.
   const involvedArr = [...new Set([...candidates, ...parents, ...grandparents])];
   const live = await filterVerified(involvedArr);
   const seenKey = keys.compVerifiedSeen(cfg.id);
   const seenPrev = new Set<string>((await redis.smembers<string[]>(seenKey)) ?? []);
   const provenByClaim = claimerDroppers; // keys = roots that claimed in-window (on-chain proof)
   const verified = new Set<string>();
-  for (const r of involvedArr) if (live.has(r) || seenPrev.has(r) || provenByClaim.has(r)) verified.add(r);
+  for (const r of involvedArr) if (live.has(r) || seenPrev.has(r) || provenByClaim.has(r) || !!parentOf.get(r)) verified.add(r);
   // Persist anyone newly proven verified so a later lapse can't erase their points.
   const toPersist = [...new Set([...live, ...provenByClaim.keys()])].filter((r) => !seenPrev.has(r));
   if (toPersist.length) {
