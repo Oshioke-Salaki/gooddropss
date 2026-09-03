@@ -84,6 +84,12 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     setPendingId(c.id);
     // Request Celo so external wallets are switched to the right chain on connect.
     connect({ connector: c, chainId: celo.id });
+    // Hand the screen over to the wallet's OWN UI — WalletConnect's QR / deep-link
+    // modal (e.g. into Valora), or an injected wallet's prompt. Closing our sheet is
+    // what makes the hand-off clean: otherwise it sits on top of the WalletConnect
+    // modal and the flow looks stuck (the bug testers hit). If the user cancels,
+    // they land back on the page and can tap "Connect a wallet" again.
+    onClose();
   }
 
   // Email sign-in. We already have the address, so `showUI: true` makes Magic
