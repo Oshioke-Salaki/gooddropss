@@ -52,6 +52,10 @@ if (typeof window !== "undefined") {
           url: window.location.origin,
           icons: [`${window.location.origin}/icon`],
         },
+        // The QR / deep-link modal must render ABOVE our sign-in sheet (z 2000)
+        // and session loader (z 3000) — otherwise the popup opens invisibly behind
+        // them and the connect just spins (seen inside Valora, and on desktop).
+        qrModalOptions: { themeVariables: { "--wcm-z-index": "2147483000" } },
       }),
     );
   }

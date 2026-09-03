@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* WalletConnect's QR / deep-link modal reads this custom property for its stacking
+   order. It must sit above our sign-in sheet (z 2000) and session loader (z 3000),
+   or the popup opens hidden behind them and the connect just spins (seen inside
+   Valora, and on desktop). Custom properties inherit into the modal's shadow DOM,
+   and the modal only renders for WalletConnect users — so this affects nobody else. */
+:root { --wcm-z-index: 2147483000; }
+
 @theme {
   --color-cream: #f5f4f0;
   --color-lime: #bffd00;
