@@ -123,8 +123,25 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   parents.forEach((p, i) => grandOf.set(p, gpRaw[i] ? gpRaw[i]!.toLowerCase() : null));
   const grandparents = [...new Set(parents.map((p) => grandOf.get(p)).filter((x): x is string => !!x))];
 
-  // ── Verify everyone (candidates + ancestors) in one multicall ──
-  const verified = await filterVerified([...new Set([...candidates, ...parents, ...grandparents])]);
+  // ── Verification, made STICKY so points never vanish when a 3-day/6-month
+  // GoodDollar verification lapses. A root counts as verified if it is:
+  //   • verified right now (filterVerified), OR
+  //   • ever seen verified earlier this competition (persisted set), OR
+  //   • a claimer of an in-window drop — claiming reverts on-chain unless verified,
+  //     so the claim itself is permanent proof (covers people who lapsed before the
+  //     first scoring run too).
+  const involvedArr = [...new Set([...candidates, ...parents, ...grandparents])];
+  const live = await filterVerified(involvedArr);
+  const seenKey = keys.compVerifiedSeen(cfg.id);
+  const seenPrev = new Set<string>((await redis.smembers<string[]>(seenKey)) ?? []);
+  const provenByClaim = claimerDroppers; // keys = roots that claimed in-window (on-chain proof)
+  const verified = new Set<string>();
+  for (const r of involvedArr) if (live.has(r) || seenPrev.has(r) || provenByClaim.has(r)) verified.add(r);
+  // Persist anyone newly proven verified so a later lapse can't erase their points.
+  const toPersist = [...new Set([...live, ...provenByClaim.keys()])].filter((r) => !seenPrev.has(r));
+  if (toPersist.length) {
+    try { await redis.sadd(seenKey, toPersist[0], ...toPersist.slice(1)); await redis.expire(seenKey, 60 * 60 * 24 * 120); } catch { /* best-effort */ }
+  }
   const verifiedCandidates = candidates.filter((c) => verified.has(c));
 
   // ── In-window referral counts — one pipelined round-trip ──

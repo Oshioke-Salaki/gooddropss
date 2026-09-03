@@ -97,6 +97,7 @@ export const keys = {
   // ── Drop competition (reach) ──────────────────────────────────────────────
   compConfig:        ()                      => `gd:comp:config`,                  // JSON CompConfig (admin-editable)
   compReferrers:     ()                      => `gd:comp:referrers`,               // Set of roots with ≥1 in-window referral — leaderboard universe for pure referrers
+  compVerifiedSeen:  (id: string)            => `gd:comp:vseen:${id}`,             // Set of roots ever seen GoodDollar-verified this competition — keeps points from vanishing when a 3-day/6-month verification lapses
   // The wallet a winner's prize is paid to — their CURRENT GoodDrops wallet (the
   // address their invite link was generated from), refreshed on each referral.
   compPayoutWallet:  (referrerRoot: string)  => `gd:comp:wallet:${referrerRoot.toLowerCase()}`,
