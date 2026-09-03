@@ -30,6 +30,18 @@ function isUserCancel(e: unknown): boolean {
   return c === -32603 || c === "MAGIC_LINK_FAILED_VERIFICATION" || c === 4001;
 }
 
+// Best-effort brand name for the injected provider, so the button reads
+// "Connect Valora" / "Connect MiniPay" instead of a generic "Connect wallet".
+function injectedWalletName(): string {
+  if (typeof window === "undefined") return "your wallet";
+  const eth = (window as { ethereum?: Record<string, unknown> }).ethereum;
+  if (!eth) return "your wallet";
+  if (eth.isValora) return "Valora";
+  if (eth.isMiniPay) return "MiniPay";
+  if (eth.isMetaMask) return "MetaMask";
+  return "your wallet";
+}
+
 function GoogleIcon({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
@@ -59,15 +71,25 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // Wallet connectors = everything except Magic. EIP-6963 discovery adds named
   // wallets (id = rdns); prefer those and drop the generic `injected` fallback.
   const nonMagic = connectors.filter((c) => c.id !== "magic");
-  const named    = nonMagic.filter((c) => c.id !== "injected");
-  // A bare `injected` connector only connects when the browser actually exposes a
-  // wallet provider (an extension, or an in-app wallet browser like Valora/MiniPay/
-  // MetaMask). Plain mobile Safari has none, so attempting it silently fails and the
-  // button looks dead — drop it there so we can show real guidance instead.
+  const wc = nonMagic.find((c) => c.id === "walletConnect");
+  // EIP-6963-discovered wallets carry rdns ids (io.metamask, …) — i.e. everything
+  // that is neither our generic `injected` connector nor WalletConnect. These, plus
+  // WalletConnect, are the STANDARD options and behave exactly as they did before —
+  // no change for desktop-extension or plain-browser (non-Valora) users.
+  const discovered = nonMagic.filter((c) => c.id !== "injected" && c.id !== "walletConnect");
+  const injectedGeneric = nonMagic.find((c) => c.id === "injected");
   const hasInjectedProvider =
     typeof window !== "undefined" && typeof (window as { ethereum?: unknown }).ethereum !== "undefined";
-  const injectedFallback = hasInjectedProvider ? nonMagic.filter((c) => c.id === "injected") : [];
-  const walletConnectors: readonly Connector[] = named.length > 0 ? named : injectedFallback;
+  const walletConnectors: readonly Connector[] = [...discovered, ...(wc ? [wc] : [])];
+
+  // Valora / MiniPay expose a provider but (usually) NOT via EIP-6963, so they land
+  // on the generic `injected` connector — which the old code dropped whenever
+  // WalletConnect was configured, pushing those users onto the WalletConnect flow.
+  // ONLY in that specific case (an injected wallet is present and no named wallet
+  // was discovered) do we surface a one-tap native connect. Every other user hits
+  // the unchanged path below.
+  const injectedOnly: Connector | null =
+    discovered.length === 0 && hasInjectedProvider && injectedGeneric ? injectedGeneric : null;
 
   useEffect(() => { if (open && isConnected) onClose(); }, [open, isConnected, onClose]);
   useEffect(() => {
@@ -282,31 +304,69 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
               <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
             </div>
 
-            {/* Wallet — always tappable; when no provider is present we explain
-                what to do rather than dead-tapping (the old mobile-Safari bug). */}
-            <button
-              onClick={() => {
-                if (walletConnectors.length === 0) {
-                  setErr("No wallet found in this browser. Open GoodDrops inside your wallet app (Valora, MiniPay, MetaMask), or just use Google or email above — it creates a wallet for you automatically.");
-                  return;
-                }
-                if (walletConnectors.length === 1) pick(walletConnectors[0]);
-                else setView("wallets");
-              }}
-              disabled={busy}
-              style={{
-                width: "100%", padding: "14px",
-                background: "#fff", color: "#111",
-                border: "2px solid #111", borderRadius: 14,
-                fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
-                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                opacity: busy ? 0.6 : 1,
-              }}
-            >
-              <Wallet size={16} />
-              Connect a wallet
-              {walletConnectors.length > 1 && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
-            </button>
+            {injectedOnly ? (
+              /* Valora / MiniPay in-app wallet: one-tap native connect, plus a
+                 WalletConnect fallback link. This branch ONLY runs when an injected
+                 wallet is present with no named wallet discovered — non-Valora users
+                 never reach it and see the unchanged button below. */
+              <>
+                <button
+                  onClick={() => pick(injectedOnly)}
+                  disabled={busy}
+                  style={{
+                    width: "100%", padding: "14px",
+                    background: "#fff", color: "#111",
+                    border: "2px solid #111", borderRadius: 14,
+                    fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
+                    fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    opacity: busy ? 0.6 : 1,
+                  }}
+                >
+                  <Wallet size={16} />
+                  Connect {injectedWalletName()}
+                </button>
+                {wc && (
+                  <button
+                    onClick={() => pick(wc)}
+                    disabled={busy}
+                    style={{
+                      width: "100%", padding: "8px", marginTop: 8,
+                      background: "transparent", color: "#888", border: "none",
+                      fontWeight: 700, fontSize: 12.5, cursor: busy ? "wait" : "pointer",
+                      fontFamily: "inherit", textDecoration: "underline",
+                    }}
+                  >
+                    Use a different wallet (WalletConnect)
+                  </button>
+                )}
+              </>
+            ) : (
+              /* Unchanged path: desktop extensions (chooser), plain browser
+                 (WalletConnect), or nothing (guidance). */
+              <button
+                onClick={() => {
+                  if (walletConnectors.length === 0) {
+                    setErr("No wallet found in this browser. Open GoodDrops inside your wallet app (Valora, MiniPay, MetaMask), or just use Google or email above — it creates a wallet for you automatically.");
+                    return;
+                  }
+                  if (walletConnectors.length === 1) pick(walletConnectors[0]);
+                  else setView("wallets");
+                }}
+                disabled={busy}
+                style={{
+                  width: "100%", padding: "14px",
+                  background: "#fff", color: "#111",
+                  border: "2px solid #111", borderRadius: 14,
+                  fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
+                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                <Wallet size={16} />
+                Connect a wallet
+                {walletConnectors.length > 1 && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
+              </button>
+            )}
 
             <p style={{ margin: "16px 0 0", fontSize: 11, color: "#999", textAlign: "center", lineHeight: 1.5 }}>
               Google or email creates a secure wallet for you automatically. No seed phrase needed.
