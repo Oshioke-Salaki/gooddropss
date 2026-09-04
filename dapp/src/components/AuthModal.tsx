@@ -100,6 +100,26 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
 
+  // Keep the sheet pinned to the VISIBLE area (above the on-screen keyboard). On
+  // mobile in-app browsers (Valora/MiniPay/iOS), focusing the email field opens the
+  // keyboard and shrinks the visual viewport; a `position: fixed` sheet otherwise
+  // gets shoved to the top with a big gap. Tracking window.visualViewport keeps it
+  // sitting just above the keyboard so the input stays reachable. Held in state (not
+  // set imperatively) so re-renders while typing don't clobber it.
+  const [vp, setVp] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const vv = window.visualViewport;
+    if (!vv) return; // older browsers: falls back to the CSS full-height layout
+    const apply = () => setVp({ top: vv.offsetTop, height: vv.height });
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => { vv.removeEventListener("resize", apply); vv.removeEventListener("scroll", apply); };
+  }, [open]);
+  // Reset when the sheet closes so a stale keyboard height can't linger next open.
+  useEffect(() => { if (!open) setVp(null); }, [open]);
+
   if (!open) return null;
 
   function pick(c: Connector) {
@@ -176,7 +196,9 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     <div
       onClick={onClose}
       style={{
-        position: "fixed", inset: 0, zIndex: 2000,
+        position: "fixed", left: 0, right: 0, zIndex: 2000,
+        top: vp ? vp.top : 0,
+        height: vp ? vp.height : "100%",
         background: "rgba(17,17,17,0.55)", backdropFilter: "blur(4px)",
         display: "flex", alignItems: "flex-end", justifyContent: "center",
         fontFamily: "'Space Grotesk', sans-serif",
@@ -192,6 +214,9 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
           boxShadow: "0 -6px 0 #111",
           padding: "22px 22px calc(28px + env(safe-area-inset-bottom, 0px))",
           margin: "0 auto",
+          // Never taller than the visible area, and scroll inside if the keyboard
+          // squeezes it — so the email field is always reachable above the keyboard.
+          maxHeight: "100%", overflowY: "auto", boxSizing: "border-box",
         }}
       >
         {/* Header */}
