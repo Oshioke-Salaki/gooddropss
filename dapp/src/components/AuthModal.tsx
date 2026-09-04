@@ -121,27 +121,16 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   useEffect(() => {
     if (!open || typeof window === "undefined") return;
     const vv = window.visualViewport;
-    let alive = true;
-    const apply = () => { if (alive && vv) setKb(Math.max(0, window.innerHeight - vv.height - vv.offsetTop)); };
-    // iOS animates the keyboard open over a few hundred ms and doesn't always fire a
-    // visualViewport event on the first focus — so the height read too early is wrong
-    // (that's why the gap only closed once you kept typing). Re-measure immediately,
-    // whenever a field is focused, and again after the keyboard settles.
-    const applySoon = () => { apply(); setTimeout(apply, 150); setTimeout(apply, 400); };
-    applySoon();
+    const apply = () => { if (vv) setKb(Math.max(0, window.innerHeight - vv.height - vv.offsetTop)); };
+    apply();
     vv?.addEventListener("resize", apply);
     vv?.addEventListener("scroll", apply);
-    document.addEventListener("focusin", applySoon);
-    document.addEventListener("focusout", applySoon);
     // Stop the page behind from scrolling — on iOS that scroll drags the fixed sheet.
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      alive = false;
       vv?.removeEventListener("resize", apply);
       vv?.removeEventListener("scroll", apply);
-      document.removeEventListener("focusin", applySoon);
-      document.removeEventListener("focusout", applySoon);
       document.body.style.overflow = prevOverflow;
       setKb(0);
     };
