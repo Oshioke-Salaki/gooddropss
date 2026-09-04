@@ -80,7 +80,18 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const injectedGeneric = nonMagic.find((c) => c.id === "injected");
   const hasInjectedProvider =
     typeof window !== "undefined" && typeof (window as { ethereum?: unknown }).ethereum !== "undefined";
-  const walletConnectors: readonly Connector[] = [...discovered, ...(wc ? [wc] : [])];
+  // Order the wallet sheet: Valora first, then MiniPay, then other wallets, with
+  // WalletConnect last. Only reorders when those wallets are actually present, so a
+  // user without Valora/MiniPay sees the same order as before.
+  const walletRank = (c: Connector) => {
+    const n = (c.name ?? "").toLowerCase();
+    if (n.includes("valora")) return 0;
+    if (n.includes("minipay") || n.includes("mini pay")) return 1;
+    if (c.id === "walletConnect") return 9;
+    return 5;
+  };
+  const walletConnectors: readonly Connector[] =
+    [...discovered, ...(wc ? [wc] : [])].sort((a, b) => walletRank(a) - walletRank(b));
 
   // Valora / MiniPay expose a provider but (usually) NOT via EIP-6963, so they land
   // on the generic `injected` connector — which the old code dropped whenever
@@ -100,25 +111,41 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
 
-  // Keep the sheet pinned to the VISIBLE area (above the on-screen keyboard). On
-  // mobile in-app browsers (Valora/MiniPay/iOS), focusing the email field opens the
-  // keyboard and shrinks the visual viewport; a `position: fixed` sheet otherwise
-  // gets shoved to the top with a big gap. Tracking window.visualViewport keeps it
-  // sitting just above the keyboard so the input stays reachable. Held in state (not
-  // set imperatively) so re-renders while typing don't clobber it.
-  const [vp, setVp] = useState<{ top: number; height: number } | null>(null);
+  // Lift the sheet above the on-screen keyboard. On iOS / in-app wallet browsers
+  // (Valora/MiniPay), a `position: fixed` sheet stays anchored to the FULL page
+  // height — the keyboard doesn't shrink it — so the email field ends up behind the
+  // keyboard with a bare gap. We keep the dark overlay covering the whole screen and
+  // just pad its bottom by the keyboard's height (from visualViewport), which floats
+  // the sheet right above the keyboard. Held in state so typing can't clobber it.
+  const [kb, setKb] = useState(0);
   useEffect(() => {
     if (!open || typeof window === "undefined") return;
     const vv = window.visualViewport;
-    if (!vv) return; // older browsers: falls back to the CSS full-height layout
-    const apply = () => setVp({ top: vv.offsetTop, height: vv.height });
-    apply();
-    vv.addEventListener("resize", apply);
-    vv.addEventListener("scroll", apply);
-    return () => { vv.removeEventListener("resize", apply); vv.removeEventListener("scroll", apply); };
+    let alive = true;
+    const apply = () => { if (alive && vv) setKb(Math.max(0, window.innerHeight - vv.height - vv.offsetTop)); };
+    // iOS animates the keyboard open over a few hundred ms and doesn't always fire a
+    // visualViewport event on the first focus — so the height read too early is wrong
+    // (that's why the gap only closed once you kept typing). Re-measure immediately,
+    // whenever a field is focused, and again after the keyboard settles.
+    const applySoon = () => { apply(); setTimeout(apply, 150); setTimeout(apply, 400); };
+    applySoon();
+    vv?.addEventListener("resize", apply);
+    vv?.addEventListener("scroll", apply);
+    document.addEventListener("focusin", applySoon);
+    document.addEventListener("focusout", applySoon);
+    // Stop the page behind from scrolling — on iOS that scroll drags the fixed sheet.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      alive = false;
+      vv?.removeEventListener("resize", apply);
+      vv?.removeEventListener("scroll", apply);
+      document.removeEventListener("focusin", applySoon);
+      document.removeEventListener("focusout", applySoon);
+      document.body.style.overflow = prevOverflow;
+      setKb(0);
+    };
   }, [open]);
-  // Reset when the sheet closes so a stale keyboard height can't linger next open.
-  useEffect(() => { if (!open) setVp(null); }, [open]);
 
   if (!open) return null;
 
@@ -196,12 +223,12 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     <div
       onClick={onClose}
       style={{
-        position: "fixed", left: 0, right: 0, zIndex: 2000,
-        top: vp ? vp.top : 0,
-        height: vp ? vp.height : "100%",
+        position: "fixed", inset: 0, zIndex: 2000, boxSizing: "border-box",
+        paddingBottom: kb,
         background: "rgba(17,17,17,0.55)", backdropFilter: "blur(4px)",
         display: "flex", alignItems: "flex-end", justifyContent: "center",
         fontFamily: "'Space Grotesk', sans-serif",
+        transition: "padding-bottom 0.12s ease-out",
       }}
     >
       <div

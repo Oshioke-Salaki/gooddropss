@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
-import { Map, Trophy, Gift } from "lucide-react";
+import { Map, Trophy, Gift, Store } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -590,6 +590,7 @@ export function BottomNav() {
     { href: "/", label: "Map", Icon: Map },
     { href: "/leaderboard", label: "Rankings", Icon: Trophy },
     { href: "/competition", label: "Competition", Icon: Gift },
+    { href: "/merchant", label: "Spots", Icon: Store },
   ];
 
   return (
