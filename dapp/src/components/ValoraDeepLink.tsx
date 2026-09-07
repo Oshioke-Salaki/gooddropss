@@ -1,38 +1,29 @@
 "use client";
 import { useEffect } from "react";
 import { wagmiConfig } from "@/lib/wagmi";
-import { isValoraBrowser, VALORA_WC_ID } from "@/lib/valora";
+import { isValoraBrowser } from "@/lib/valora";
 
-// Inside Valora's in-app browser, connect straight to Valora: WalletConnect's own
+// Valora's WalletConnect deep link. From the WalletConnect registry, Valora's
+// mobile native scheme is `celo://wallet`; WalletConnect's own deep-link format is
+// `<scheme>/wc?uri=<encoded pairing uri>` — i.e. celo://wallet/wc?uri=… (note the
+// slash before `wc`). This is exactly the link WalletConnect uses when you tap
+// Valora in its list, so it routes into Valora and pairs the session.
+const VALORA_WC_DEEPLINK = "celo://wallet/wc?uri=";
+
+// Inside an in-app WebView (≈ Valora for a Celo dapp), WalletConnect's own wallet
 // list is suppressed (wagmi `showQrModal: false`), and here we catch the pairing
-// URI the connector emits and deep-link it into Valora — so "Connect with Valora"
-// opens Valora immediately instead of a 30-wallet chooser. Gated on isValoraBrowser,
-// so it's inert for every other user.
+// URI the connector emits and deep-link it straight into Valora — so "Connect with
+// Valora" opens Valora immediately instead of a 30-wallet chooser. Inert everywhere
+// else.
 export function ValoraDeepLink() {
   useEffect(() => {
     if (!isValoraBrowser()) return;
     const wc = wagmiConfig.connectors.find((c) => c.id === "walletConnect");
     if (!wc) return;
 
-    // Valora's deep link. Default to its native scheme, then refine from the
-    // authoritative WalletConnect explorer entry (pre-fetched so it's ready before
-    // the user taps connect). Format matches WalletConnect's own: `${link}wc?uri=`.
-    let base = "celo://wallet/wc?uri=";
-    const pid = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-    if (pid) {
-      fetch(`https://explorer-api.walletconnect.com/v3/wallets?projectId=${pid}&ids=${VALORA_WC_ID}`)
-        .then((r) => r.json())
-        .then((d) => {
-          const m = d?.listings?.[VALORA_WC_ID]?.mobile;
-          if (m?.native) base = `${m.native}wc?uri=`;
-          else if (m?.universal) base = `${String(m.universal).replace(/\/$/, "")}/wc?uri=`;
-        })
-        .catch(() => { /* keep the native-scheme default */ });
-    }
-
     const onMessage = (payload: { type?: string; data?: unknown }) => {
       if (payload?.type === "display_uri" && typeof payload.data === "string") {
-        window.location.href = base + encodeURIComponent(payload.data);
+        window.location.href = VALORA_WC_DEEPLINK + encodeURIComponent(payload.data);
       }
     };
     // The walletConnect connector emits { type: "display_uri", data: uri } on its

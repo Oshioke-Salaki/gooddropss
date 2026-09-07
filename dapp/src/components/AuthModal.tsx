@@ -55,7 +55,7 @@ function GoogleIcon({ size = 18 }: { size?: number }) {
 }
 
 export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { connect, connectAsync, connectors, isPending } = useConnect();
+  const { connect, connectAsync, connectors, isPending, reset } = useConnect();
   const { isConnected } = useAccount();
 
   const [view, setView] = useState<"main" | "wallets">("main");
@@ -111,6 +111,10 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
+  // Clear any stuck connect state each time the sheet opens. Without this, a wallet
+  // attempt that didn't finish (e.g. the user came back from Valora without pairing)
+  // leaves `isPending` true, which greys out the connect button on the next open.
+  useEffect(() => { if (open) reset(); }, [open, reset]);
 
   // Lift the sheet above the on-screen keyboard. On iOS / in-app wallet browsers
   // (Valora/MiniPay), a `position: fixed` sheet stays anchored to the FULL page
