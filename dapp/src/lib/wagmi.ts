@@ -2,6 +2,7 @@ import { createConfig, http, type CreateConnectorFn } from "wagmi";
 import { celo } from "viem/chains";
 import { injected, walletConnect } from "wagmi/connectors";
 import { dedicatedWalletConnector } from "@magiclabs/wagmi-connector";
+import { VALORA_WC_ID, isValoraBrowser } from "@/lib/valora";
 
 const CELO_RPC = "https://forno.celo.org";
 
@@ -41,14 +42,17 @@ if (typeof window !== "undefined") {
   // or shows a QR on desktop. Client-only (it touches window/IndexedDB), and
   // skipped cleanly when the project id is unset so the build never breaks.
   const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
-  // Valora's WalletConnect Explorer id — pinned to the top of the wallet list so our
-  // Celo users find it first instead of hunting through 30+ wallets.
-  const VALORA_WC_ID = "d01c7758d741b363e637a817a09bcf579feae4db9f5bb16f599fdd1f66e2f974";
+  // Inside Valora's browser we hide WalletConnect's own wallet list and deep-link
+  // straight into Valora (see ValoraDeepLink); everywhere else the list shows as
+  // normal, with Valora pinned to the top.
+  const inValora = isValoraBrowser();
   if (wcProjectId) {
     connectors.push(
       walletConnect({
         projectId: wcProjectId,
-        showQrModal: true,
+        // Inside Valora: no list — ValoraDeepLink catches the URI and opens Valora.
+        // Elsewhere: WalletConnect's own modal (with Valora recommended at the top).
+        showQrModal: !inValora,
         metadata: {
           name: "GoodDrops",
           description: "Hide and hunt real G$ anywhere in the world.",

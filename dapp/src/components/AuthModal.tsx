@@ -4,6 +4,7 @@ import { useAccount, useConnect } from "wagmi";
 import type { Connector } from "wagmi";
 import { celo } from "viem/chains";
 import { Mail, Wallet, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { isValoraBrowser } from "@/lib/valora";
 
 // Login sheet. We collect the email ourselves and hand it straight to Magic, so
 // Magic only ever renders its OTP *code* screen — never its generic "Sign-in
@@ -404,8 +405,8 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
                 }}
               >
                 <Wallet size={16} />
-                Connect a wallet
-                {walletConnectors.length > 1 && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
+                {isValoraBrowser() ? "Connect with Valora" : "Connect a wallet"}
+                {walletConnectors.length > 1 && !isValoraBrowser() && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
               </button>
             )}
 

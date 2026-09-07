@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/reac
 import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AuthLoadingGate } from "@/components/AuthLoadingGate";
+import { ValoraDeepLink } from "@/components/ValoraDeepLink";
 import { SetNameSheet } from "@/components/SetNameSheet";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
@@ -62,6 +63,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <AuthLoadingGate />
+          <ValoraDeepLink />
           <QueryCacheManager />
           <ChainGuard />
           <ReferralCapture />
