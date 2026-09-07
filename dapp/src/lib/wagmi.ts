@@ -41,6 +41,9 @@ if (typeof window !== "undefined") {
   // or shows a QR on desktop. Client-only (it touches window/IndexedDB), and
   // skipped cleanly when the project id is unset so the build never breaks.
   const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+  // Valora's WalletConnect Explorer id — pinned to the top of the wallet list so our
+  // Celo users find it first instead of hunting through 30+ wallets.
+  const VALORA_WC_ID = "d01c7758d741b363e637a817a09bcf579feae4db9f5bb16f599fdd1f66e2f974";
   if (wcProjectId) {
     connectors.push(
       walletConnect({
@@ -55,7 +58,12 @@ if (typeof window !== "undefined") {
         // The QR / deep-link modal must render ABOVE our sign-in sheet (z 2000)
         // and session loader (z 3000) — otherwise the popup opens invisibly behind
         // them and the connect just spins (seen inside Valora, and on desktop).
-        qrModalOptions: { themeVariables: { "--wcm-z-index": "2147483000" } },
+        // `explorerRecommendedWalletIds` pins Valora to the top of the list so our
+        // Celo users aren't hunting for it among 30+ other wallets.
+        qrModalOptions: {
+          themeVariables: { "--wcm-z-index": "2147483000" },
+          explorerRecommendedWalletIds: [VALORA_WC_ID],
+        },
       }),
     );
   }
