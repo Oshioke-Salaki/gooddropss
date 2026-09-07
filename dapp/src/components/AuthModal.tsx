@@ -413,11 +413,6 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             <p style={{ margin: "16px 0 0", fontSize: 11, color: "#999", textAlign: "center", lineHeight: 1.5 }}>
               Google or email creates a secure wallet for you automatically. No seed phrase needed.
             </p>
-            {/* TEMPORARY debug — reveals the browser user-agent so we can detect
-                Valora's in-app browser precisely. Remove once detection is set. */}
-            <p style={{ margin: "10px 0 0", fontSize: 9, color: "#ccc", textAlign: "center", wordBreak: "break-all", lineHeight: 1.4 }}>
-              UA: {typeof navigator !== "undefined" ? navigator.userAgent : ""}
-            </p>
           </>
         ) : (
           <>
