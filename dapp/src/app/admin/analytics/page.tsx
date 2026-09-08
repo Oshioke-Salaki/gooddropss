@@ -15,13 +15,14 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 // Manual adjustment: G$ paid out of the reward wallet (0x4412…6605) counts as
 // circulation but isn't in the subgraph (they're plain G$ transfers). This is the
 // full on-chain outflow from that wallet, matching Dune:
-//   Week-1 prizes    478,632  (hunters 239,316 + droppers 239,316)
-//   Reward transfer  200,000  (Aug 6 → 0x4f649e…3091)
-//   Misc/early            75
-//   Sprint prizes    498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
-//   ──────────────────────────
-//   Total          1,176,707
-const PRIZE_G_DISTRIBUTED = 1_176_707n * 10n ** 18n;
+//   Week-1 prizes      478,632  (hunters 239,316 + droppers 239,316)
+//   Reward transfer    200,000  (Aug 6 → 0x4f649e…3091)
+//   Misc/early              75
+//   Sprint prizes      498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
+//   Big Drop prizes  1,000,000  (Sep 8 top-10: 200k+120k+105k+90k+85k + 5×80k)
+//   ────────────────────────────
+//   Total            2,176,707
+const PRIZE_G_DISTRIBUTED = 2_176_707n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";

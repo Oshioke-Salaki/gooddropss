@@ -8,18 +8,20 @@ import { UserHandle } from "@/components/UserHandle";
 
 function timeAgo(ts: number): string {
   const diff = Math.floor(Date.now() / 1000) - ts;
-  if (diff < 60)    return "just now";
+  if (diff < 60) return "just now";
   if (diff < 3_600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86_400) return `${Math.floor(diff / 3_600)}h ago`;
   return `${Math.floor(diff / 86_400)}d ago`;
 }
 
 export function ActivityTicker() {
-  const [items, setItems]       = useState<ActivityItem[]>([]);
-  const [visible, setVisible]   = useState<ActivityItem[]>([]);
+  const [items, setItems] = useState<ActivityItem[]>([]);
+  const [visible, setVisible] = useState<ActivityItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const seenRef   = useRef<Set<string>>(new Set());
-  const timerRef  = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const seenRef = useRef<Set<string>>(new Set());
+  const timerRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
   async function load() {
     const data = await fetchRecentActivity();
@@ -55,7 +57,10 @@ export function ActivityTicker() {
 
   function dismiss(id: string) {
     const t = timerRef.current.get(id);
-    if (t) { clearTimeout(t); timerRef.current.delete(id); }
+    if (t) {
+      clearTimeout(t);
+      timerRef.current.delete(id);
+    }
     setDismissed((prev) => new Set([...prev, id]));
     setVisible((prev) => prev.filter((a) => a.id !== id));
   }
@@ -109,30 +114,54 @@ export function ActivityTicker() {
             }}
             onClick={() => dismiss(item.id)}
           >
-            <div style={{
-              width: 28, height: 28,
-              borderRadius: "50%",
-              background: item.type === "drop" ? "rgba(191,253,0,0.12)" : "rgba(0,207,255,0.12)",
-              border: `1px solid ${item.type === "drop" ? "#BFFD0044" : "#00CFFF44"}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}>
-              {item.type === "drop"
-                ? <Coins size={14} color="#BFFD00" />
-                : <Target size={14} color="#00CFFF" />}
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background:
+                  item.type === "drop"
+                    ? "rgba(191,253,0,0.12)"
+                    : "rgba(0,207,255,0.12)",
+                border: `1px solid ${item.type === "drop" ? "#BFFD0044" : "#00CFFF44"}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              {item.type === "drop" ? (
+                <Coins size={14} color="#BFFD00" />
+              ) : (
+                <Target size={14} color="#00CFFF" />
+              )}
             </div>
             <div style={{ minWidth: 0 }}>
-              <p style={{
-                margin: 0, fontSize: 12, fontWeight: 700, color: "#ddd",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#ddd",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 <UserHandle address={item.address} />{" "}
-                <span style={{ color: item.type === "drop" ? "#BFFD00" : "#00CFFF", fontWeight: 900 }}>
+                <span
+                  style={{
+                    color: item.type === "drop" ? "#BFFD00" : "#00CFFF",
+                    fontWeight: 900,
+                  }}
+                >
                   {item.type === "drop" ? "dropped" : "claimed"}
                 </span>{" "}
                 {formatG$(item.amount)} G$
               </p>
-              <p style={{ margin: 0, fontSize: 10, color: "#444", marginTop: 1 }}>
+              <p
+                style={{ margin: 0, fontSize: 10, color: "#444", marginTop: 1 }}
+              >
                 {timeAgo(item.timestamp)}
               </p>
             </div>
