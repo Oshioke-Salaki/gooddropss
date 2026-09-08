@@ -58,6 +58,12 @@ export async function GET(req: NextRequest) {
       : { root, username: nameOf.get(root) ?? null, reach: 0, claims: 0, refs: 0, depth: 0, downline: 0, base: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
   }
 
+  // ?me=1 — just this address's standing, for the cross-link on the other board.
+  // Same computation, but a tiny payload instead of the full leaderboard.
+  if (req.nextUrl.searchParams.get("me")) {
+    return NextResponse.json({ ok: true, phase, rank: you && "rank" in you ? you.rank : null, score: you?.score ?? 0 }, { headers: CDN });
+  }
+
   return NextResponse.json({
     ok: true, mode: "tiered", phase, stats,
     config: {

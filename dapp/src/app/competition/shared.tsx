@@ -94,6 +94,45 @@ export function InviteLink({ myLink }: { myLink: string }) {
   );
 }
 
+// Your standing in the OTHER competition. Uses each board's `?me=1` mode, which
+// returns just your rank instead of the whole leaderboard — a few hundred bytes,
+// CDN-cached, fetched once after mount and only when signed in.
+export interface Standing { rank: number | null; count: number; earnedWei: string; score: number }
+export function useOtherStanding(endpoint: string, address?: string) {
+  const [s, setS] = useState<Standing | null>(null);
+  useEffect(() => {
+    if (!address) { setS(null); return; }
+    let alive = true;
+    fetch(`${endpoint}?me=1&address=${address}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!alive || !d?.ok) return;
+        setS({ rank: d.rank ?? null, count: d.count ?? 0, earnedWei: d.earnedWei ?? "0", score: d.score ?? 0 });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [endpoint, address]);
+  return s;
+}
+
+// "You're also #N in the other competition" nudge, so nobody misses the second pot.
+export function CrossLink({ label, standing, detail, onSwitch }: {
+  label: string; standing: Standing | null; detail: string; onSwitch: () => void;
+}) {
+  return (
+    <button onClick={onSwitch}
+      className="w-full flex items-center gap-3 border-2 border-ink rounded-2xl px-4 py-3 mb-5 bg-card shadow-brutal-sm hover:bg-cream transition-colors text-left">
+      <div className="flex-1 min-w-0">
+        <p className="font-black text-sm leading-tight">{label}</p>
+        <p className="text-xs text-muted leading-snug truncate">
+          {standing?.rank ? `You're #${standing.rank} — ${detail}` : detail}
+        </p>
+      </div>
+      <span className="shrink-0 font-black text-sm">→</span>
+    </button>
+  );
+}
+
 // Shared polling: refresh every 60s while the contest is still relevant, and
 // immediately when the tab regains focus.
 export function usePoll(load: () => void, active: boolean) {

@@ -9,7 +9,7 @@ import {
 import clsx from "clsx";
 import {
   fmtG, nameOrShort, rankBg, useNow, usePoll,
-  Countdown, HowStep, StatCard, InviteLink, type Phase,
+  Countdown, HowStep, StatCard, InviteLink, CrossLink, useOtherStanding, type Phase,
 } from "./shared";
 
 interface InviteeRef { root: string; username: string | null; at: number; covered: boolean }
@@ -33,7 +33,7 @@ interface Data {
 
 // The REFERRAL competition: a flat rate per qualifying referral, unlocked at a
 // threshold, paid first-come-first-served until the pot is exhausted.
-export function ReferralBoard({ address, myLink }: { address?: string; myLink: string }) {
+export function ReferralBoard({ address, myLink, onSwitch }: { address?: string; myLink: string; onSwitch: () => void }) {
   const [data, setData] = useState<Data | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -66,6 +66,7 @@ export function ReferralBoard({ address, myLink }: { address?: string; myLink: s
   const perRefG = cfg ? Math.round(Number(cfg.perReferralWei) / 1e18) : 0;
   const threshold = cfg?.threshold ?? 5;
   const stats = data?.stats;
+  const other = useOtherStanding("/api/comp/leaderboard", address);
   const you = data?.you ?? null;
   const participants = data?.participants ?? [];
   const slotsLeft = stats ? Math.max(0, stats.slots - stats.slotsUsed) : 0;
@@ -154,6 +155,16 @@ export function ReferralBoard({ address, myLink }: { address?: string; myLink: s
         <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5 text-sm text-muted">
           Sign in to get your invite link and start referring.
         </div>
+      )}
+
+      {/* Standing in the points competition */}
+      {address && (
+        <CrossLink
+          label="Points competition"
+          standing={other}
+          detail={other?.rank ? `${other.score} points there` : "Drop, claim and refer for a share of the pot — see the board"}
+          onSwitch={onSwitch}
+        />
       )}
 
       {/* Leaderboard */}

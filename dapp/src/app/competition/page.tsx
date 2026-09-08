@@ -67,8 +67,8 @@ export default function CompetitionPage() {
         </div>
 
         {tab === "points"
-          ? <PointsBoard address={address} myLink={myLink} />
-          : <ReferralBoard address={address} myLink={myLink} />}
+          ? <PointsBoard address={address} myLink={myLink} onSwitch={() => pick("referrals")} />
+          : <ReferralBoard address={address} myLink={myLink} onSwitch={() => pick("points")} />}
       </div>
       <BottomNav />
     </div>

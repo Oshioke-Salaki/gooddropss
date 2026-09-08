@@ -52,6 +52,15 @@ export async function GET(req: NextRequest) {
       : { root, username: nameOf.get(root) ?? null, count: 0, covered: 0, unlocked: false, earnedWei: "0", rank: null, invitees: [] };
   }
 
+  // ?me=1 — just this address's standing, for the cross-link on the other board.
+  if (req.nextUrl.searchParams.get("me")) {
+    return NextResponse.json({
+      ok: true, phase,
+      rank: you && "rank" in you ? you.rank : null,
+      count: you?.count ?? 0, earnedWei: you?.earnedWei ?? "0", unlocked: you?.unlocked ?? false,
+    }, { headers: CDN });
+  }
+
   return NextResponse.json({
     ok: true, phase, stats,
     config: {
