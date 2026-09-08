@@ -21,6 +21,9 @@ const REWARD_WALLET = getAddress("0x4412C27Bb9caae546E71Fc3D4cE7F328F11E6605");
 const LEDGER = join(dirname(fileURLToPath(import.meta.url)), "tiered-payouts.json");
 const SEND = process.argv.includes("--send");
 const FORCE = process.argv.includes("--force");
+// --root pays the identity root shown on the leaderboard, instead of the last
+// wallet the winner's invite link was created from (gd:comp:wallet:<root>).
+const USE_ROOT = process.argv.includes("--root");
 const API = (process.argv.find((a) => a.startsWith("--api=")) ?? "").split("=")[1] || "https://gooddrops.xyz";
 
 const res = await fetch(`${API}/api/comp/leaderboard`);
@@ -34,6 +37,7 @@ if (winners.length === 0) { console.error("✗ No winners with a prize on the bo
 const redis = Redis.fromEnv();
 // Resolve each winner's payout wallet (the one their invite link was made from).
 for (const w of winners) {
+  if (USE_ROOT) { w.payout = getAddress(w.root); continue; }
   const wallet = await redis.get(`gd:comp:wallet:${w.root.toLowerCase()}`);
   w.payout = getAddress(wallet && /^0x[0-9a-fA-F]{40}$/.test(wallet) ? wallet : w.root);
 }

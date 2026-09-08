@@ -20,9 +20,10 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 //   Misc/early              75
 //   Sprint prizes      498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
 //   Big Drop prizes  1,000,000  (Sep 8 top-10: 200k+120k+105k+90k+85k + 5×80k)
+//   Social campaign    400,000  (Sep 8: 4 winners × 100k)
 //   ────────────────────────────
-//   Total            2,176,707
-const PRIZE_G_DISTRIBUTED = 2_176_707n * 10n ** 18n;
+//   Total            2,576,707
+const PRIZE_G_DISTRIBUTED = 2_576_707n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";

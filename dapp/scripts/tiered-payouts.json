@@ -1,0 +1,82 @@
+{
+  "0x2fafe199cfc0c0c45571b2cfe1fa03a0a28f58b5": {
+    "rank": 1,
+    "username": "aarif",
+    "g$": 200000,
+    "to": "0x2FAfE199CFC0c0c45571b2cfe1fA03a0a28F58b5",
+    "txHash": "0x641f6254c061033c99e91e9ed8ce823ec0093054587862204875fc14feeeac34",
+    "at": "2026-09-08T11:47:30.418Z"
+  },
+  "0x9607976c567dbe693755778a45382214876aa4d8": {
+    "rank": 2,
+    "username": "samuel",
+    "g$": 120000,
+    "to": "0x9607976c567dbE693755778a45382214876Aa4D8",
+    "txHash": "0xb4a1fc0432bbd8c7c40289a9ae83109a94ea273cc115fde31e112d2c6ac664ee",
+    "at": "2026-09-08T11:47:32.976Z"
+  },
+  "0xdc892000c92d377f3dd13e78e9538921abee1665": {
+    "rank": 3,
+    "username": "hasan",
+    "g$": 105000,
+    "to": "0xDC892000c92d377F3DD13e78E9538921aBEE1665",
+    "txHash": "0x43bc0acb6b68e582b9feb68af2d1f8c9f09b859af449555724093858a9f9b88d",
+    "at": "2026-09-08T11:47:36.316Z"
+  },
+  "0x80f9f37d92bb0cbbfa0efebe9dbd6e519ed872f8": {
+    "rank": 4,
+    "username": "Bigbounty",
+    "g$": 90000,
+    "to": "0x80f9f37d92bb0CBBfa0EFEbe9Dbd6e519Ed872f8",
+    "txHash": "0xd236579bf13913b31f3268d8b0537b6fb060044aab7a80bab57efb40f3b34d4e",
+    "at": "2026-09-08T11:47:38.798Z"
+  },
+  "0xc25cdaa3fac68c3214296d0d09f795c35254b423": {
+    "rank": 5,
+    "username": "marvellobasi",
+    "g$": 85000,
+    "to": "0xC25CdaA3FAC68c3214296D0d09f795C35254B423",
+    "txHash": "0xf4812a4cb71dd2e25e350dea2f82f97d64e8ba5df9a8ab9e5793018112075d65",
+    "at": "2026-09-08T11:47:41.583Z"
+  },
+  "0x7ec29364f4b3e2748cb1641946ad5a0589a4306b": {
+    "rank": 6,
+    "username": "Coiled",
+    "g$": 80000,
+    "to": "0x7EC29364f4b3E2748cB1641946ad5a0589A4306B",
+    "txHash": "0x5eec25bf234d1bf562eeb7f339459e1c762882c03245235e415b90020d279b6d",
+    "at": "2026-09-08T11:47:43.968Z"
+  },
+  "0x95739c851b97f0b3e501635746ef407191b67fec": {
+    "rank": 7,
+    "username": "Denji",
+    "g$": 80000,
+    "to": "0x95739c851b97f0B3E501635746Ef407191B67fEC",
+    "txHash": "0x2eeefd336013a4a2dc11712f9bea1699099c51e7dffedbf7de79242e727833cb",
+    "at": "2026-09-08T11:47:46.909Z"
+  },
+  "0x199cdc1ca5efc16e2f41e66b047b0305e2bd7ebf": {
+    "rank": 8,
+    "username": "Gooddollars",
+    "g$": 80000,
+    "to": "0x199cDc1ca5EFc16E2f41E66B047b0305E2bD7eBf",
+    "txHash": "0xdc483167bcca45ac0e2f071f042e4bdea4257fef5fe4b73567cebc808311a3c4",
+    "at": "2026-09-08T11:47:49.352Z"
+  },
+  "0xafd5f44946c4101c3272e2479086c40da5c5e8a8": {
+    "rank": 9,
+    "username": "JheeArr",
+    "g$": 80000,
+    "to": "0xAfd5F44946c4101C3272e2479086C40Da5c5E8a8",
+    "txHash": "0x86c3ef1ffdb8d85c51fc9b9a243eb99c3768f322f0a1fa11224cd041c0edd496",
+    "at": "2026-09-08T11:47:51.727Z"
+  },
+  "0xc2c2885a36ccf297bea31be2ff2fdc13101b21f1": {
+    "rank": 10,
+    "username": "Ghostbusters",
+    "g$": 80000,
+    "to": "0xc2C2885A36ccF297Bea31be2fF2FdC13101b21F1",
+    "txHash": "0xadb1040346048ac137ca697627c8ad8912878ed7d0dd6205b2933d464aa9466b",
+    "at": "2026-09-08T11:47:53.018Z"
+  }
+}

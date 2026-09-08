@@ -1,0 +1,30 @@
+{
+  "0xe2d38281be8833d79f0d4ea50367b35986d77ba7": {
+    "username": "Abuammar",
+    "g$": 100000,
+    "to": "0xE2D38281BE8833d79f0D4ea50367B35986d77bA7",
+    "txHash": "0x56c2d3cbea105b55a6cafbf61510eced9600fa1eb3f30b8614f2638159f2f117",
+    "at": "2026-09-08T12:16:45.857Z"
+  },
+  "0x841542404f54ed377905a1277617fe862a985ec9": {
+    "username": "Blackbutler",
+    "g$": 100000,
+    "to": "0x841542404F54eD377905a1277617fe862A985EC9",
+    "txHash": "0x58b04f627588bef7d491ad413bb9ea79126bd4bba739e9f7c83d7912ff9d09f5",
+    "at": "2026-09-08T12:16:48.526Z"
+  },
+  "0x199cdc1ca5efc16e2f41e66b047b0305e2bd7ebf": {
+    "username": "Gooddollars",
+    "g$": 100000,
+    "to": "0x199cDc1ca5EFc16E2f41E66B047b0305E2bD7eBf",
+    "txHash": "0xc0c1f8944009df39757b68c3cd6840d2e6fc56e16a2586562e1baf0461f404c8",
+    "at": "2026-09-08T12:16:51.021Z"
+  },
+  "0xc2c2885a36ccf297bea31be2ff2fdc13101b21f1": {
+    "username": "Ghostbusters",
+    "g$": 100000,
+    "to": "0xc2C2885A36ccF297Bea31be2fF2FdC13101b21F1",
+    "txHash": "0x59b2e4f005f845443950df4648f482f9259805f1fed22266498ac2529ec473d0",
+    "at": "2026-09-08T12:16:53.319Z"
+  }
+}
