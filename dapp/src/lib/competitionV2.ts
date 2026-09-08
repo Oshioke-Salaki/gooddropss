@@ -26,6 +26,7 @@ export interface ScoreEntry {
   score: number;         // base + depth  (the rank key)
   dropsClaimed: number;  // how many of your drops got claimed (display)
   gDropped: number;      // total G$ that actually reached people (whole G$)
+  lastAt: number;        // unix secs of their most recent scoring event (tiebreak)
   claimers: ReachClaimer[];
 }
 
@@ -88,7 +89,7 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
 
   // ── Scoring set: in-window claims of drops worth ≥ minDrop ──
   const claimed = claimsAll.filter((d) => d.amount >= minWei);
-  if (claimed.length === 0 && (await redis.scard(keys.compReferrers())) === 0) return { entries: [], stats };
+  if (claimed.length === 0 && (await redis.scard(keys.compReferrers(cfg.id))) === 0) return { entries: [], stats };
 
   const addrs = new Set<string>();
   for (const d of claimed) { addrs.add(d.dropper.toLowerCase()); addrs.add(d.claimer.toLowerCase()); }
@@ -98,6 +99,10 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   const dropperClaimers = new Map<string, Map<string, bigint>>();
   const claimerDroppers = new Map<string, Set<string>>();
   const dropCount = new Map<string, number>();
+  // Most recent scoring event per person — used to break ties by recency so the
+  // order is both meaningful and perfectly stable between renders.
+  const lastAt = new Map<string, number>();
+  const touch = (root: string, t: number) => { if (t > (lastAt.get(root) ?? 0)) lastAt.set(root, t); };
   for (const d of claimed) {
     const dr = rootOf(d.dropper), cl = rootOf(d.claimer);
     if (dr === cl) continue;
@@ -105,9 +110,10 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
     m.set(cl, (m.get(cl) ?? 0n) + d.amount);
     addTo(claimerDroppers, cl, dr);
     dropCount.set(dr, (dropCount.get(dr) ?? 0) + 1);
+    touch(dr, d.claimedAt); touch(cl, d.claimedAt);
   }
 
-  const enrolledReferrers = ((await redis.smembers<string[]>(keys.compReferrers())) ?? []).map((r) => r.toLowerCase());
+  const enrolledReferrers = ((await redis.smembers<string[]>(keys.compReferrers(cfg.id))) ?? []).map((r) => r.toLowerCase());
 
   // ── Referral tree: parent (referredBy) of every candidate, then grandparents ──
   const candidates = [...new Set([...dropperClaimers.keys(), ...claimerDroppers.keys(), ...enrolledReferrers])];
@@ -149,12 +155,21 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   const verifiedCandidates = candidates.filter((c) => verified.has(c));
 
   // ── In-window referral counts — one pipelined round-trip ──
+  // One ZRANGE (withScores) per candidate gives BOTH the count and the credit
+  // timestamps — same single round trip a ZCOUNT would cost, but it also feeds the
+  // recency tiebreak below.
   const refsOf = new Map<string, number>();
   if (verifiedCandidates.length) {
     const pipe = redis.pipeline();
-    for (const r of verifiedCandidates) pipe.zcount(keys.referralCredited(r), cfg.startsAt, cfg.endsAt);
-    const counts = await pipe.exec<number[]>();
-    verifiedCandidates.forEach((r, i) => refsOf.set(r, Number(counts[i] ?? 0)));
+    for (const r of verifiedCandidates) {
+      pipe.zrange(keys.referralCredited(r), cfg.startsAt, cfg.endsAt, { byScore: true, withScores: true });
+    }
+    const rows = await pipe.exec<(string | number)[][]>();
+    verifiedCandidates.forEach((r, i) => {
+      const flat = rows[i] ?? [];
+      refsOf.set(r, Math.floor(flat.length / 2));
+      for (let j = 1; j < flat.length; j += 2) touch(r, Number(flat[j]));
+    });
   }
   stats.referredUsers = [...refsOf.values()].reduce((s, n) => s + n, 0);
 
@@ -205,10 +220,15 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
       root,
       reach: b?.reach ?? 0, claims: b?.claims ?? 0, refs: b?.refs ?? refsOf.get(root) ?? 0,
       depth, downline: downlineOf.get(root)?.size ?? 0, base,
-      score, dropsClaimed: b?.dropsClaimed ?? 0, gDropped: b?.gDropped ?? 0, claimers: b?.claimers ?? [],
+      score, dropsClaimed: b?.dropsClaimed ?? 0, gDropped: b?.gDropped ?? 0,
+      lastAt: lastAt.get(root) ?? 0, claimers: b?.claimers ?? [],
     });
   }
 
-  entries.sort((a, b) => b.score - a.score || b.gDropped - a.gDropped || b.reach - a.reach || a.root.localeCompare(b.root));
+  // Rank: score, then RECENCY (whoever scored most recently sits above a tied
+  // rival — so a fresh point visibly moves you up), then G$ moved, then a stable
+  // key so the order can never shuffle between renders.
+  entries.sort((a, b) =>
+    b.score - a.score || b.lastAt - a.lastAt || b.gDropped - a.gDropped || a.root.localeCompare(b.root));
   return { entries, stats };
 }

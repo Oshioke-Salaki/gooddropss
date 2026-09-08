@@ -3,7 +3,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { fetchHasActivity } from "@/lib/subgraph";
-import { getCompConfig } from "@/lib/competition";
+import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
 
 export const runtime = "nodejs";
 
@@ -56,8 +56,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Credit — idempotent. Backdate the score into the competition window so a
-  // recovery still counts even if you run it after the deadline.
-  const cfg = await getCompConfig(redis);
+  // recovery still counts even if you run it after the deadline. NOTE: for the
+  // referral competition the credit timestamp also decides first-come-first-served
+  // pot ordering, so a recovery is deliberately stamped at "now" (clamped into the
+  // window) — it never jumps ahead of referrals that genuinely happened earlier.
+  const [cfg, refCfg] = await Promise.all([getCompConfig(redis), getRefCompConfig(redis)]);
   const nowSec = Math.floor(Date.now() / 1000);
   const scoreTs = Math.min(Math.max(nowSec, cfg.startsAt), Math.max(cfg.startsAt, cfg.endsAt - 1));
 
@@ -67,8 +70,11 @@ export async function POST(req: NextRequest) {
   if (added) await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
   const wallet = await redis.get<string>(keys.compPayoutWallet(referrerRoot));
   if (!wallet) await redis.set(keys.compPayoutWallet(referrerRoot), refAddr);
-  // Backdated into the window, so the referrer belongs in the leaderboard universe.
-  await redis.sadd(keys.compReferrers(), referrerRoot);
+  // Enroll in whichever competitions the backdated credit falls inside.
+  await Promise.all([
+    inCompWindow(cfg, scoreTs) ? redis.sadd(keys.compReferrers(cfg.id), referrerRoot) : Promise.resolve(),
+    inRefCompWindow(refCfg, scoreTs) ? redis.sadd(keys.compReferrers(refCfg.id), referrerRoot) : Promise.resolve(),
+  ]);
 
   return NextResponse.json({
     ok: true,

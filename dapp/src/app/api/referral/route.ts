@@ -4,7 +4,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { referralAcceptMessage, REF_ADDR_RE } from "@/lib/referral";
 import { fetchHasActivity } from "@/lib/subgraph";
-import { getCompConfig, inCompWindow } from "@/lib/competition";
+import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
 
 export const runtime = "nodejs";
 
@@ -111,11 +111,15 @@ export async function POST(req: NextRequest) {
       // Remember the wallet this person is actively using (the one their invite link
       // was made from) — competition prizes are paid there when possible, not the root.
       await redis.set(keys.compPayoutWallet(referrerRoot), referrer.toLowerCase());
-      // If this referral lands in the live window, enroll the referrer so the
-      // leaderboard can surface pure referrers (who may never drop or claim).
+      // Enroll the referrer in whichever competitions are live right now. The two
+      // run independently (own windows, own participant sets), so a referral can
+      // count toward both, one, or neither.
       try {
-        const cfg = await getCompConfig(redis);
-        if (inCompWindow(cfg, nowSec)) await redis.sadd(keys.compReferrers(), referrerRoot);
+        const [cfg, refCfg] = await Promise.all([getCompConfig(redis), getRefCompConfig(redis)]);
+        const enroll: Promise<unknown>[] = [];
+        if (inCompWindow(cfg, nowSec)) enroll.push(redis.sadd(keys.compReferrers(cfg.id), referrerRoot));
+        if (inRefCompWindow(refCfg, nowSec)) enroll.push(redis.sadd(keys.compReferrers(refCfg.id), referrerRoot));
+        if (enroll.length) await Promise.all(enroll);
       } catch { /* enrollment is best-effort; attribution is already saved */ }
     }
 
