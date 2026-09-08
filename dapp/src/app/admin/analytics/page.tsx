@@ -15,15 +15,19 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 // Manual adjustment: G$ paid out of the reward wallet (0x4412…6605) counts as
 // circulation but isn't in the subgraph (they're plain G$ transfers). This is the
 // full on-chain outflow from that wallet, matching Dune:
-//   Week-1 prizes      478,632  (hunters 239,316 + droppers 239,316)
-//   Reward transfer    200,000  (Aug 6 → 0x4f649e…3091)
-//   Misc/early              75
-//   Sprint prizes      498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
-//   Big Drop prizes  1,000,000  (Sep 8 top-10: 200k+120k+105k+90k+85k + 5×80k)
-//   Social campaign    400,000  (Sep 8: 4 winners × 100k)
-//   ────────────────────────────
-//   Total            2,576,707
-const PRIZE_G_DISTRIBUTED = 2_576_707n * 10n ** 18n;
+//   Misc/early                75  (Mar 19–22)
+//   Week-1 prizes        478,632  (Aug 1–2: hunters 239,316 + droppers 239,316)
+//   Reward transfer      200,000  (Aug 6 → 0x4f649e…3091)
+//   Sprint prizes        498,000  (Aug 21 top-10: 200k+120k+80k + 7×14k)
+//   Ambassador funding   500,000  (Aug 24–27: circulation G$ sent to ambassadors)
+//   Big Drop prizes    1,000,000  (Sep 8 top-10: 200k+120k+105k+90k+85k + 5×80k)
+//   Social campaign      400,000  (Sep 8: 4 winners × 100k)
+//   ──────────────────────────────
+//   Total              3,076,707  ← equals the reward wallet's TOTAL on-chain
+//                                   G$ outflow, so this reconciles with Dune.
+// Verify any time with the Blockscout token-transfer list for 0x4412…6605:
+// (sum of transfers OUT). in − out should equal the wallet's current balance.
+const PRIZE_G_DISTRIBUTED = 3_076_707n * 10n ** 18n;
 
 function fmtDuration(sec: number): string {
   if (sec <= 0) return "—";
