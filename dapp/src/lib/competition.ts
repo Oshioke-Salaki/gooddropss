@@ -32,15 +32,17 @@ export const REFERRAL_BONUS_WEIGHT_DEFAULT = 1.5;
 export const DOWNLINE_WEIGHTS_DEFAULT = [0.25, 0.1]; // 25% of L1's score, 10% of L2's
 
 // Season 3 — POINTS competition. Times are WAT (UTC+1, Nigeria — no DST):
-// Wed 9 Sep 09:00 → Sat 19 Sep 18:00, 2026. Score = distinct people who claimed
+// Thu 10 Sep 09:00 → Fri 18 Sep 18:00, 2026. Score = distinct people who claimed
 // your drops (drop) + distinct people whose drops you claimed (claim) + people you
 // referred in-window (refer) + downline bonus. Top-N split a 1,000,000 G$ pot, paid
 // once at the end. Runs ALONGSIDE the referral competition below; the two are fully
 // independent (separate configs, participant sets, leaderboards and pots).
 export const COMP_DEFAULT: CompConfig = {
-  id: "points-2026-09",
-  startsAt: Math.floor(Date.parse("2026-09-09T09:00:00+01:00") / 1000),
-  endsAt: Math.floor(Date.parse("2026-09-19T18:00:00+01:00") / 1000),
+  // Bumping the id starts a clean participant/verification namespace — the safest
+  // way to reset a season without deleting anything.
+  id: "points-2026-09-10",
+  startsAt: Math.floor(Date.parse("2026-09-10T09:00:00+01:00") / 1000),
+  endsAt: Math.floor(Date.parse("2026-09-18T18:00:00+01:00") / 1000),
   potWei: (1_000_000n * 10n ** 18n).toString(),
   minDropWei: MIN_DROP_WEI_DEFAULT,
   referralBonusWeight: REFERRAL_BONUS_WEIGHT_DEFAULT,
@@ -105,12 +107,13 @@ export interface RefCompConfig {
   threshold: number;       // referrals needed before ANY payout unlocks
 }
 
-// Season 3 — REFERRAL competition. Same window as the points competition.
+// Season 3 — REFERRAL competition. Same window as the points competition
+// (Thu 10 Sep 09:00 → Fri 18 Sep 18:00, 2026 WAT).
 // 1,000,000 G$ at 6,667 G$ each ⇒ 149 covered referrals.
 export const REF_COMP_DEFAULT: RefCompConfig = {
-  id: "referrals-2026-09",
-  startsAt: Math.floor(Date.parse("2026-09-09T09:00:00+01:00") / 1000),
-  endsAt: Math.floor(Date.parse("2026-09-19T18:00:00+01:00") / 1000),
+  id: "referrals-2026-09-10",
+  startsAt: Math.floor(Date.parse("2026-09-10T09:00:00+01:00") / 1000),
+  endsAt: Math.floor(Date.parse("2026-09-18T18:00:00+01:00") / 1000),
   potWei: (1_000_000n * 10n ** 18n).toString(),
   perReferralWei: (6_667n * 10n ** 18n).toString(),
   threshold: 5,
