@@ -5,6 +5,7 @@ import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { referralAcceptMessage, REF_ADDR_RE } from "@/lib/referral";
 import { fetchHasActivity } from "@/lib/subgraph";
 import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
+import { tryRefPayout } from "@/lib/refPayout";
 
 export const runtime = "nodejs";
 
@@ -121,6 +122,11 @@ export async function POST(req: NextRequest) {
         if (inRefCompWindow(refCfg, nowSec)) enroll.push(redis.sadd(keys.compReferrers(refCfg.id), referrerRoot));
         if (enroll.length) await Promise.all(enroll);
       } catch { /* enrollment is best-effort; attribution is already saved */ }
+
+      // Referral-competition prizes pay out continuously, so settle whatever this
+      // credit just unlocked. Never throws — a failed transfer must not fail the
+      // referral, and the daily cron sweeps anything left behind.
+      await tryRefPayout();
     }
 
     return NextResponse.json({ ok: true, referrer: referrerRoot });

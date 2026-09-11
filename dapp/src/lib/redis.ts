@@ -104,6 +104,15 @@ export const keys = {
   // The wallet a winner's prize is paid to — their CURRENT GoodDrops wallet (the
   // address their invite link was generated from), refreshed on each referral.
   compPayoutWallet:  (referrerRoot: string)  => `gd:comp:wallet:${referrerRoot.toLowerCase()}`,
+
+  // ── Referral-competition payouts (automatic, continuous) ───────────────────
+  // Scoped by competition id so a new season starts from a clean slate and can
+  // never be paid against the previous season's ledger.
+  refPayoutLock:     ()                      => `gd:comp:ref:payout:lock`,            // NX lock: one sweep at a time
+  refPaid:           (id: string, root: string) => `gd:comp:ref:paid:${id}:${root.toLowerCase()}`, // string wei, cumulative
+  refPaidSlots:      (id: string)            => `gd:comp:ref:slots:${id}`,            // Set of "referrer|invitee" already PAID
+  refPotSpent:       (id: string)            => `gd:comp:ref:spent:${id}`,            // string wei, total paid out
+  refPayoutLog:      (id: string)            => `gd:comp:ref:payout:log:${id}`,       // List: bounded audit trail
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

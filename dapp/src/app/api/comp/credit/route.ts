@@ -4,6 +4,7 @@ import { isAdminAuthed } from "@/lib/adminAuth";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { fetchHasActivity } from "@/lib/subgraph";
 import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
+import { tryRefPayout } from "@/lib/refPayout";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,10 @@ export async function POST(req: NextRequest) {
     inCompWindow(cfg, scoreTs) ? redis.sadd(keys.compReferrers(cfg.id), referrerRoot) : Promise.resolve(),
     inRefCompWindow(refCfg, scoreTs) ? redis.sadd(keys.compReferrers(refCfg.id), referrerRoot) : Promise.resolve(),
   ]);
+
+  // Same continuous payout as the organic path — an admin-recovered referral
+  // should settle exactly like one that came in on its own.
+  await tryRefPayout();
 
   return NextResponse.json({
     ok: true,

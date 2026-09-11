@@ -33,6 +33,13 @@ export interface RefBoard { entries: RefEntry[]; stats: RefStats }
 //      credit-timestamp order (first come, first served) until the pot's slots run
 //      out — so the pot can never be overspent, and the result is identical no
 //      matter when or how often this runs.
+//   4. A referral that has already been PAID keeps its slot for good. Without this,
+//      coverage isn't monotonic: a referrer sitting below the threshold has old
+//      referrals that don't compete yet, and the day they unlock, those older
+//      timestamps jump the queue and displace someone already covered. Fine when
+//      payouts happen once at the end — fatal now that they go out continuously,
+//      because the displaced person has been paid and the pot would overspend.
+//      So "first come, first served" settles into "first PAID, first served".
 //
 // Cost: one SMEMBERS + one pipelined ZRANGE per participant. No per-user round
 // trips, no on-chain calls — this is cheap enough to serve behind a short CDN TTL.
@@ -86,14 +93,26 @@ export async function computeReferralBoard(cfg: RefCompConfig): Promise<RefBoard
   const unlocked = new Set<string>();
   for (const [root, list] of byReferrer) if (list.length >= cfg.threshold) unlocked.add(root);
 
+  // Slots already settled by a real transfer. They're immovable (rule 4).
+  const paidSlots = new Set((await redis.smembers<string[]>(keys.refPaidSlots(cfg.id))) ?? []);
+
   // First come, first served: oldest credit wins the slot. Ties break on invitee
   // root so the ordering is fully deterministic across runs.
   const eligible = rows
     .filter((r) => unlocked.has(r.referrer))
     .sort((a, b) => a.at - b.at || a.invitee.localeCompare(b.invitee));
+
   const coveredSet = new Set<string>();
-  for (let i = 0; i < eligible.length && i < slots; i++) {
-    coveredSet.add(`${eligible[i].referrer}|${eligible[i].invitee}`);
+  // Paid slots are claimed first, and only for referrals that still exist in the
+  // ledger — a stale entry shouldn't silently eat a slot nobody can see.
+  for (const r of rows) {
+    const k = `${r.referrer}|${r.invitee}`;
+    if (paidSlots.has(k)) coveredSet.add(k);
+  }
+  // Whatever the pot has left goes to the unpaid front of the queue.
+  for (const r of eligible) {
+    if (coveredSet.size >= slots) break;
+    coveredSet.add(`${r.referrer}|${r.invitee}`);
   }
 
   const entries: RefEntry[] = [];
