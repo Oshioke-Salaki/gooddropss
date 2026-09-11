@@ -38,9 +38,13 @@ const EMPTY: RefPayoutResult = {
  *
  *   • A global Redis lock serialises runs, so two callers can't pay at once.
  *   • Per referrer we only ever send `earned − alreadyPaid`, so a re-run is a no-op.
- *   • Accounting is written the instant the transfer BROADCASTS, before we await
- *     the receipt. A crash in between can only ever UNDER-pay (recoverable on the
- *     next run) — never double-pay, which isn't.
+ *   • Accounting is written BEFORE the transfer and rolled back if the broadcast
+ *     throws — the same fail-closed order the gas faucet uses. Recording after the
+ *     broadcast leaves a window where the tx is on-chain but unrecorded, and the
+ *     next run re-sends it; the inline callers run under a serverless timeout, so
+ *     that window is exactly where a process gets killed. This way the worst case
+ *     is an UNDER-pay (recoverable, and visible as a `pending` row in the log),
+ *     never a double-pay.
  *   • Paying a referral locks its pot slot permanently (see rule 4 in
  *     competitionReferral.ts), so nobody who has been paid can later be displaced
  *     and the pot can't be overspent.
@@ -50,7 +54,17 @@ const EMPTY: RefPayoutResult = {
  * Scoped to the REFERRAL competition only. The points competition is unchanged
  * and still pays by script.
  */
-export async function runRefPayout(): Promise<RefPayoutResult> {
+export interface RefPayoutOpts {
+  /**
+   * Wait for each receipt before moving on. The cron does; the inline callers
+   * don't, because they run under a short serverless timeout and the accounting
+   * is already durable by then — there's nothing to gain from holding the
+   * request open, and being killed mid-wait just loses the error reporting.
+   */
+  confirm?: boolean;
+}
+
+export async function runRefPayout({ confirm = true }: RefPayoutOpts = {}): Promise<RefPayoutResult> {
   const redis = getRedis();
   if (!redis) return { ...EMPTY, reason: "storage-unavailable" };
 
@@ -140,13 +154,38 @@ export async function runRefPayout(): Promise<RefPayoutResult> {
       let to: `0x${string}`;
       try { to = getAddress(dest); } catch { to = getAddress(r.root); }
 
+      const prevSpent = spent;
+      const newPaid = r.alreadyPaid + amount;
+      // Only the slots THIS payment settles. `slotsPaid` is cumulative, so slicing
+      // from what was already paid avoids re-adding older slots — and, crucially,
+      // means a rollback can't unlock a slot an earlier transfer paid for.
+      const paidBefore = per > 0n ? Number(r.alreadyPaid / per) : 0;
+      const paidAfter = per > 0n ? Number(newPaid / per) : r.slots.length;
+      const newLock = r.slots.slice(paidBefore, Math.min(paidAfter, r.slots.length));
+
+      // Mark first (see header). `pending` with no tx is the signature of a
+      // process killed before broadcast — an under-pay to settle by hand.
+      await redis.set(keys.refPaid(cfg.id, r.root), newPaid.toString());
+      await redis.set(keys.refPotSpent(cfg.id), (prevSpent + amount).toString());
+      if (newLock.length) await redis.sadd(keys.refPaidSlots(cfg.id), newLock[0], ...newLock.slice(1));
+      await redis.lpush(keys.refPayoutLog(cfg.id), {
+        root: r.root, to, wei: amount.toString(), tx: null, at: new Date().toISOString(), status: "pending",
+      });
+
       let hash: `0x${string}`;
       try {
         hash = await walletClient.writeContract({
           address: G_TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [to, amount],
         });
       } catch (e) {
-        // Nothing left the wallet — leave it unpaid and retry on the next run.
+        // Nothing left the wallet — undo the mark so the next run retries cleanly.
+        if (r.alreadyPaid > 0n) await redis.set(keys.refPaid(cfg.id, r.root), r.alreadyPaid.toString());
+        else await redis.del(keys.refPaid(cfg.id, r.root));
+        await redis.set(keys.refPotSpent(cfg.id), prevSpent.toString());
+        if (newLock.length) await redis.srem(keys.refPaidSlots(cfg.id), newLock[0], ...newLock.slice(1));
+        await redis.lpush(keys.refPayoutLog(cfg.id), {
+          root: r.root, to, wei: amount.toString(), tx: null, at: new Date().toISOString(), status: "rolled-back",
+        });
         errors.push({
           root: r.root, stage: "broadcast",
           error: (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message,
@@ -154,30 +193,23 @@ export async function runRefPayout(): Promise<RefPayoutResult> {
         continue;
       }
 
-      // Broadcast succeeded: record before awaiting the receipt (see header).
-      const newPaid = r.alreadyPaid + amount;
       spent += amount;
       walletBal -= amount;
-      await redis.set(keys.refPaid(cfg.id, r.root), newPaid.toString());
-      await redis.set(keys.refPotSpent(cfg.id), spent.toString());
-      // Lock the slots this payment settled. Only the ones covered by the amount
-      // actually sent, so a clamped payment can't lock slots it didn't pay for.
-      const slotsPaid = per > 0n ? Number(newPaid / per) : r.slots.length;
-      const lock = r.slots.slice(0, Math.min(slotsPaid, r.slots.length));
-      if (lock.length) await redis.sadd(keys.refPaidSlots(cfg.id), lock[0], ...lock.slice(1));
       await redis.lpush(keys.refPayoutLog(cfg.id), {
         root: r.root, to, wei: amount.toString(), tx: hash, at: new Date().toISOString(), status: "sent",
       });
       await redis.ltrim(keys.refPayoutLog(cfg.id), 0, 499);
       paid.push({ root: r.root, to, wei: amount.toString(), tx: hash });
 
-      try {
-        const rcpt = await publicClient.waitForTransactionReceipt({ hash, timeout: 45_000 });
-        if (rcpt.status !== "success") errors.push({ root: r.root, stage: "receipt-reverted", error: hash });
-      } catch {
-        // Timed out or RPC hiccup — the tx may still land. We keep the accounting
-        // bumped so we never re-send; a genuine failure under-pays, which is fixable.
-        errors.push({ root: r.root, stage: "confirm-timeout", error: hash });
+      if (confirm) {
+        try {
+          const rcpt = await publicClient.waitForTransactionReceipt({ hash, timeout: 45_000 });
+          if (rcpt.status !== "success") errors.push({ root: r.root, stage: "receipt-reverted", error: hash });
+        } catch {
+          // Timed out or RPC hiccup — the tx may still land. Accounting stays put so
+          // we never re-send; a genuine failure under-pays, which is fixable.
+          errors.push({ root: r.root, stage: "confirm-timeout", error: hash });
+        }
       }
     }
 
@@ -196,7 +228,14 @@ export async function runRefPayout(): Promise<RefPayoutResult> {
  */
 export async function tryRefPayout(): Promise<void> {
   try {
-    const res = await runRefPayout();
+    let res = await runRefPayout({ confirm: false });
+    // Two referrals landing together would otherwise leave the second one waiting
+    // for the daily cron, because the first still holds the lock. One short retry
+    // covers that without ever running two sweeps at once.
+    if (res.reason === "another-run-in-progress") {
+      await new Promise((r) => setTimeout(r, 3000));
+      res = await runRefPayout({ confirm: false });
+    }
     if (!res.ok && res.reason && res.reason !== "another-run-in-progress") {
       console.warn("[refPayout] skipped:", res.reason);
     }

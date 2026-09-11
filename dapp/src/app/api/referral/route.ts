@@ -8,6 +8,9 @@ import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "
 import { tryRefPayout } from "@/lib/refPayout";
 
 export const runtime = "nodejs";
+// Room for the inline referral payout to broadcast a transfer. It skips the
+// receipt wait, so this is headroom rather than an expected duration.
+export const maxDuration = 30;
 
 const SIG_WINDOW = 24 * 60 * 60 * 1000;
 
