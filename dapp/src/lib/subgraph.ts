@@ -249,14 +249,33 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
 // drop must reflect immediately (useDrops re-fetches to confirm the claim).
 let _allDropsCache: { at: number; data: Drop[] } | null = null;
 const ALL_DROPS_TTL_MS = 45_000;
+// Browser: the map, the leaderboard and the profile all need the full set, and
+// a person moving between them within seconds was paying for the whole
+// multi-page scan each time. A short window collapses that; anything that
+// must see a fresh chain state (confirming a claim) passes `fresh`.
+const CLIENT_TTL_MS = 20_000;
+let _clientInflight: Promise<Drop[]> | null = null;
 
-export async function fetchAllDrops(): Promise<Drop[]> {
+export async function fetchAllDrops(opts: { fresh?: boolean } = {}): Promise<Drop[]> {
   if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
 
   const isServer = typeof window === "undefined";
-  if (isServer && _allDropsCache && Date.now() - _allDropsCache.at < ALL_DROPS_TTL_MS) {
+  const ttl = isServer ? ALL_DROPS_TTL_MS : CLIENT_TTL_MS;
+  if (!opts.fresh && _allDropsCache && Date.now() - _allDropsCache.at < ttl) {
     return _allDropsCache.data;
   }
+  // Two components mounting together (map + nav stats) share one scan.
+  if (!isServer && !opts.fresh && _clientInflight) return _clientInflight;
+
+  const run = fetchAllDropsUncached();
+  if (!isServer) {
+    _clientInflight = run;
+    run.finally(() => { _clientInflight = null; });
+  }
+  return run;
+}
+
+async function fetchAllDropsUncached(): Promise<Drop[]> {
 
   const all: Drop[] = [];
   let lastId = "0";
@@ -286,6 +305,6 @@ export async function fetchAllDrops(): Promise<Drop[]> {
   const byId = new Map<string, Drop>();
   for (const d of all) byId.set(d.id.toString(), d);
   const deduped = [...byId.values()];
-  if (isServer) _allDropsCache = { at: Date.now(), data: deduped };
+  _allDropsCache = { at: Date.now(), data: deduped };
   return deduped;
 }
