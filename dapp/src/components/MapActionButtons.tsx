@@ -53,7 +53,7 @@ export function MapActionButtons({ onDropG, onDropChain, onNamePlace, namePlaceL
   const actions = [
     {
       key: "drop",
-      label: "Drop $G",
+      label: "Drop G$",
       onClick: run(onDropG),
       // The token artwork is its own circle, so it fills the well directly.
       // eslint-disable-next-line @next/next/no-img-element

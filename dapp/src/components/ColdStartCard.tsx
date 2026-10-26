@@ -1,6 +1,8 @@
 "use client";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { X, Bell, MapPin, Check, Loader2 } from "lucide-react";
+import { X, Bell, MapPin, Check, Loader2, Navigation, Sparkles } from "lucide-react";
+import { useAccount } from "wagmi";
+import { useAuth } from "@/hooks/useAuth";
 import { haversineDistance, formatG$, gpsToDeg } from "@/lib/utils";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { DROP_STATUS, type Drop, type LatLng } from "@/types";
@@ -10,6 +12,14 @@ interface Props {
   userLoc:  LatLng | null;
   loading:  boolean;
   onDrop:   () => void;
+  /** Fly the map to a point (the nearest live drop). */
+  onShowNearest?: (lat: number, lng: number) => void;
+}
+
+function formatKm(m: number): string {
+  if (m < 1000) return `${Math.round(m)} m`;
+  const km = m / 1000;
+  return `${km < 10 ? km.toFixed(1).replace(/\.0$/, "") : Math.round(km).toLocaleString()} km`;
 }
 
 // If the nearest live drop is farther than this, treat the user as "unseeded".
@@ -20,24 +30,28 @@ const NEAR_THRESHOLD_M = 25_000; // 25 km
  * on an empty map — we show worldwide proof-of-life, a "notify me here" hook,
  * and a prompt to seed the first local drop themselves.
  */
-export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
+export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }: Props) {
   const [dismissed, setDismissed] = useState(false);
   const { status, subscribe }     = usePushSubscription();
+  const { address } = useAccount();
+  const { login } = useAuth();
   const [subscribing, setSubscribing] = useState(false);
 
   const now = Math.floor(Date.now() / 1000);
 
-  const { activeDrops, totalHiddenWei, nearestM } = useMemo(() => {
+  const { activeDrops, totalHiddenWei, nearestM, nearest } = useMemo(() => {
     const active = drops.filter((d) => d.status === DROP_STATUS.Active && d.expiry > now);
     const totalWei = active.reduce((s, d) => s + d.amount, 0n);
-    let nearest = Infinity;
+    let best = Infinity;
+    let at: { lat: number; lng: number } | null = null;
     if (userLoc) {
       for (const d of active) {
-        const dist = haversineDistance(userLoc.lat, userLoc.lng, gpsToDeg(d.lat), gpsToDeg(d.lng));
-        if (dist < nearest) nearest = dist;
+        const lat = gpsToDeg(d.lat), lng = gpsToDeg(d.lng);
+        const dist = haversineDistance(userLoc.lat, userLoc.lng, lat, lng);
+        if (dist < best) { best = dist; at = { lat, lng }; }
       }
     }
-    return { activeDrops: active, totalHiddenWei: totalWei, nearestM: nearest };
+    return { activeDrops: active, totalHiddenWei: totalWei, nearestM: best, nearest: at };
   }, [drops, userLoc, now]);
 
   // Only surface when we've finished loading and the user is genuinely unseeded:
@@ -77,18 +91,60 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
   if (!visible) return null;
 
   async function handleNotify() {
+    // Nearby-drop alerts are tied to a wallet (that's where the server keeps the
+    // subscription and the last known area), so signed-out people sign in first.
+    if (!address) { login(); return; }
     setSubscribing(true);
     try { await subscribe(); } finally { setSubscribing(false); }
   }
 
   const subscribed = status === "subscribed";
-  const notifyOff = subscribing || subscribed || status === "unsupported";
+  const blocked = status === "denied";
+  const unsupported = status === "unsupported";
+  const empty = activeDrops.length === 0;
+  const canShow = !empty && nearest && onShowNearest;
+
+  // Three situations, three different first actions:
+  //   nothing live anywhere      → get an alert when something drops
+  //   live drops, all far away   → go look at the nearest one
+  // Hiding a drop yourself is always offered, but second.
+  const title = empty ? "No drops live right now" : `Nearest drop: ${formatKm(nearestM)} away`;
+  const Icon = empty ? Sparkles : MapPin;
+
+  const alertLabel = subscribed
+    ? "Alerts on"
+    : !address
+      ? "Sign in for drop alerts"
+      : "Alert me when one drops";
+
+  const alertButton = !unsupported && !blocked && (
+    <button
+      type="button"
+      onClick={handleNotify}
+      disabled={subscribing || subscribed}
+      aria-live="polite"
+      className={`h-11 rounded-full text-sm/none flex items-center justify-center gap-2 whitespace-nowrap px-4
+        motion-safe:transition-colors ${
+        subscribed
+          ? "bg-brand-soft text-brand cursor-default"
+          : empty
+            ? "bg-brand text-white hover:bg-brand/90 cursor-pointer disabled:opacity-70 disabled:cursor-wait"
+            : "border border-line bg-white text-heading hover:bg-surface cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+      }`}
+    >
+      {subscribed
+        ? <><Check className="w-4 h-4" strokeWidth={2} /> {alertLabel}</>
+        : subscribing
+          ? <><Loader2 className="w-4 h-4 animate-spin" /> Turning on…</>
+          : <><Bell className="w-4 h-4" strokeWidth={2} /> {alertLabel}</>}
+    </button>
+  );
 
   return (
     <div
       ref={cardRef}
       role="region"
-      aria-label={activeDrops.length === 0 ? "Be the first to drop" : "No drops near you yet"}
+      aria-label={title}
       className="modal-rise fixed left-1/2 -translate-x-1/2 w-[min(440px,calc(100vw-24px))] font-sans
         bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-5"
       style={{
@@ -103,11 +159,9 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
     >
       <div className="flex items-center gap-3">
         <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-brand-soft text-brand flex items-center justify-center">
-          <MapPin className="w-5 h-5" strokeWidth={1.75} />
+          <Icon className="w-5 h-5" strokeWidth={1.75} />
         </span>
-        <p className="flex-1 min-w-0 text-lg/none text-heading truncate">
-          {activeDrops.length === 0 ? "Be the first to drop" : "No drops near you yet"}
-        </p>
+        <p className="flex-1 min-w-0 text-lg/[1.2] text-heading line-clamp-2">{title}</p>
         <button
           type="button"
           onClick={() => setDismissed(true)}
@@ -119,44 +173,50 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
         </button>
       </div>
 
-      {/* Copy adapts: genuinely-empty vs. drops-exist-but-far */}
       <p className="text-sm/[140%] text-nav-muted mt-3">
-        {activeDrops.length === 0 ? (
-          <>Hide some G$ around your neighbourhood and start the treasure hunt where you live — your drop could be the one that pulls people onto the map here.</>
+        {empty ? (
+          subscribed
+            ? <>You&apos;re set. We&apos;ll ping you the moment G$ is hidden near you. Drops land often around campuses, events and sponsor campaigns.</>
+            : <>New drops land often around campuses, events and sponsor campaigns. Turn on alerts and we&apos;ll tell you the moment G$ is hidden near you.</>
         ) : (
           <>
-            GoodDrops is live — <span className="text-heading">{activeDrops.length}</span> drop{activeDrops.length !== 1 ? "s" : ""} holding{" "}
-            <span className="text-heading">{formatG$(totalHiddenWei)} G$</span> hidden around the world right now. Be the first to bring the hunt to your area.
+            <span className="text-heading">{activeDrops.length}</span> drop{activeDrops.length !== 1 ? "s" : ""} holding{" "}
+            <span className="text-heading">{formatG$(totalHiddenWei)} G$</span> {activeDrops.length !== 1 ? "are" : "is"} live, just not close to you yet.
+            {!subscribed && " Turn on alerts to hear when one lands nearby."}
           </>
+        )}
+        {(blocked || unsupported) && (
+          <span className="block mt-2 text-xs/[140%]">
+            {blocked
+              ? "Notifications are blocked for this site. Allow them in your browser settings to get drop alerts."
+              : "To get drop alerts on iPhone, add GoodDrops to your Home Screen first (Share, then Add to Home Screen)."}
+          </span>
         )}
       </p>
 
-      <div className="flex gap-2.5 mt-4">
+      {/* The first action spans the card; the rest share a row beneath it. */}
+      <div className="grid grid-cols-2 gap-2.5 mt-4 [&>*:first-child]:col-span-2 [&>*:nth-child(2):last-child]:col-span-2">
+        {canShow && (
+          <button
+            type="button"
+            onClick={() => { onShowNearest!(nearest!.lat, nearest!.lng); setDismissed(true); }}
+            className="h-11 rounded-full bg-brand text-white text-sm/none cursor-pointer flex items-center justify-center gap-2
+              motion-safe:transition-colors hover:bg-brand/90 whitespace-nowrap px-4"
+          >
+            <Navigation className="w-4 h-4" strokeWidth={2} /> Show me the nearest
+          </button>
+        )}
+        {alertButton}
         <button
           type="button"
           onClick={onDrop}
-          className="flex-1 h-11 rounded-full bg-brand text-white text-sm/none cursor-pointer
-            motion-safe:transition-colors hover:bg-brand/90 whitespace-nowrap"
-        >
-          Hide the first drop
-        </button>
-        <button
-          type="button"
-          onClick={handleNotify}
-          disabled={notifyOff}
-          aria-live="polite"
-          className={`flex-1 h-11 rounded-full text-sm/none flex items-center justify-center gap-2 whitespace-nowrap
-            motion-safe:transition-colors ${
-            subscribed
-              ? "bg-brand-soft text-brand cursor-default"
-              : "border border-line bg-white text-heading hover:bg-surface cursor-pointer disabled:cursor-default disabled:opacity-60"
+          className={`h-11 rounded-full text-sm/none cursor-pointer whitespace-nowrap px-4 motion-safe:transition-colors ${
+            empty && (subscribed || blocked || unsupported)
+              ? "bg-brand text-white hover:bg-brand/90"
+              : "border border-line bg-white text-heading hover:bg-surface"
           }`}
         >
-          {subscribed
-            ? <><Check className="w-4 h-4" strokeWidth={2} /> Notifying</>
-            : subscribing
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Notify me</>
-              : <><Bell className="w-4 h-4" strokeWidth={2} /> Notify me</>}
+          Hide a drop here
         </button>
       </div>
     </div>
