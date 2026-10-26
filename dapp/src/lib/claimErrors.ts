@@ -11,6 +11,7 @@ export type ClaimErrorKind =
   | "network"    // RPC/timeout/rate-limit — transient
   | "verify"     // GoodDollar verification needed
   | "location"   // not close enough
+  | "event"      // an event drop that hasn't unlocked yet (terminal for now)
   | "unknown";
 
 export interface FriendlyError {
@@ -41,6 +42,11 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
   // User simply dismissed the wallet prompt — not an error worth showing.
   if (/user rejected|user denied|rejected the request|denied transaction|action_rejected|request rejected|user cancell?ed|cancell?ed by user/.test(m))
     return { message: "", terminal: false, kind: "rejected" };
+
+  // An event drop before its event starts (from /api/claim-proof). The server's
+  // sentence names the event, so show it as-is.
+  const eventLock = /(this drop unlocks when .+? starts\.|.+? was cancelled, so its drops stay locked\.)/i.exec(text);
+  if (eventLock) return { message: eventLock[1], terminal: true, kind: "event" };
 
   // The contract's own revert reason is the most reliable signal there is, so
   // read it first. viem's message also carries the call's signature and args

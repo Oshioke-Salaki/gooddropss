@@ -92,3 +92,13 @@ describe("friendlyClaimError — hex in verbose errors", () => {
   });
 });
 
+describe("friendlyClaimError — event drops", () => {
+  it("passes the event lock message through, naming the event", () => {
+    const fe = friendlyClaimError(new Error("This drop unlocks when Campus Hunt starts."));
+    expect(fe).toEqual({ message: "This drop unlocks when Campus Hunt starts.", terminal: true, kind: "event" });
+  });
+  it("explains a cancelled event", () => {
+    expect(friendlyClaimError(new Error("Campus Hunt was cancelled, so its drops stay locked.")).kind).toBe("event");
+  });
+});
+

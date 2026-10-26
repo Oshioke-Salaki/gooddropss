@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, http } from "viem";
 import { signClaimProof } from "@/lib/claimProof";
+import { eventClaimGate, eventIdOf } from "@/lib/events";
+import { eventForHint } from "@/lib/eventStore";
 import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
@@ -89,6 +91,20 @@ export async function POST(req: NextRequest) {
 
     if (!drop || drop.dropper === "0x0000000000000000000000000000000000000000") {
       return NextResponse.json({ error: "Drop not found" }, { status: 404 });
+    }
+
+    // ── 1b. Event lock ───────────────────────────────────────────────────────
+    // Organizers can load drops before their event; those stay unclaimable
+    // until it starts. The tag is read from the chain, so it can't be dropped
+    // by the client. If we can't look the event up, refuse rather than risk
+    // releasing drops early.
+    if (eventIdOf(drop.hint)) {
+      const r = getRedis();
+      if (!r) return NextResponse.json({ error: "Couldn't check this drop's event — try again in a moment." }, { status: 503 });
+      const gate = eventClaimGate(await eventForHint(r, drop.hint), drop.dropper, Math.floor(Date.now() / 1000));
+      if (gate.locked) {
+        return NextResponse.json({ error: gate.reason, code: "event-locked", startsAt: gate.startsAt }, { status: 403 });
+      }
     }
 
     // ── 2. Resolve real drop coordinates ────────────────────────────────────

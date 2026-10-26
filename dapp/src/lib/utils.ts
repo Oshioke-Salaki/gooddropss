@@ -203,6 +203,7 @@ const CHAIN_RE = /^\[CH:([^\]]+)\]([\s\S]*)/;
 const CHAIN_LAST = /^\[CHL\]([\s\S]*)/;
 const RIDDLE_RE = /^\[R\]([\s\S]*)/;
 const TASK_RE = /^\[T:([^\]]+)\]([\s\S]*)/;
+const EVENT_RE = /^\[E:([a-z0-9]{6,20})\]([\s\S]*)/;
 
 export function parseDropHint(raw: string): {
   isPrivate: boolean;
@@ -213,12 +214,15 @@ export function parseDropHint(raw: string): {
   hasRiddle: boolean;
   /** merchant id for a task-locked drop, else null */
   taskMerchantId: string | null;
+  /** event id for an event drop ([E:…]), else null — see lib/events */
+  eventId: string | null;
   hint: string;
 } {
   let rest = raw;
   let isPrivate = false;
   let hasRiddle = false;
   let target: string | null = null;
+  let eventId: string | null = null;
 
   // [R] is written outermost, but tolerate it on either side of [P:…] so a
   // stray ordering can never make a riddle drop look unlocked.
@@ -242,6 +246,15 @@ export function parseDropHint(raw: string): {
 
   takeRiddle();
 
+  // Event drops are public: [E:id] sits after any [R], never with [P:…].
+  if (!isPrivate) {
+    const ev = rest.match(EVENT_RE);
+    if (ev) {
+      eventId = ev[1];
+      rest = ev[2];
+    }
+  }
+
   // Check remaining for [CHL]
   const chainLast = rest.match(CHAIN_LAST);
   if (chainLast)
@@ -252,6 +265,7 @@ export function parseDropHint(raw: string): {
       chainNextId: null,
       isChainLast: true,
       hasRiddle,
+      eventId,
       taskMerchantId: null,
       hint: chainLast[1],
     };
@@ -266,6 +280,7 @@ export function parseDropHint(raw: string): {
       chainNextId: chain[1],
       isChainLast: false,
       hasRiddle,
+      eventId,
       taskMerchantId: null,
       hint: chain[2],
     };
@@ -281,6 +296,7 @@ export function parseDropHint(raw: string): {
         chainNextId: null,
         isChainLast: false,
         hasRiddle,
+        eventId,
         taskMerchantId: task[1],
         hint: task[2],
       };
@@ -294,6 +310,7 @@ export function parseDropHint(raw: string): {
         chainNextId: null,
         isChainLast: false,
         hasRiddle,
+        eventId,
         taskMerchantId: null,
         hint: camp[2],
       };
@@ -306,6 +323,7 @@ export function parseDropHint(raw: string): {
     chainNextId: null,
     isChainLast: false,
     hasRiddle,
+    eventId,
     taskMerchantId: null,
     hint: rest,
   };

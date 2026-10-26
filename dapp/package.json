@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "e2e:chain": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.chain.config.ts"
+    "e2e:chain": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.chain.config.ts",
+    "e2e:api": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run --config vitest.api.config.ts"
   },
   "dependencies": {
     "@goodsdks/citizen-sdk": "^1.2.5",

@@ -358,3 +358,8 @@ export async function fetchDropsForAddress(address: string): Promise<Drop[]> {
   for (const d of [...made, ...found]) byId.set(d.id.toString(), d);
   return [...byId.values()].sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
 }
+
+/** Every drop tagged for an event ([E:…] in its clue, possibly under [R]). */
+export function fetchEventDrops(): Promise<Drop[]> {
+  return fetchDropsWhere("hint_contains: $tag", { tag: "[E:" });
+}

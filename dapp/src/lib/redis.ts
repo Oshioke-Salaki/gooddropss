@@ -123,4 +123,16 @@ export const keys = {
   dropReporters:     (dropId: string) => `gd:reports:drop:${dropId}`,  // Set of reporter addrs
   reportedDropsIndex:()               => `gd:reports:index`,           // Set of reported dropIds
   hiddenDrops:       ()               => `gd:drops:hidden`,            // Set of admin-hidden dropIds
+
+  // ── Events (see lib/events.ts) ─────────────────────────────────────────────
+  event:             (id: string)     => `gd:event:${id}`,                  // JSON GdEvent
+  eventsAll:         ()               => `gd:events:all`,                   // ZSet id → createdAt (admin list)
+  eventsPublic:      ()               => `gd:events:public`,                // ZSet id → startsAt (approved only)
+  eventsReview:      ()               => `gd:events:review`,                // Set of ids awaiting review (new or edited)
+  eventsByHost:      (addr: string)   => `gd:events:host:${addr.toLowerCase()}`, // Set of ids a wallet organizes/co-hosts
+  eventInterested:   (id: string)     => `gd:event:interested:${id}`,       // Set of addresses who tapped "Remind me"
+  eventReminded:     (id: string)     => `gd:event:reminded:${id}`,         // NX marker: start reminder sent (TTL'd)
+  eventInterestRl:   (ip: string)     => `gd:event:rl:${ip}`,               // per-IP counter for Remind me (TTL'd)
+  eventCreateRl:     (addr: string)   => `gd:event:createrl:${addr.toLowerCase()}`, // per-organizer submit counter (TTL'd)
+  eventSigUsed:      (sigHash: string) => `gd:event:sig:${sigHash}`,        // NX marker: signature already used (TTL'd)
 };
