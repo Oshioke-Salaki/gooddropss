@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
-import { Map, Trophy, Gift, Store, Equal, X, ShieldCheck, RefreshCw, Clock, Ban } from "lucide-react";
+import { Map, CalendarDays, Trophy, Gift, Store, Equal, X, ShieldCheck, RefreshCw, Clock, Ban } from "lucide-react";
 import { WalletModal } from "@/components/WalletModal";
 import { Logo } from "@/components/Logo";
 import { StreakBadge } from "@/components/StreakBadge";
@@ -20,6 +20,7 @@ import clsx from "clsx";
 
 const links = [
   { href: "/", label: "Map", Icon: Map },
+  { href: "/events", label: "Events", Icon: CalendarDays },
   { href: "/leaderboard", label: "Rankings", Icon: Trophy },
   { href: "/competition", label: "Competition", Icon: Gift },
   { href: "/merchant", label: "Spots", Icon: Store },
@@ -425,10 +426,10 @@ export function Nav() {
               <Link
                 key={href}
                 href={href}
-                aria-current={path === href ? "page" : undefined}
+                aria-current={(path === href || (href !== "/" && path.startsWith(`${href}/`))) ? "page" : undefined}
                 className={clsx(
                   NAV_LINK_BASE,
-                  path === href ? NAV_LINK_ACTIVE : NAV_LINK_IDLE,
+                  (path === href || (href !== "/" && path.startsWith(`${href}/`))) ? NAV_LINK_ACTIVE : NAV_LINK_IDLE,
                 )}
               >
                 <Icon size={18} strokeWidth={1.75} className="shrink-0" />
@@ -493,11 +494,11 @@ export function Nav() {
                 <Link
                   key={href}
                   href={href}
-                  aria-current={path === href ? "page" : undefined}
+                  aria-current={(path === href || (href !== "/" && path.startsWith(`${href}/`))) ? "page" : undefined}
                   className={clsx(
                     NAV_LINK_BASE,
                     "shrink-0",
-                    path === href ? NAV_LINK_ACTIVE : NAV_LINK_IDLE,
+                    (path === href || (href !== "/" && path.startsWith(`${href}/`))) ? NAV_LINK_ACTIVE : NAV_LINK_IDLE,
                   )}
                 >
                   <Icon size={18} strokeWidth={1.75} className="shrink-0" />

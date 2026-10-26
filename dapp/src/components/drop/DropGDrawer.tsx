@@ -1,7 +1,7 @@
 "use client";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { CalendarDays, X } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { useCreateDrop, DURATIONS, MAX_MULTI } from "./useCreateDrop";
@@ -22,6 +22,10 @@ interface Props {
   claimPoints?: { lat: number; lng: number }[];
   /** Fly the map behind to a point (the new drop). */
   onViewOnMap?: (lat: number, lng: number) => void;
+  /** Drops for an event: tagged [E:id], public only, starting at the venue. */
+  eventId?: string;
+  eventName?: string;
+  eventVenue?: { lat: number; lng: number; name: string } | null;
 }
 
 /**
@@ -37,8 +41,12 @@ interface Props {
  */
 export function DropGDrawer({
   userLocation, onClose, onSuccess, campaignId, campaignName, claimPoints = [], onViewOnMap,
+  eventId, eventName, eventVenue = null,
 }: Props) {
-  const d = useCreateDrop({ campaignId, claimPoints, onClose });
+  const d = useCreateDrop({
+    campaignId, eventId, claimPoints, onClose,
+    defaultLocation: eventVenue ? { lat: eventVenue.lat, lng: eventVenue.lng, placeName: eventVenue.name } : null,
+  });
   const sheet = useSheetDrag({ onDismiss: d.handleClose });
   const { sheetRef, sheetStyle, handleProps } = sheet;
 
@@ -136,7 +144,14 @@ export function DropGDrawer({
                 <h2 className="mb-5 text-xl/none text-heading">
                   {campaignName ? `Drop for ${campaignName}` : "Drop G$"}
                 </h2>
-                <p className="text-sm/none text-nav-muted">Hide money anywhere in the world</p>
+                {eventId ? (
+                  <span className="inline-flex max-w-full items-center gap-2 rounded-full bg-brand-soft px-3 py-2 text-sm/none text-brand">
+                    <CalendarDays className="h-4 w-4 shrink-0" strokeWidth={2} />
+                    <span className="truncate">For {eventName ?? "your event"}</span>
+                  </span>
+                ) : (
+                  <p className="text-sm/none text-nav-muted">Hide money anywhere in the world</p>
+                )}
               </div>
               <button
                 type="button"
@@ -312,7 +327,8 @@ export function DropGDrawer({
                       )}
                     </div>
 
-                    {/* ── Private ── */}
+                    {/* ── Private ── (event drops are always public) */}
+                    {!eventId && (
                     <FeatureCard
                       iconSrc="/lock-password-fill-icon.svg"
                       title="Private drop"
@@ -332,6 +348,7 @@ export function DropGDrawer({
                         />
                       </div>
                     </FeatureCard>
+                    )}
 
                     {/* ── Riddle ── */}
                     <FeatureCard

@@ -5,8 +5,11 @@ import { useAccount, useWriteContract } from "wagmi";
 import {
   ArrowLeft, Check, Clock, Coins, Compass, Flag, Flame, Gift, Hourglass, IdCard, Link2, Loader2,
   MapPin, Navigation, Puzzle, RefreshCw, Search, Star, Tag, Target, Trophy, Zap,
+  CalendarDays, Lock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
+import Link from "next/link";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
@@ -250,6 +253,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const verificationOk = isVerified;
   const [status, setStatus] = useState<Status>("idle");
   const [errMsg, setErrMsg] = useState("");
+  // An event drop before its event starts isn't an error — it's a "not yet".
+  const [eventLocked, setEventLocked] = useState(false);
 
   // Animated count-up for the claimed amount on the success screen.
   const amountNum   = drop ? Number(drop.amount) / 1e18 : 0;
@@ -257,6 +262,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const countUpText = amountNum >= 1 ? Math.round(countUp).toLocaleString() : countUp.toFixed(2);
 
   const parsed = drop ? parseDropHint(drop.hint) : null;
+  const eventInfo = useEventSummary(parsed?.eventId);
   const { campaign, claims } = useCampaign(parsed?.campaignId ?? null);
 
   const [answer, setAnswer] = useState("");
@@ -269,6 +275,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   useEffect(() => {
     setStatus("idle");
     setErrMsg("");
+    setEventLocked(false);
     setAnswer("");
     setNearby(0);
   }, [drop?.id]);
@@ -390,6 +397,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       const fe = friendlyClaimError(e);
       // User just dismissed the wallet prompt — no error UI, let them retry.
       if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+      setEventLocked(fe.kind === "event");
 
       // Truth-check on-chain: many raw errors (RPC blips, gas) don't say whether
       // the drop is actually gone. Ask the contract so we show the RIGHT thing —
@@ -482,6 +490,13 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                 )}
                 {parsed.hasRiddle && (
                   <Chip tone="brand" icon={<Puzzle className="w-3.5 h-3.5" strokeWidth={2} />}>Riddle</Chip>
+                )}
+                {parsed.eventId && (
+                  <Link href={`/events/${parsed.eventId}`} className="max-w-full" aria-label={eventInfo ? `Part of ${eventInfo.title}` : "Event drop"}>
+                    <Chip tone="brand" icon={<CalendarDays className="w-3.5 h-3.5" strokeWidth={2} />}>
+                      <span className="truncate max-w-[200px]">{eventInfo ? `Part of ${eventInfo.title}` : "Event drop"}</span>
+                    </Chip>
+                  </Link>
                 )}
                 {isTaskDrop && (
                   <Chip icon={<Gift className="w-3.5 h-3.5" strokeWidth={2} />}>Merchant reward</Chip>
@@ -710,11 +725,23 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   )}
 
                   {/* Error */}
-                  {(status === "error" || status === "gone") && errMsg && (
+                  {(status === "error" || status === "gone") && errMsg && (eventLocked ? (
+                    <Notice
+                      tone="brand"
+                      icon={<Lock className="w-5 h-5" strokeWidth={1.75} />}
+                      title={eventInfo ? `Unlocks ${eventStartLabel(eventInfo.startsAt)}` : "Not unlocked yet"}
+                      body={errMsg}
+                      action={parsed?.eventId ? (
+                        <Link href={`/events/${parsed.eventId}`} className="shrink-0 h-9 px-3.5 rounded-full bg-white text-sm/none text-brand flex items-center">
+                          Event
+                        </Link>
+                      ) : undefined}
+                    />
+                  ) : (
                     <p role="alert" className="rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm/[140%] text-danger">
                       {errMsg}
                     </p>
-                  )}
+                  ))}
 
                   {/* ── Claim button (task drops swap in the unlock panel) ── */}
                   {showTaskUnlock ? (

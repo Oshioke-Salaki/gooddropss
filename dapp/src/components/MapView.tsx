@@ -10,8 +10,21 @@ import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
 import {
   dropBadgeHTML, clusterBadgeHTML, landmarkBadgeHTML,
-  landmarkBadgeSize, PIN_TIP, LM,
+  landmarkBadgeSize, PIN_TIP, LM, eventPinHTML,
 } from "@/components/map/markers";
+
+/** An event, already formatted for its pin. */
+export interface MapEventPin {
+  id: string;
+  title: string;
+  lat: number;
+  lng: number;
+  live: boolean;
+  /** "Tonight 6:00 PM", "Sat 12 PM"… (ignored when live) */
+  when: string;
+  /** "5,000 G$" */
+  budget: string;
+}
 import { MAP_STYLE } from "@/components/map/style";
 import { isLightDevice, prefersReducedMotion } from "@/lib/deviceTier";
 import { countDropsPerLandmark } from "@/lib/landmarkDrops";
@@ -153,6 +166,9 @@ interface Props {
   onUserLocation: (loc: LatLng) => void;
   spots?: Spot[];
   onSpotClick?: (spot: Spot) => void;
+  /** Approved events that are live or coming up soon. Optional; failures upstream just mean none. */
+  events?: MapEventPin[];
+  onEventClick?: (id: string) => void;
   landmarks?: Landmark[];
   /** Claim-activity hotspots (where hunters have found drops) for the demand
    *  heatmap. Toggled by `showHeatmap`. */
@@ -200,7 +216,7 @@ const LABEL_GAP_PX = 6;
 
 export default function MapView({
   drops, onDropClick, userLocation, onUserLocation,
-  spots = [], onSpotClick, landmarks = [],
+  spots = [], onSpotClick, landmarks = [], events = [], onEventClick,
   heatmapPoints = [], showHeatmap = false, focus = null,
   interactiveLandmarks = false, onLandmarkClick,
   pickingMode = false, onMapPick,
@@ -221,12 +237,15 @@ export default function MapView({
   onDropClickRef.current = onDropClick;
   const onSpotClickRef = useRef(onSpotClick);
   onSpotClickRef.current = onSpotClick;
+  const onEventClickRef = useRef(onEventClick);
+  onEventClickRef.current = onEventClick;
   const dropsRef = useRef(drops);
   dropsRef.current = drops;
 
   // Marker registries so re-renders can clear stale DOM markers.
   const dropMarkersRef     = useRef<maplibregl.Marker[]>([]);
   const spotMarkersRef     = useRef<maplibregl.Marker[]>([]);
+  const eventMarkersRef    = useRef<maplibregl.Marker[]>([]);
   const landmarkMarkersRef = useRef<maplibregl.Marker[]>([]);
   const userMarkerRef      = useRef<maplibregl.Marker | null>(null);
 
@@ -494,6 +513,37 @@ export default function MapView({
       spotMarkersRef.current = [];
     };
   }, [spots, mapReady]);
+
+  // ── Event pins ──────────────────────────────────────────────────────────────
+  // Anchored by their left edge on the venue so the label reads away from it.
+  // Created before drop markers re-render, so drops (appended later on every
+  // move) paint above them — a chest is always tappable even next to an event.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    eventMarkersRef.current.forEach((m) => m.remove());
+    eventMarkersRef.current = events
+      .filter((e) => Number.isFinite(e.lat) && Number.isFinite(e.lng))
+      .map((ev) => {
+        const el = document.createElement("div");
+        el.style.cursor = "pointer";
+        el.setAttribute("role", "link");
+        el.setAttribute("aria-label", `${ev.title}, ${ev.live ? "live now" : ev.when}, ${ev.budget}`);
+        el.title = ev.title;
+        el.innerHTML = eventPinHTML(ev);
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onEventClickRef.current?.(ev.id);
+        });
+        return new maplibregl.Marker({ element: el, anchor: "left", offset: [-16, 0] })
+          .setLngLat([ev.lng, ev.lat])
+          .addTo(map);
+      });
+    return () => {
+      eventMarkersRef.current.forEach((m) => m.remove());
+      eventMarkersRef.current = [];
+    };
+  }, [events, mapReady]);
 
   // ── Landmark labels (zoom-gated, viewport-culled, collision-culled) ────────
   const renderLandmarkMarkers = useCallback(() => {

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Gift, HeartPulse, Map, LogOut, Equal, X,
+  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
@@ -16,11 +16,13 @@ import { CountBadge } from "@/components/admin/ui";
 // menu below it (the links drop down as a pill rail, like the public nav). It
 // wraps every /admin/* page after the password gate, so the whole console shares
 // one navigation surface and one background.
-const NAV: { href: string; label: string; Icon: LucideIcon; badge?: "suggestions" | "reports" | "businesses" }[] = [
+type BadgeKey = "suggestions" | "reports" | "businesses" | "events";
+const NAV: { href: string; label: string; Icon: LucideIcon; badge?: BadgeKey }[] = [
   { href: "/admin/suggestions", label: "Suggestions", Icon: Lightbulb,   badge: "suggestions" },
   { href: "/admin/reports",     label: "Reports",     Icon: Flag,        badge: "reports" },
   { href: "/admin/places",      label: "Places",      Icon: Tag },
   { href: "/admin/businesses",  label: "Businesses",  Icon: Store,       badge: "businesses" },
+  { href: "/admin/events",      label: "Events",      Icon: CalendarDays, badge: "events" },
   { href: "/admin/badges",      label: "Badges",      Icon: Medal },
   { href: "/admin/analytics",   label: "Analytics",   Icon: ChartColumn },
   { href: "/admin/competition", label: "Competition", Icon: Gift },
@@ -36,6 +38,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = useState(0);
   const [reports, setReports] = useState(0);
   const [pendingBiz, setPendingBiz] = useState(0);
+  const [eventReview, setEventReview] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -67,17 +70,24 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           setPendingBiz(list.filter((s) => spotStatus(s) === "pending").length);
         })
         .catch(() => {});
-    const loadAll = () => { loadSuggestions(); loadReports(); loadBusinesses(); };
+    const loadEvents = () =>
+      fetch("/api/admin/events", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : { review: [] }))
+        .then((d) => { if (alive && Array.isArray(d.review)) setEventReview(d.review.length); })
+        .catch(() => {});
+    const loadAll = () => { loadSuggestions(); loadReports(); loadBusinesses(); loadEvents(); };
     loadAll();
     window.addEventListener("gd:landmarks-updated", loadSuggestions);
     window.addEventListener("gd:moderation-updated", loadReports);
     window.addEventListener("gd:businesses-updated", loadBusinesses);
+    window.addEventListener("gd:events-updated", loadEvents);
     const t = setInterval(loadAll, 120_000);
     return () => {
       alive = false;
       window.removeEventListener("gd:landmarks-updated", loadSuggestions);
       window.removeEventListener("gd:moderation-updated", loadReports);
       window.removeEventListener("gd:businesses-updated", loadBusinesses);
+      window.removeEventListener("gd:events-updated", loadEvents);
       clearInterval(t);
     };
   }, []);
@@ -98,8 +108,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     window.location.reload();
   }
 
-  const countFor = (badge?: "suggestions" | "reports" | "businesses") =>
-    badge === "suggestions" ? pending : badge === "reports" ? reports : badge === "businesses" ? pendingBiz : 0;
+  const countFor = (badge?: BadgeKey) =>
+    badge === "suggestions" ? pending : badge === "reports" ? reports : badge === "businesses" ? pendingBiz
+      : badge === "events" ? eventReview : 0;
 
   const links = NAV.map(({ href, label, Icon, badge }) => {
     const active = pathname.startsWith(href);

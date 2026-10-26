@@ -26,6 +26,7 @@ import {
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { track } from "@/lib/analytics";
+import { buildEventHint } from "@/lib/events";
 
 export const DURATIONS = [
   { label: "1h",  seconds: 3_600 },
@@ -69,6 +70,10 @@ function clearPending() {
 
 export interface UseCreateDropOpts {
   campaignId?: string;
+  /** Tag drops for an event ([E:id], see lib/events). Never private. */
+  eventId?: string;
+  /** Where the form starts (e.g. the event venue). The person can still move it. */
+  defaultLocation?: { lat: number; lng: number; placeName: string | null } | null;
   /** Coordinates where drops have been claimed — local demand while picking a spot. */
   claimPoints?: { lat: number; lng: number }[];
   onClose: () => void;
@@ -80,7 +85,7 @@ export interface UseCreateDropOpts {
  * resume dance. Kept out of the view so the drawer is only layout, and so this
  * can be reasoned about (and tested) on its own.
  */
-export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCreateDropOpts) {
+export function useCreateDrop({ campaignId, eventId, defaultLocation = null, claimPoints = [], onClose }: UseCreateDropOpts) {
   const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
@@ -109,9 +114,9 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
   const minG = Number(minDrop / 10n ** 18n) || 1;
 
   // ── Location ────────────────────────────────────────────────────────────────
-  const [lat, setLat] = useState<number | null>(null);
-  const [lng, setLng] = useState<number | null>(null);
-  const [placeName, setPlaceName] = useState<string | null>(null);
+  const [lat, setLat] = useState<number | null>(defaultLocation?.lat ?? null);
+  const [lng, setLng] = useState<number | null>(defaultLocation?.lng ?? null);
+  const [placeName, setPlaceName] = useState<string | null>(defaultLocation?.placeName ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // ── Form ────────────────────────────────────────────────────────────────────
@@ -156,7 +161,9 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
   const overMax = amountWei > 0n && amountWei > maxDrop;
   const underMin = amountWei > 0n && amountWei < minDrop;
   // Private prefix overhead: "[P:0x…]" = 46 chars. Riddle prefix "[R]" = 3.
-  const hintMaxLen = (isPrivate ? 154 : 200) - (hasRiddle ? 3 : 0);
+  // Event tag "[E:<id>]" takes its own length, so the on-chain 200 always holds.
+  const eventTagLen = eventId ? buildEventHint("", eventId).length : 0;
+  const hintMaxLen = (isPrivate ? 154 : 200) - (hasRiddle ? 3 : 0) - eventTagLen;
 
   // A riddle only counts if it's actually usable: an answer that normalises to
   // nothing (e.g. "???") could never be matched, and the server rejects it.
@@ -231,15 +238,18 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
     if (quantity > 1 && !campaignId) { setIsPrivate(false); setHasRiddle(false); }
   }, [quantity, campaignId]);
 
+  // Event drops are public by definition — hunters at the event find them on the map.
+  useEffect(() => { if (eventId) setIsPrivate(false); }, [eventId, isPrivate]);
+
   const reset = useCallback(() => {
     setStatus("idle"); setErrMsg(""); setHint(""); setAmount("10");
     setQuantity(1); setMultiProgress(null); setDuration(86_400);
-    setLat(null); setLng(null); setPlaceName(null);
+    setLat(defaultLocation?.lat ?? null); setLng(defaultLocation?.lng ?? null); setPlaceName(defaultLocation?.placeName ?? null);
     setIsPrivate(false); setTargetAddress("");
     setCreatedDropId(null); setPrivateToken(null);
     setHasRiddle(false); setRiddleQuestion(""); setRiddleAnswer("");
     setPending(null); setResuming(false);
-  }, []);
+  }, [defaultLocation?.lat, defaultLocation?.lng, defaultLocation?.placeName]);
 
   const handleClose = useCallback(() => { reset(); onClose(); }, [reset, onClose]);
 
@@ -349,7 +359,7 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       setStatus("multi");
       const tx = await writeContractAsync({
         address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createManyDrops",
-        args: [lats, lngs, amountWei as bigint, expiry, hint],
+        args: [lats, lngs, amountWei as bigint, expiry, eventId ? buildEventHint(hint, eventId) : hint],
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setMultiProgress({ done: qty, failed: 0, total: qty });
@@ -363,7 +373,7 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       setStatus("error");
     }
   }, [address, lat, lng, amountWei, maxDrop, minDrop, totalWei, balance, qty, hint, hintMaxLen,
-      duration, expiryFor, writeContractAsync]);
+      duration, expiryFor, writeContractAsync, eventId]);
 
   // ── Single drop ─────────────────────────────────────────────────────────────
   const handleDrop = useCallback(async () => {
@@ -403,7 +413,9 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       onChainLng = 0;
     }
 
-    const baseHint = campaignId
+    const baseHint = eventId
+      ? buildEventHint(hint, eventId)
+      : campaignId
       ? buildCampaignHint(hint, campaignId)
       : isPrivate
         ? (targetAddress.trim() ? buildPrivateHint(hint, targetAddress.trim()) : buildPrivateHintNoTarget(hint))
@@ -504,7 +516,7 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       setStatus("error");
     }
   }, [guard, multiActive, handleMultiDrop, pending, amountNum, amountWei, hint, hintMaxLen,
-      maxDrop, minDrop, balance, duration, expiryFor, lat, lng, isPrivate, campaignId,
+      maxDrop, minDrop, balance, duration, expiryFor, lat, lng, isPrivate, campaignId, eventId,
       targetAddress, riddleOn, riddleQuestion, riddleAnswer, address,
       signMessageAsync, writeContractAsync, bindRiddle]);
 

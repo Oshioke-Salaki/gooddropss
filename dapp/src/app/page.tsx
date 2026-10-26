@@ -27,6 +27,9 @@ import { useLiveDrops } from "@/hooks/useLiveDrops";
 import { useHiddenDrops } from "@/hooks/useHiddenDrops";
 import { parseDropHint } from "@/lib/utils";
 import type { Drop, LatLng, Spot, Landmark } from "@/types";
+import type { MapEventPin } from "@/components/MapView";
+import type { GdEvent } from "@/lib/events";
+import { useRouter } from "next/navigation";
 import { DROP_STATUS } from "@/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -73,6 +76,8 @@ export default function HomePage() {
   const [huntingDrop, setHuntingDrop]   = useState<Drop | null>(null);
   const [userLoc, setUserLoc]           = useState<LatLng | null>(null);
   const [spots, setSpots]               = useState<Spot[]>([]);
+  const eventPins = useMapEvents();
+  const router = useRouter();
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
 
   // Admin landmarks + crowdsourced suggestions
@@ -175,6 +180,8 @@ export default function HomePage() {
           userLocation={userLoc}
           onUserLocation={handleUserLocation}
           spots={spots}
+          events={eventPins}
+          onEventClick={(id) => router.push(`/events/${id}`)}
           onSpotClick={handleSpotClick}
           landmarks={landmarks}
           heatmapPoints={heatmapPoints}
@@ -234,6 +241,7 @@ export default function HomePage() {
         loading={loading}
         onDrop={() => setShowCreate(true)}
         onShowNearest={(lat, lng) => setFocusCoord({ lat, lng })}
+        nextEvent={eventPins[0] ?? null}
       />
 
       {/* Hunting mode — full screen immersive overlay */}
@@ -302,3 +310,47 @@ export default function HomePage() {
     </div>
   );
 }
+
+// ── Events on the map ─────────────────────────────────────────────────────────
+// Live events and those starting within a week. Refreshed every couple of
+// minutes so a starting event flips to "Live" without a reload. Any failure
+// just means no event pins — the map itself is never affected.
+const EVENT_HORIZON_S = 7 * 86_400;
+
+function pinWhen(startsAt: number, now: number): string {
+  const d = new Date(startsAt * 1000);
+  const time = d.toLocaleTimeString("en", { hour: "numeric", minute: d.getMinutes() ? "2-digit" : undefined });
+  const today = new Date(now * 1000);
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date(today).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days === 0) return d.getHours() >= 17 ? `Tonight ${time}` : `Today ${time}`;
+  if (days === 1) return `Tomorrow ${time}`;
+  return `${d.toLocaleDateString("en", { weekday: "short" })} ${time}`;
+}
+
+function useMapEvents(): MapEventPin[] {
+  const [pins, setPins] = useState<MapEventPin[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/events")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: { live?: { event: GdEvent }[]; upcoming?: { event: GdEvent }[] } | null) => {
+          if (!alive || !d) return;
+          const now = Math.floor(Date.now() / 1000);
+          const toPin = (e: GdEvent, live: boolean): MapEventPin => ({
+            id: e.id, title: e.title, lat: e.lat, lng: e.lng, live,
+            when: pinWhen(e.startsAt, now), budget: `${e.budgetG.toLocaleString("en")} G$`,
+          });
+          setPins([
+            ...(d.live ?? []).map((r) => toPin(r.event, true)),
+            ...(d.upcoming ?? []).filter((r) => r.event.startsAt - now <= EVENT_HORIZON_S).map((r) => toPin(r.event, false)),
+          ]);
+        })
+        .catch(() => {});
+    load();
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 120_000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, []);
+  return pins;
+}
+

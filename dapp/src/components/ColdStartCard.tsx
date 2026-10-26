@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { X, Bell, MapPin, Check, Loader2, Navigation, Sparkles } from "lucide-react";
+import { X, Bell, MapPin, Check, Loader2, Navigation, Sparkles, CalendarDays } from "lucide-react";
+import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { haversineDistance, formatG$, gpsToDeg } from "@/lib/utils";
@@ -14,6 +15,8 @@ interface Props {
   onDrop:   () => void;
   /** Fly the map to a point (the nearest live drop). */
   onShowNearest?: (lat: number, lng: number) => void;
+  /** The soonest live or upcoming event, so an empty map can point somewhere real. */
+  nextEvent?: { id: string; title: string; when: string; live: boolean; budget: string } | null;
 }
 
 function formatKm(m: number): string {
@@ -30,7 +33,7 @@ const NEAR_THRESHOLD_M = 25_000; // 25 km
  * on an empty map — we show worldwide proof-of-life, a "notify me here" hook,
  * and a prompt to seed the first local drop themselves.
  */
-export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }: Props) {
+export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest, nextEvent }: Props) {
   const [dismissed, setDismissed] = useState(false);
   const { status, subscribe }     = usePushSubscription();
   const { address } = useAccount();
@@ -103,6 +106,8 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }
   const unsupported = status === "unsupported";
   const empty = activeDrops.length === 0;
   const canShow = !empty && nearest && onShowNearest;
+  // With no drops anywhere, an upcoming event is the best thing to point at.
+  const eventLead = empty && nextEvent ? nextEvent : null;
 
   // Three situations, three different first actions:
   //   nothing live anywhere      → get an alert when something drops
@@ -127,7 +132,7 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }
         motion-safe:transition-colors ${
         subscribed
           ? "bg-brand-soft text-brand cursor-default"
-          : empty
+          : empty && !eventLead
             ? "bg-brand text-white hover:bg-brand/90 cursor-pointer disabled:opacity-70 disabled:cursor-wait"
             : "border border-line bg-white text-heading hover:bg-surface cursor-pointer disabled:opacity-60 disabled:cursor-wait"
       }`}
@@ -174,7 +179,13 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }
       </div>
 
       <p className="text-sm/[140%] text-nav-muted mt-3">
-        {empty ? (
+        {eventLead ? (
+          <>
+            {eventLead.live ? "Happening now: " : "Coming up: "}
+            <span className="text-heading">{eventLead.title}</span>
+            {eventLead.live ? "" : `, ${eventLead.when}`} with <span className="text-heading">{eventLead.budget}</span> to find.
+          </>
+        ) : empty ? (
           subscribed
             ? <>You&apos;re set. We&apos;ll ping you the moment G$ is hidden near you. Drops land often around campuses, events and sponsor campaigns.</>
             : <>New drops land often around campuses, events and sponsor campaigns. Turn on alerts and we&apos;ll tell you the moment G$ is hidden near you.</>
@@ -196,6 +207,15 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest }
 
       {/* The first action spans the card; the rest share a row beneath it. */}
       <div className="grid grid-cols-2 gap-2.5 mt-4 [&>*:first-child]:col-span-2 [&>*:nth-child(2):last-child]:col-span-2">
+        {eventLead && (
+          <Link
+            href={`/events/${eventLead.id}`}
+            className="h-11 rounded-full bg-brand text-white text-sm/none cursor-pointer flex items-center justify-center gap-2
+              motion-safe:transition-colors hover:bg-brand/90 whitespace-nowrap px-4"
+          >
+            <CalendarDays className="w-4 h-4" strokeWidth={2} /> {eventLead.live ? "Go to the event" : "See the event"}
+          </Link>
+        )}
         {canShow && (
           <button
             type="button"

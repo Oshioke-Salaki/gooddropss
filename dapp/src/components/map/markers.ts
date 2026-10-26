@@ -267,3 +267,31 @@ export function landmarkBadgeSize(
     h: Math.max(LM.height, LM.pinH + LM.pinBottom),
   };
 }
+
+// ── Event pin ────────────────────────────────────────────────────────────────
+
+const CALENDAR_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden><path d="M8 2v4"/><path d="M16 2v4"/>' +
+  '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
+
+/**
+ * An event on the map: brand calendar mark, the (shortened) title, then either a
+ * pulsing "Live" chip or when it starts, then the budget. Same glass family as
+ * the drop and shop pills so it reads as part of the map, but blue-led so it
+ * never gets mistaken for a single drop.
+ */
+export function eventPinHTML({ title, live, when, budget }: { title: string; live: boolean; when: string; budget: string }): string {
+  const short = title.length > 24 ? `${title.slice(0, 23).trimEnd()}…` : title;
+  const state = live
+    ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-streak px-2 py-1.5 text-[11px]/none text-white lg:text-xs/none">
+         <span class="relative flex w-1.5 h-1.5"><span class="absolute inline-flex w-full h-full rounded-full bg-white opacity-70 motion-safe:animate-ping"></span><span class="relative w-1.5 h-1.5 rounded-full bg-white"></span></span>Live</span>`
+    : `<span class="rounded-full bg-white px-2 py-1.5 text-[11px]/none text-heading lg:text-xs/none whitespace-nowrap">${esc(when)}</span>`;
+  return `
+    <div class="flex items-center gap-x-1.5 rounded-full ${PILL_GLASS} p-0.5 pr-1 select-none font-sans">
+      <span class="w-7 h-7 shrink-0 rounded-full bg-brand text-white flex items-center justify-center">${CALENDAR_ICON}</span>
+      <span class="max-w-[150px] truncate text-white text-xs/none lg:text-sm/none pl-0.5">${esc(short)}</span>
+      ${state}
+      <span class="rounded-full bg-brand px-2 py-1.5 text-[11px]/none text-white lg:text-xs/none whitespace-nowrap">${esc(budget)}</span>
+    </div>`;
+}

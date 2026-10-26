@@ -3,10 +3,11 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useAccount, useWriteContract } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
+import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
 import {
   Navigation, Copy, Share2, Check, ArrowLeft, Search, Lock, Link2, Trophy, Zap, Clock,
   Hourglass, Puzzle, Crosshair, IdCard, RefreshCw, Loader2, Coins, MapPinOff, Handshake,
-  Mail, MapPin, Sparkles,
+  Mail, MapPin, Sparkles, CalendarDays,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
@@ -75,6 +76,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const [userLoc,    setUserLoc]    = useState<{ lat: number; lng: number } | null>(null);
   const [status,     setStatus]     = useState<ClaimStatus>("idle");
   const [errMsg,     setErrMsg]     = useState("");
+  // An event drop before its event starts: a calm "not yet", not an error.
+  const [eventLocked, setEventLocked] = useState(false);
   const [copied,     setCopied]     = useState(false);
   const [isHunting,  setIsHunting]  = useState(false);
   // Real coords for private drops — fetched via token from URL query param
@@ -110,6 +113,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // Parse hint + fetch campaign BEFORE early returns so hooks are always called
   // in the same order (React rules of hooks).
   const parsedHint = drop ? parseDropHint(drop.hint) : null;
+  const eventInfo = useEventSummary(parsedHint?.eventId);
   const campaign   = useCampaign(parsedHint?.campaignId ?? null);
 
   // This page is the share-link / QR destination, so it has its own claim path
@@ -196,6 +200,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     track("claim_started", { surface: "page" });
     setStatus("claiming");
     setErrMsg("");
+    setEventLocked(false);
     try {
       await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
       setStatus("claiming");
@@ -245,6 +250,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
       track("claim_failed", { reason: claimFailReason(e), surface: "page" });
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+      setEventLocked(fe.kind === "event");
       let gone = fe.terminal;
       let msg  = fe.message;
       if (!gone && drop) {
@@ -469,6 +475,14 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             {isChainLast ? <Trophy className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
             {isChainLast ? "Final" : "Chain"}
           </Tag>
+        )}
+        {parsedHint?.eventId && (
+          <Link href={`/events/${parsedHint.eventId}`} className="max-w-full">
+            <Tag tone="brand">
+              <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate max-w-[220px]">{eventInfo ? `Part of ${eventInfo.title}` : "Event drop"}</span>
+            </Tag>
+          </Link>
         )}
         {isActive && <Tag><Clock className="w-3.5 h-3.5" /> {timeLeft(drop.expiry)}</Tag>}
         {isClaimed && <Tag><Check className="w-3.5 h-3.5" /> Claimed</Tag>}
@@ -712,11 +726,24 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
               </div>
             )}
 
-            {status === "error" && errMsg && (
+            {eventLocked && errMsg ? (
+              <div role="status" className="rounded-2xl bg-brand-soft p-4 flex items-center gap-3">
+                <span className="w-10 h-10 shrink-0 rounded-full bg-white text-brand flex items-center justify-center">
+                  <Lock className="w-4 h-4" strokeWidth={2} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm/none text-heading">{eventInfo ? `Unlocks ${eventStartLabel(eventInfo.startsAt)}` : "Not unlocked yet"}</p>
+                  <p className="text-sm/[140%] text-nav-muted mt-1.5">{errMsg}</p>
+                </div>
+                {parsedHint?.eventId && (
+                  <Link href={`/events/${parsedHint.eventId}`} className="shrink-0 h-9 px-3.5 rounded-full bg-white text-sm/none text-brand flex items-center">Event</Link>
+                )}
+              </div>
+            ) : status === "error" && errMsg ? (
               <div role="alert" className="rounded-2xl bg-[#FFF0F0] p-4 text-sm/[140%] text-danger">
                 {errMsg}
               </div>
-            )}
+            ) : null}
 
             {/* Claim CTA */}
             {!isConnected ? (
@@ -884,9 +911,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 /** Status tag in the hero: outlined by default, tinted for flash/chain/expired. */
 function Tag({
   children, tone = "neutral",
-}: { children: React.ReactNode; tone?: "neutral" | "streak" | "dark" | "danger" }) {
+}: { children: React.ReactNode; tone?: "neutral" | "streak" | "dark" | "danger" | "brand" }) {
   const look = {
     neutral: "border border-line bg-white text-heading",
+    brand:   "bg-brand-soft text-brand",
     streak:  "bg-streak-bg text-streak",
     dark:    "bg-nav-active text-white",
     danger:  "bg-[#FFF0F0] text-danger",
