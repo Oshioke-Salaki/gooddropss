@@ -27,6 +27,10 @@ export const keys = {
   hunterNearbyCd:   (address: string) => `gd:hunter:nearbycd:${address.toLowerCase()}`,
   reverifyReminded: (address: string) => `gd:reverify:reminded:${address.toLowerCase()}`,
   reverifyCursor:   ()                => `gd:reverify:cursor`,
+  // Weekly recap push — rotating cursor, plus a per-week "sent" marker (TTL'd)
+  // so the hourly Monday runs never message anyone twice.
+  recapCursor:      (week: number)    => `gd:recap:cursor:${week}`,
+  recapSent:        (week: number, address: string) => `gd:recap:sent:${week}:${address.toLowerCase()}`,
   // Cross-instance cache of wallet → GoodDollar identity root. Roots change only
   // on connect/disconnect, so this is safe to cache for a day and saves an RPC
   // read on nearly every stats API call (a big Active-CPU saver on Vercel).

@@ -16,8 +16,10 @@ import { formatG$, shortAddr } from "@/lib/utils";
 import { BadgeGrid } from "./BadgeGrid";
 import { BadgeViewer } from "./BadgeViewer";
 import { EditProfileModal } from "./EditProfileModal";
+import { QuestCard } from "@/components/quests/QuestCard";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
 import { useHunterStreak } from "./useHunterStreak";
+import { track } from "@/lib/analytics";
 
 const MEDALS = ["/first-medal.svg", "/second-medal.svg", "/third-medal.svg"];
 
@@ -83,6 +85,7 @@ export function OwnProfile({ address }: { address: string }) {
     try {
       await navigator.clipboard.writeText(text);
       flash(what);
+      if (what === "invite") track("invite_link_copied");
     } catch { /* clipboard blocked — the text is on screen anyway */ }
   }, [flash]);
 
@@ -137,6 +140,8 @@ export function OwnProfile({ address }: { address: string }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.16fr] gap-6 lg:gap-12 items-start">
+        {/* Left column: identity + invite, then this week's quests. */}
+        <div className="flex flex-col gap-6 min-w-0">
         {/* ── Identity + invite ───────────────────────────────────────────── */}
         <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden min-w-0">
           <div className="relative p-6">
@@ -299,6 +304,10 @@ export function OwnProfile({ address }: { address: string }) {
             </div>
           </div>
         </section>
+
+        {/* ── Weekly quests ───────────────────────────────────────────────── */}
+        <QuestCard address={address} />
+        </div>
 
         {/* ── Badges ──────────────────────────────────────────────────────── */}
         <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 min-w-0">

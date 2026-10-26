@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import { publicClient } from "@/lib/publicClient";
 import { readIdentityStatus } from "@/lib/identity";
+import { sendPush } from "@/lib/push";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -29,7 +30,7 @@ function authorized(req: NextRequest): boolean {
 function reminderFor(s: Awaited<ReturnType<typeof readIdentityStatus>>): { title: string; body: string } | null {
   if (s.state === "lapsed") {
     return {
-      title: "Re-verify to keep hunting 🔓",
+      title: "Re-verify to keep hunting",
       body:  "Your GoodDollar check lapsed — a quick face re-scan restores your access to drops.",
     };
   }
@@ -38,7 +39,7 @@ function reminderFor(s: Awaited<ReturnType<typeof readIdentityStatus>>): { title
     const urgent = s.isProbation ? s.daysLeft <= 1 : s.daysLeft <= 3;
     if (urgent) {
       return {
-        title: "Your verification is about to expire ⏳",
+        title: "Your verification is about to expire",
         body:  `Re-verify in the next ${Math.max(1, s.daysLeft)} day${s.daysLeft === 1 ? "" : "s"} so you don't lose access to drops.`,
       };
     }
@@ -54,9 +55,6 @@ export async function GET(req: NextRequest) {
 
   const redis = getRedis();
   if (!redis) return NextResponse.json({ ok: false, reason: "No storage" });
-
-  const origin = req.nextUrl.origin;
-  const internalSecret = process.env.INTERNAL_WEBHOOK_SECRET ?? "";
 
   try {
     const all = (await redis.smembers(keys.subscribersIndex())) ?? [];
@@ -84,12 +82,8 @@ export async function GET(req: NextRequest) {
           // Rate-limit: NX set fails if we reminded them recently.
           const fresh = await redis.set(keys.reverifyReminded(addr), "1", { nx: true, ex: REMIND_COOLDOWN_S });
           if (!fresh) return;
-          await fetch(`${origin}/api/push/notify`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-internal-secret": internalSecret },
-            body: JSON.stringify({ to: addr, title: msg.title, body: msg.body, url: "/", tag: "reverify" }),
-          });
-          reminded++;
+          const sent = await sendPush(redis, addr, { title: msg.title, body: msg.body, url: "/", tag: "reverify" });
+          if (sent.ok) reminded++;
         } catch { /* one bad address must not fail the batch */ }
       }));
     }

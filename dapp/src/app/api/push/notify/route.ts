@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import webpush from "web-push";
-import { getRedis, keys } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
+import { sendPush } from "@/lib/push";
 
 export const runtime = "nodejs";
-
-function getVapid() {
-  const pub   = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const priv  = process.env.VAPID_PRIVATE_KEY;
-  const email = process.env.VAPID_EMAIL;
-  if (!pub || !priv || !email) return null;
-  return { pub, priv, email };
-}
 
 interface NotifyPayload {
   to:    string; // wallet address
@@ -20,56 +12,32 @@ interface NotifyPayload {
   tag?:  string;
 }
 
-// POST /api/push/notify  (internal — called by webhook handler)
+// POST /api/push/notify  (internal — called by the webhook handler and crons)
 export async function POST(req: NextRequest) {
   // Verify internal secret to prevent abuse
   const secret = req.headers.get("x-internal-secret");
-  if (secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
+  if (!process.env.INTERNAL_WEBHOOK_SECRET || secret !== process.env.INTERNAL_WEBHOOK_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Read the body once, up front. (It used to be re-read in the error path,
+  // which always failed, so expired subscriptions were never cleaned up.)
+  let payload: NotifyPayload;
   try {
-    const payload: NotifyPayload = await req.json();
-    const vapid = getVapid();
-    const redis = getRedis();
-
-    if (!vapid || !redis) {
-      return NextResponse.json({ ok: false, reason: "Push not configured" });
-    }
-
-    webpush.setVapidDetails(`mailto:${vapid.email}`, vapid.pub, vapid.priv);
-
-    const raw = await redis.get<string>(keys.subscription(payload.to));
-    if (!raw) return NextResponse.json({ ok: false, reason: "No subscription for address" });
-
-    const subscription = typeof raw === "string" ? JSON.parse(raw) : raw;
-
-    await webpush.sendNotification(
-      subscription,
-      JSON.stringify({
-        title: payload.title,
-        body:  payload.body,
-        url:   payload.url ?? "/",
-        tag:   payload.tag ?? "gooddrops",
-      })
-    );
-
-    return NextResponse.json({ ok: true });
-  } catch (e: unknown) {
-    // Subscription expired / invalid — clean it up
-    const err = e as { statusCode?: number };
-    if (err?.statusCode === 410) {
-      const redis = getRedis();
-      if (redis) {
-        const payload: NotifyPayload = await req.json().catch(() => ({ to: "" }));
-        if (payload.to) {
-          await redis.del(keys.subscription(payload.to));
-          await redis.srem(keys.subscribersIndex(), payload.to.toLowerCase());
-          await redis.hdel(keys.huntersLoc(), payload.to.toLowerCase());
-        }
-      }
-    }
-    console.error("[push/notify]", e);
-    return NextResponse.json({ error: "Send failed" }, { status: 500 });
+    payload = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
+  if (!payload?.to || !payload.title) {
+    return NextResponse.json({ error: "Missing to/title" }, { status: 400 });
+  }
+
+  const redis = getRedis();
+  if (!redis) return NextResponse.json({ ok: false, reason: "Push not configured" });
+
+  const result = await sendPush(redis, payload.to, payload);
+  if (result.ok) return NextResponse.json({ ok: true });
+  // Only a genuine send failure is a 5xx; "no subscription" and "expired" are
+  // expected outcomes the caller can ignore.
+  return NextResponse.json(result, { status: result.reason === "failed" ? 502 : 200 });
 }

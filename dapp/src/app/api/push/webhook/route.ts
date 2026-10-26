@@ -3,6 +3,7 @@ import { getRedis, keys } from "@/lib/redis";
 import type { Redis } from "@upstash/redis";
 import { parseDropHint, gpsToDeg, haversineDistance } from "@/lib/utils";
 import { normalizeWebhook, readField } from "@/lib/webhookNormalize";
+import { sendPush as deliver } from "@/lib/push";
 
 export const runtime = "nodejs";
 
@@ -33,15 +34,12 @@ function formatAmount(wei: string): string {
   return n % 1 === 0 ? String(n) : n.toFixed(2);
 }
 
-async function sendPush(baseUrl: string, to: string, title: string, body: string, url: string, tag: string) {
-  await fetch(`${baseUrl}/api/push/notify`, {
-    method:  "POST",
-    headers: {
-      "Content-Type":       "application/json",
-      "x-internal-secret":  process.env.INTERNAL_WEBHOOK_SECRET ?? "",
-    },
-    body: JSON.stringify({ to, title, body, url, tag }),
-  });
+// Sends straight through lib/push (no internal HTTP hop), which also cleans up
+// expired subscriptions. `baseUrl` is kept so call sites read as before.
+async function sendPush(_baseUrl: string, to: string, title: string, body: string, url: string, tag: string) {
+  const redis = getRedis();
+  if (!redis) return;
+  await deliver(redis, to, { title, body, url, tag });
 }
 
 // Alert hunters who opted into location-based alerts and are within range of a
@@ -78,7 +76,7 @@ async function notifyNearby(
     if (!ok) continue;
     await sendPush(
       baseUrl, addr,
-      "💰 New drop near you!",
+      "New drop near you",
       `${formatAmount(opts.amount)} G$ just dropped nearby — first to find it wins.`,
       `/drop/${opts.dropId}`,
       `nearby-${opts.dropId}`,
@@ -134,7 +132,7 @@ export async function POST(req: NextRequest) {
         await sendPush(
           origin,
           dropper,
-          "Your drop was claimed! 🎯",
+          "Your drop was claimed",
           `Someone found your ${formatAmount(amount)} G$ drop. Check your wallet!`,
           `/drop/${dropId}`,
           `claim-${dropId}`
@@ -154,7 +152,7 @@ export async function POST(req: NextRequest) {
         await sendPush(
           origin,
           dropper,
-          "⚡ Your flash drop is live!",
+          "Your flash drop is live",
           `${formatAmount(amount)} G$ is now live — expires in under 1 hour!`,
           `/drop/${dropId}`,
           `flash-${dropId}`
