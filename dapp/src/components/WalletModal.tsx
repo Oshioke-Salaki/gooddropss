@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/layers";
 import {
   useBalance,
   useSignMessage,
@@ -25,8 +26,8 @@ import { SendGModal } from "@/components/SendGModal";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
 import { friendlyUbiError } from "@/lib/claimErrors";
-import { ClaimSDK } from "@goodsdks/citizen-sdk";
-import { IdentitySDK, useIdentitySDK } from "@goodsdks/identity-sdk";
+import { useIdentitySDK } from "@goodsdks/identity-sdk";
+import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
 
 interface Props {
   address: `0x${string}`;
@@ -111,18 +112,12 @@ export function WalletModal({
     if (!address || !publicClient || !walletClient) return;
     const identitySDK =
       identitySDKHook ??
-      new (IdentitySDK as any)(publicClient, walletClient, "production");
-    const sdk = new ClaimSDK({
-      account: address,
-      publicClient: publicClient as any,
-      walletClient: walletClient as any,
-      identitySDK: identitySDK as any,
-      env: "production",
-    });
+      makeIdentitySDK(publicClient, walletClient);
+    const sdk = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
     sdk
       .getWalletClaimStatus()
       .then((s) => {
-        setUbiStatus(s.status as any);
+        setUbiStatus(s.status);
         setUbiEntitlement(s.entitlement);
       })
       .catch(() => setUbiStatus("already_claimed"));
@@ -136,14 +131,8 @@ export function WalletModal({
     try {
       const identitySDK =
         identitySDKHook ??
-        new (IdentitySDK as any)(publicClient, walletClient, "production");
-      const sdk = new ClaimSDK({
-        account: address,
-        publicClient: publicClient as any,
-        walletClient: walletClient as any,
-        identitySDK: identitySDK as any,
-        env: "production",
-      });
+        makeIdentitySDK(publicClient, walletClient);
+      const sdk = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
       await sdk.claim();
       setUbiClaimDone(true);
       setUbiStatus("already_claimed");
@@ -165,17 +154,18 @@ export function WalletModal({
   // Lifts the mobile send sheet clear of the on-screen keyboard.
   const kbInset = useKeyboardInset(sendOpen);
 
-  // Escape closes too — the same dismissal the backdrop gives, for the keyboard.
-  // While the username editor is open, Escape belongs to it (it cancels the edit),
-  // so we stand down and let that handler win.
-  useEffect(() => {
-    if (editing) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, editing]);
+  // Shared layer plumbing (ui/layers). Escape is the same dismissal the
+  // backdrop gives — except while the username editor is open, where it cancels
+  // the edit instead. Send G$ registers as its own layer on top, so Escape there
+  // closes Send and leaves the wallet open. The page behind stays locked, and
+  // focus returns to the nav pill when the wallet closes.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEscapeLayer(true, () => {
+    if (editing) setEditing(false);
+    else onClose();
+  });
+  useScrollLock(true);
+  useFocusReturn(true, panelRef);
 
   // ── Username editing ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -321,7 +311,12 @@ export function WalletModal({
         {/* On a phone Send G$ takes the whole sheet rather than stacking — there's
             no room for two cards, and the wallet is one tap away behind it. */}
         <div
-          className={`panel-in w-full lg:w-[400px] lg:max-w-[calc(100vw-24px)] bg-white p-6
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Wallet"
+          tabIndex={-1}
+          className={`outline-none panel-in w-full lg:w-[400px] lg:max-w-[calc(100vw-24px)] bg-white p-6
             rounded-b-3xl lg:rounded-3xl flex-col gap-y-6
             ${sendOpen ? "hidden lg:flex" : "flex"}`}
           style={{ boxShadow: "0px 0px 12px 0px #0000000A" }}

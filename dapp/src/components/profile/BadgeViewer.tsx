@@ -1,7 +1,8 @@
 "use client";
 import { X } from "lucide-react";
 import { Medal, Lock } from "lucide-react";
-import { useEffect } from "react";
+import { useRef } from "react";
+import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/layers";
 import { BadgeFace } from "./BadgeGrid";
 import type { WallBadge } from "./useHunterProfile";
 
@@ -17,23 +18,27 @@ interface Props {
  * because the drawer itself already owns the bottom of a phone screen. It's
  * rendered by the drawer host (not inside the drawer's scroll container) so it
  * stays put while the wall scrolls behind it.
+ *
+ * Not a Sheet on purpose: on desktop it docks beside the drawer rather than
+ * centring over it. It still joins the shared layer plumbing, so Escape closes
+ * the badge first (then the drawer), and the page stays locked behind it on
+ * every host (drawer, public profile, own profile).
  */
 export function BadgeViewer({ badge, onClose }: Props) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Stop here: closing the badge shouldn't also close the drawer behind it.
-      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  const ref = useRef<HTMLDivElement>(null);
+  useEscapeLayer(true, onClose);
+  useScrollLock(true);
+  useFocusReturn(true, ref);
 
   return (
     <div
+      ref={ref}
       onClick={(e) => e.stopPropagation()}
       role="dialog"
+      aria-modal="true"
       aria-label={badge.name}
-      className="viewer-in-lg w-[calc(100vw-32px)] max-w-[420px] lg:w-[420px] bg-white rounded-3xl p-6
+      tabIndex={-1}
+      className="outline-none viewer-in-lg w-[calc(100vw-32px)] max-w-[420px] lg:w-[420px] bg-white rounded-3xl p-6
         shadow-[0px_0px_12px_0px_#0000000A] max-h-[80dvh] overflow-y-auto"
     >
       <div className="flex items-start justify-between gap-3 mb-6">

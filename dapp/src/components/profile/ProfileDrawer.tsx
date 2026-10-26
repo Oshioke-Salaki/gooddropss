@@ -1,9 +1,10 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAccount } from "wagmi";
 import { X, Share2, Check } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
+import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/layers";
 import { ProfileContent } from "./ProfileContent";
 import { BadgeViewer } from "./BadgeViewer";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
@@ -75,23 +76,13 @@ function ProfileDrawer({
     onDismiss: onClose,
   });
 
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
-  // Escape closes the drawer — but BadgeViewer captures it first when it's open,
-  // so one press closes the badge and the next closes the drawer.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Shared layer plumbing (ui/layers): the badge viewer opens on top of the
+  // drawer, so one Escape closes the badge and the next closes the drawer; the
+  // page stays locked until both are gone; focus returns to whatever opened it.
+  const focusRef = useRef<HTMLDivElement | null>(null);
+  useEscapeLayer(true, onClose);
+  useScrollLock(true);
+  useFocusReturn(true, focusRef);
 
   const share = useCallback(async () => {
     const url = `${window.location.origin}/hunter/${address.toLowerCase()}`;
@@ -130,13 +121,14 @@ function ProfileDrawer({
       )}
 
       <div
-        ref={sheetRef}
+        ref={(el) => { sheetRef.current = el; focusRef.current = el; }}
         style={sheetStyle}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Hunter profile"
-        className="drawer-in-lg relative w-full lg:w-[683px] lg:max-w-[calc(100vw-40px)]
+        tabIndex={-1}
+        className="outline-none drawer-in-lg relative w-full lg:w-[683px] lg:max-w-[calc(100vw-40px)]
           max-h-[85dvh] lg:max-h-none overflow-y-auto
           bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A]"
       >

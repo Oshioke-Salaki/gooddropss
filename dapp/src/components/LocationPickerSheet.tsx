@@ -13,6 +13,7 @@ import {
   type GeoFail,
 } from "@/lib/geolocate";
 import type { Landmark } from "@/types";
+import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/layers";
 
 const PickerMap = dynamic(() => import("./LocationPickerMap"), {
   ssr: false,
@@ -109,6 +110,20 @@ export function LocationPickerSheet({
   // In followLocation mode: true once the user has manually moved the map, so we
   // stop yanking the pin back to the live GPS position.
   const userMovedRef = useRef(false);
+
+  // Shared layer plumbing (ui/layers), live only while the picker is up: it's
+  // always mounted (it slides away rather than unmounting), so everything keys
+  // off `open`. Escape first clears an open search, then closes the picker —
+  // and only the picker, not the drawer or sheet that opened it.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  useEscapeLayer(open, () => {
+    if (queryRef.current.trim()) setQuery("");
+    else onClose();
+  });
+  useScrollLock(open);
+  useFocusReturn(open, panelRef);
 
   // ── Reset on open ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -292,10 +307,19 @@ export function LocationPickerSheet({
       {/* Full-screen sheet. The map owns the whole surface and every control
           floats on it — no header, no footer bar. */}
       <motion.div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose a location"
+        aria-hidden={!open}
+        // Off-screen but still mounted when closed: keep its controls out of
+        // the tab order and away from screen readers until it's actually up.
+        inert={!open}
+        tabIndex={-1}
         animate={{ y: open ? 0 : "100%" }}
         initial={{ y: "100%" }}
         transition={{ type: "spring", damping: 34, stiffness: 420 }}
-        className="fixed inset-0 z-[1451] overflow-hidden bg-nav font-sans"
+        className="fixed inset-0 z-[1451] overflow-hidden bg-nav font-sans outline-none"
       >
         <PickerMap
           initialCenter={initialCenter ?? DEFAULT_CENTER}

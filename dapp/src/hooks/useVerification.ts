@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { IdentitySDK, useIdentitySDK } from "@goodsdks/identity-sdk";
-import { ClaimSDK } from "@goodsdks/citizen-sdk";
+import { useIdentitySDK } from "@goodsdks/identity-sdk";
+import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
 
 export type VerificationStatus = "loading" | "verified" | "not_verified" | "error";
 
@@ -18,7 +18,7 @@ export function useVerification() {
   const identitySDK = useMemo(() => {
     if (identitySDKFromHook) return identitySDKFromHook;
     if (!publicClient || !walletClient) return null;
-    return new (IdentitySDK as any)(publicClient, walletClient, "production");
+    return makeIdentitySDK(publicClient, walletClient);
   }, [identitySDKFromHook, publicClient, walletClient]);
 
   const [status, setStatus] = useState<VerificationStatus>("loading");
@@ -36,13 +36,7 @@ export function useVerification() {
     try {
       if (!isVerifying && !isPendingVerification) setStatus("loading");
 
-      const claimSDK = new ClaimSDK({
-        account: address,
-        publicClient: publicClient as any,
-        walletClient: walletClient as any,
-        identitySDK: identitySDK as any,
-        env: "production",
-      });
+      const claimSDK = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
 
       const walletStatus = await claimSDK.getWalletClaimStatus();
 
@@ -53,8 +47,8 @@ export function useVerification() {
         setIsVerifying(false);
         setVerificationAttemptedAt(null);
       }
-    } catch (error: any) {
-      const msg: string = error?.message ?? String(error);
+    } catch (error: unknown) {
+      const msg: string = (error as { message?: string } | null)?.message ?? String(error);
       // GoodDollar SDK queries both Celo and Fuse — Fuse RPC failures are transient
       if (
         msg.includes("fuse-rpc") ||
@@ -73,12 +67,13 @@ export function useVerification() {
     if (!address || !publicClient || !walletClient || !identitySDK || isGeneratingLink) return;
     try {
       setIsGeneratingLink(true);
-      const idSDK = new (IdentitySDK as any)(publicClient, walletClient, "production");
+      const idSDK = makeIdentitySDK(publicClient, walletClient);
       const callbackUrl = window.location.href;
-      const linkResult = await idSDK.generateFVLink(false, callbackUrl, 42220);
+      // Typed as a string, but older SDK builds returned { link } — accept both.
+      const linkResult: unknown = await idSDK.generateFVLink(false, callbackUrl, 42220);
       let finalLink = "";
       if (typeof linkResult === "string") finalLink = linkResult;
-      else if (linkResult && (linkResult as any).link) finalLink = (linkResult as any).link;
+      else if (linkResult && typeof (linkResult as { link?: unknown }).link === "string") finalLink = (linkResult as { link: string }).link;
       if (finalLink) {
         setFvLink(finalLink);
       } else {

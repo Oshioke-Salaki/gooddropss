@@ -12,6 +12,7 @@ import { X, Loader2, Check, ExternalLink, SendHorizontal } from "lucide-react";
 import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
+import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 
 interface Props {
   address: `0x${string}`;
@@ -48,6 +49,15 @@ export function SendGModal({ address, balance, onClose }: Props) {
   const { switchChainAsync } = useSwitchChain();
 
   const sending = status === "sending";
+
+  // Docked beside the wallet card on desktop (so not a Sheet), but a layer of
+  // its own: Escape closes Send and leaves the wallet open, and focus goes back
+  // to the "Send G$" row afterwards. The wallet already holds the scroll lock.
+  // Not while a transfer is in flight — closing mid-send would hide the result.
+  useEscapeLayer(true, () => {
+    if (status !== "sending") onClose();
+  });
+  useFocusReturn(true, sheetRef);
 
   function reset() {
     setRecipient("");
@@ -159,7 +169,11 @@ export function SendGModal({ address, balance, onClose }: Props) {
     // an ordinary card at lg and up.
     <div
       ref={sheetRef}
-      className="bg-white rounded-t-3xl lg:rounded-3xl p-6 flex flex-col gap-y-6 font-sans
+      role="dialog"
+      aria-modal="true"
+      aria-label="Send G$"
+      tabIndex={-1}
+      className="outline-none bg-white rounded-t-3xl lg:rounded-3xl p-6 flex flex-col gap-y-6 font-sans
         max-h-[85dvh] overflow-y-auto lg:max-h-none lg:overflow-visible panel-in-lg"
       style={{
         boxShadow: "0px 0px 12px 0px #0000000A",

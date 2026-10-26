@@ -1,9 +1,10 @@
 "use client";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
+import { useEscapeLayer, useFocusReturn, useScrollLock } from "./layers";
 
 interface Props {
   /** Shown in the header. Also the dialog's accessible name. */
@@ -20,12 +21,6 @@ interface Props {
   /** Replaces the round X — e.g. a "Skip" pill on an onboarding step. */
   headerAction?: React.ReactNode;
 }
-
-// Sheets open on top of each other (edit profile → avatar picker), and Escape
-// should only ever close the TOP one. Each mounted sheet registers here; the
-// key handler checks it's last in line before acting. Registration order is
-// mount order, which is also visual order, so no z-index bookkeeping needed.
-const stack: symbol[] = [];
 
 /**
  * The one modal container.
@@ -58,9 +53,6 @@ export function Sheet({
   // centred in a viewport the browser already resizes.
   const kbInset = useKeyboardInset(enabled);
 
-  const id = useRef(Symbol("sheet"));
-  const dismissRef = useRef<() => void>(() => {});
-
   // Animate out on the phone (the drag hook owns that transform); on desktop
   // the card has no exit motion, so unmount straight away rather than waiting
   // out an animation nobody can see.
@@ -69,38 +61,13 @@ export function Sheet({
     if (enabled) close();
     else onClose();
   }, [dismissible, enabled, close, onClose]);
-  dismissRef.current = dismiss;
 
-  useEffect(() => {
-    const me = id.current;
-    stack.push(me);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (stack[stack.length - 1] !== me) return;
-      e.stopPropagation();
-      dismissRef.current();
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("keydown", onKey, true);
-      const i = stack.indexOf(me);
-      if (i >= 0) stack.splice(i, 1);
-    };
-  }, []);
-
-  // Lock the page behind, and hand focus to the dialog so screen readers land
-  // on the title and the keyboard works without a click first. Focus goes back
-  // to whatever opened us on close.
-  useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    const prevFocus = document.activeElement as HTMLElement | null;
-    document.body.style.overflow = "hidden";
-    sheetRef.current?.focus({ preventScroll: true });
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      prevFocus?.focus?.({ preventScroll: true });
-    };
-  }, [sheetRef]);
+  // Escape closes only the top layer; the page behind stays locked until the
+  // last layer closes; focus moves in on open and back to the opener on close.
+  // Shared with every other overlay via ui/layers so stacked layers agree.
+  useEscapeLayer(true, dismiss);
+  useScrollLock(true);
+  useFocusReturn(true, sheetRef);
 
   if (typeof document === "undefined") return null;
 
