@@ -25,6 +25,7 @@ import { useLandmarks } from "@/hooks/useLandmarks";
 import { useProfile } from "@/hooks/useProfile";
 import { addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
 import type { ChainStop, Landmark } from "@/types";
+import { track } from "@/lib/analytics";
 
 const CHAIN_CLUE_MAX = 120;
 
@@ -263,6 +264,7 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
 
       setFirstDropId(nextDropId); // last created = first stop (entry point)
       window.dispatchEvent(new CustomEvent("gd:drop-created"));
+      track("drop_created", { kind: "chain", count: stops.length });
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };

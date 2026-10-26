@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { track } from "@/lib/analytics";
 import { BadgeCheck, Camera, Check, ExternalLink, Loader2, ScanFace, ShieldCheck } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import type { VerificationStatus } from "@/hooks/useVerification";
@@ -28,9 +29,12 @@ export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh }
 
   useEffect(() => { setIframeLoaded(false); }, [fvLink]);
 
+  useEffect(() => { if (isOpen) track("verify_started"); }, [isOpen]);
+
   // Auto-close 2 seconds after verification confirmed
   useEffect(() => {
     if (status === "verified" && isOpen) {
+      track("verify_completed");
       const t = setTimeout(() => onClose(), 2000);
       return () => clearTimeout(t);
     }

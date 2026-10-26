@@ -14,6 +14,7 @@ import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
 import { GasTopup } from "@/components/GasTopup";
 import { BadgeCelebration } from "@/components/BadgeCelebration";
 import { ChestReward } from "@/components/ChestReward";
+import { installClientErrorReporter } from "@/lib/clientErrors";
 
 // Keep every connected wallet on Celo. Auto-switches once whenever a wrong chain
 // is detected (on connect, or if the user changes networks in their wallet). The
@@ -56,6 +57,8 @@ function QueryCacheManager() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
+  // Uncaught client errors are reported to /api/client-error (see lib/clientErrors).
+  useEffect(() => { installClientErrorReporter(); }, []);
 
   return (
     // reconnectOnMount restores the Magic (or wallet) session automatically on

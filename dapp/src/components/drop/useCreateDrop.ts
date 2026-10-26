@@ -25,6 +25,7 @@ import {
 } from "@/lib/riddles";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { track } from "@/lib/analytics";
 
 export const DURATIONS = [
   { label: "1h",  seconds: 3_600 },
@@ -353,6 +354,7 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setMultiProgress({ done: qty, failed: 0, total: qty });
       window.dispatchEvent(new CustomEvent("gd:drop-created"));
+      track("drop_created", { kind: "multi", count: qty });
       setStatus("done");
     } catch (e: unknown) {
       const fe = friendlyClaimError(e);
@@ -494,6 +496,7 @@ export function useCreateDrop({ campaignId, claimPoints = [], onClose }: UseCrea
       }
 
       window.dispatchEvent(new CustomEvent("gd:drop-created"));
+      track("drop_created", { kind: "single" });
       setStatus("done");
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };

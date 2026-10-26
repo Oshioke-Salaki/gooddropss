@@ -18,6 +18,7 @@ import {
 } from "@/lib/utils";
 import { fireChestReward } from "@/components/ChestReward";
 import type { Drop, LatLng } from "@/types";
+import { track, claimFailReason } from "@/lib/analytics";
 
 interface Props {
   drop: Drop;
@@ -72,6 +73,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
     : 0;
 
   const rarity     = getDropRarity(drop.amount);
+  useEffect(() => { track("hunt_started"); }, []);
   const rarityInfo = RARITY[rarity];
 
   const R   = 90;
@@ -89,6 +91,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
 
   async function handleClaim() {
     if (!address || !isClose || claimStatus !== "idle") return;
+    track("claim_started", { surface: "hunt" });
     setClaimStatus("claiming");
     try {
       // Guarantee gas before the claim so a low wallet never dead-ends mid-tx.
@@ -122,8 +125,10 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setClaimStatus("done");
+      track("claim_succeeded", { rarity, surface: "hunt" });
       fireChestReward(formatG$(drop.amount), rarity);
     } catch (e: unknown) {
+      track("claim_failed", { reason: claimFailReason(e), surface: "hunt" });
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setClaimStatus("idle"); setErrMsg(""); return; }
       setErrMsg(fe.message);

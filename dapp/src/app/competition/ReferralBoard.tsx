@@ -82,7 +82,9 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
   const stats = data?.stats;
   const other = useOtherStanding("/api/comp/leaderboard", address);
   const you = data?.you ?? null;
-  const participants = data?.participants ?? [];
+  // Stable unless the data changes — the memos below key on it, and a fresh
+  // [] every render made them all recompute on every render.
+  const participants = useMemo(() => data?.participants ?? [], [data]);
   const slotsLeft = stats ? Math.max(0, stats.slots - stats.slotsUsed) : 0;
   const potGone = !!stats && slotsLeft === 0 && stats.slots > 0;
 

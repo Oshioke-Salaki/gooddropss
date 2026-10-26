@@ -87,7 +87,7 @@ export function MapSearchBar({ landmarks, onSelect }: Props) {
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Escape") { query ? clear() : setOpen(false); return; }
+    if (e.key === "Escape") { if (query) clear(); else setOpen(false); return; }
     if (!results.length) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((i) => (i + 1) % results.length); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setOpen(true); setActive((i) => (i - 1 + results.length) % results.length); }

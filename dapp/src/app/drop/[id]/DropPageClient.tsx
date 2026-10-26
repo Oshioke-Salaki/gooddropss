@@ -35,6 +35,7 @@ import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { checkBadgesAfterClaim } from "@/components/BadgeCelebration";
 import { fireChestReward } from "@/components/ChestReward";
 import { DROP_STATUS, type Drop, type Campaign } from "@/types";
+import { track, claimFailReason } from "@/lib/analytics";
 
 // ── Fetch campaign for sponsored drops ────────────────────────────────────────
 function useCampaign(campaignId: string | null) {
@@ -191,6 +192,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // ── Claim ──────────────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
     if (!drop || !address) return;
+    track("claim_started", { surface: "page" });
     setStatus("claiming");
     setErrMsg("");
     try {
@@ -225,6 +227,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
       });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "page" });
       checkBadgesAfterClaim(address); // fire-and-forget badge award + celebration
       fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
       // Track hunting streak (fire-and-forget)
@@ -238,6 +241,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           .catch(() => {});
       }
     } catch (e: unknown) {
+      track("claim_failed", { reason: claimFailReason(e), surface: "page" });
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
       let gone = fe.terminal;

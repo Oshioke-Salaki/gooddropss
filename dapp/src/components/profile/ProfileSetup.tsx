@@ -7,6 +7,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import { AVATAR_IMAGES } from "@/lib/avatarPresets";
 import { useProfile, invalidateProfile, refreshProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/hooks/useAuth";
+import { track } from "@/lib/analytics";
 
 // Mirrors the server rule in /api/profile — kept in sync intentionally.
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,24}$/;
@@ -131,6 +132,7 @@ export function AvatarStep({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.error ?? "Couldn't save your avatar. Try again."); return; }
       refreshProfile(address);
+      track("onboarding_avatar_saved");
       setSaved(true);
       // A beat to see the confirmation before the next step slides in.
       setTimeout(onDone, 700);
@@ -294,6 +296,7 @@ export function NameStep({
       if (!res.ok) { setError(data.error ?? "Couldn't save that name. Try another."); return; }
       invalidateProfile(address);
       refreshProfile(address);
+      track("onboarding_name_saved");
       setSavedAs(username.toLowerCase());
       setTimeout(onDone, 1400);
     } catch (e: unknown) {

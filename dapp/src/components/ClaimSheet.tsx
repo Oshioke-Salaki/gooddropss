@@ -39,6 +39,7 @@ import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { useProfile } from "@/hooks/useProfile";
+import { track, claimFailReason } from "@/lib/analytics";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -283,6 +284,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
       .then((d) => { if (alive && typeof d.count === "number") setNearby(d.count); })
       .catch(() => {});
     return () => { alive = false; };
+    // Keyed on the fields that matter: the drop object is replaced on every map
+    // refresh, and re-fetching nearby hunters each time would be wasted calls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drop?.id, drop?.status, drop?.lat, drop?.lng, address]);
 
   const dropLat = drop ? gpsToDeg(drop.lat) : 0;
@@ -334,6 +338,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
   async function handleClaim() {
     if (!canClaim || !drop || !address) return;
+    track("claim_started", { surface: "sheet" });
     setStatus("claiming");
     setErrMsg("");
     try {
@@ -369,6 +374,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
+      track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "sheet" });
       if (drop) fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
       if (address) {
         fetch("/api/engagement", {
@@ -380,6 +386,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
           .catch(() => {});
       }
     } catch (e: unknown) {
+      track("claim_failed", { reason: claimFailReason(e), surface: "sheet" });
       const fe = friendlyClaimError(e);
       // User just dismissed the wallet prompt — no error UI, let them retry.
       if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }

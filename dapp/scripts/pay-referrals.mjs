@@ -7,7 +7,7 @@
 //   ... --root    (pay the identity root shown on the leaderboard)
 //   ... --force   (pay even if the contest isn't 'ended' yet)
 //
-import { createWalletClient, createPublicClient, http, parseUnits, formatUnits, getAddress, erc20Abi } from "viem";
+import { createWalletClient, createPublicClient, http, formatUnits, getAddress, erc20Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { Redis } from "@upstash/redis";

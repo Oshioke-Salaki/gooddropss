@@ -71,9 +71,10 @@ export function ActivityTicker() {
   useEffect(() => {
     load();
     const iv = setInterval(load, 20_000);
+    const timers = timerRef.current; // same Map for the component's life
     return () => {
       clearInterval(iv);
-      timerRef.current.forEach(clearTimeout);
+      timers.forEach(clearTimeout);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

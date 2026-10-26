@@ -15,6 +15,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { Celebration } from "@/components/Celebration";
 import { Sheet } from "@/components/ui/Sheet";
 import type { Spot, LatLng } from "@/types";
+import { track } from "@/lib/analytics";
 
 // How close a customer must be to pay — generous enough for GPS drift indoors,
 // tight enough that payment still guarantees the merchant real foot traffic.
@@ -90,6 +91,7 @@ function ShopSheetBody({
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setPaidTx(tx);
       setStatus("done");
+      track("shop_payment_succeeded", { amountG: Math.floor(Number(amountWei / 10n ** 18n)) });
       // Record for merchant analytics (fire-and-forget)
       fetch(`/api/spots/${spot.id}/payments`, {
         method: "POST",

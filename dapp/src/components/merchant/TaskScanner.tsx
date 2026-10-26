@@ -29,7 +29,7 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     setSupported(typeof window !== "undefined" && "BarcodeDetector" in window);
     return () => stopCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   function stopCamera() {

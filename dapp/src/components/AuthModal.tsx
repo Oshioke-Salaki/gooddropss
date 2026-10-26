@@ -6,6 +6,7 @@ import { celo } from "viem/chains";
 import { Link2, Loader2, Mail } from "lucide-react";
 import { isValoraBrowser } from "@/lib/valora";
 import { PARTNER, PARTNER_CONNECTOR_ID, lastLogin, rememberLogin } from "@/lib/partner";
+import { track } from "@/lib/analytics";
 import { AuthSheet } from "@/components/auth/AuthSheet";
 import { OptionRow } from "@/components/auth/OptionRow";
 import { WalletSelectModal } from "@/components/auth/WalletSelectModal";
@@ -116,6 +117,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
       setGoogleBusy(false); setEmailBusy(false); setPartnerBusy(false); setEmail("");
       return;
     }
+    track("sign_in_opened");
     // A returning partner user lands on their own door, not a menu.
     if (PARTNER && lastLogin() === "partner") setView("partner");
   }, [open]);
@@ -130,7 +132,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   function pick(c: Connector) {
     setPendingId(c.id);
     // Request Celo so external wallets are switched to the right chain on connect.
-    connect({ connector: c, chainId: celo.id });
+    connect({ connector: c, chainId: celo.id }, { onSuccess: () => track("sign_in_completed", { method: "wallet" }) });
     // Hand the screen over to the wallet's OWN UI — WalletConnect's QR / deep-link
     // modal (e.g. into Valora), or an injected wallet's prompt. Closing our sheet is
     // what makes the hand-off clean: otherwise it sits on top of the WalletConnect
@@ -155,6 +157,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     try {
       await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
       await connectAsync({ connector: magic, chainId: celo.id });
+      track("sign_in_completed", { method: "email" });
       rememberLogin("gooddrops");
       onClose();
     } catch (e) {
@@ -215,6 +218,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     try {
       await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
       await connectAsync({ connector: partner, chainId: celo.id });
+      track("sign_in_completed", { method: "partner" });
       rememberLogin("partner");
       onClose();
     } catch (e) {

@@ -9,6 +9,7 @@ import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { openProfile } from "@/components/profile/ProfileDrawer";
 import { Skeleton, IdentitySkeleton, AmountSkeleton } from "@/app/leaderboard/components/Skeleton";
 import { RankBadge, ordinal } from "@/app/leaderboard/components/RankBadge";
+import { track } from "@/lib/analytics";
 
 // Shared presentation helpers for the two competition boards (points + referrals).
 export const fmtG = (wei: string) => Math.round(Number(wei) / 1e18).toLocaleString();
@@ -167,6 +168,7 @@ export function InviteLink({ myLink }: { myLink: string }) {
   function copy() {
     if (!myLink) return;
     navigator.clipboard?.writeText(myLink).then(() => {
+      track("invite_link_copied");
       setCopied(true); setTimeout(() => setCopied(false), 1800);
     }).catch(() => {});
   }

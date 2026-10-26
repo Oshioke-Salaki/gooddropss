@@ -86,7 +86,9 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Pr
   const stats = data?.stats;
   const other = useOtherStanding("/api/comp/referrals", address);
   const you = data?.you ?? null;
-  const participants = data?.participants ?? [];
+  // Stable unless the data changes — the memos below key on it, and a fresh
+  // [] every render made them all recompute on every render.
+  const participants = useMemo(() => data?.participants ?? [], [data]);
 
   // One batched profile request for every row's avatar, instead of one per row.
   const addresses = useMemo(() => participants.map((p) => p.root), [participants]);

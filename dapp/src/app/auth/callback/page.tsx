@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { track } from "@/lib/analytics";
 
 // Google OAuth returns here — a single, fixed URL, because Google matches
 // redirect URIs exactly (so we can't bounce back to an arbitrary page).
@@ -94,6 +95,7 @@ export default function AuthCallbackPage() {
         // isAuthorized() short-circuits on isLoggedIn() → connects silently,
         // without falling through to the connector's email modal.
         await connectAsync({ connector });
+        track("sign_in_completed", { method: "google" });
         finish();
       } catch (e) {
         console.error("[auth/callback] connect failed", e);
