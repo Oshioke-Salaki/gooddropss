@@ -42,6 +42,25 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
   if (/user rejected|user denied|rejected the request|denied transaction|action_rejected|request rejected|user cancell?ed|cancell?ed by user/.test(m))
     return { message: "", terminal: false, kind: "rejected" };
 
+  // The contract's own revert reason is the most reliable signal there is, so
+  // read it first. viem's message also carries the call's signature and args
+  // ("…uint256 deadline…", hex addresses), which the fuzzy rules below would
+  // otherwise latch onto — e.g. every revert used to read as "took too long".
+  const named = /error: (\w+)\(\)/.exec(m)?.[1];
+  if (named) {
+    const byName: Record<string, FriendlyError> = {
+      alreadyclaimed:  { message: "Someone beat you to it — this drop has already been claimed.", terminal: true, kind: "claimed" },
+      dropinactive:    { message: "Someone beat you to it — this drop has already been claimed.", terminal: true, kind: "claimed" },
+      dropexpired:     { message: "This drop has expired and can no longer be claimed.", terminal: true, kind: "expired" },
+      selfclaim:       { message: "You can't claim your own drop.", terminal: true, kind: "self" },
+      notwhitelisted:  { message: "You need to verify with GoodDollar before you can claim.", terminal: false, kind: "verify" },
+      proofexpired:    { message: "That took a little too long — tap Try again for a fresh attempt.", terminal: false, kind: "network" },
+      proofalreadyused:{ message: "That took a little too long — tap Try again for a fresh attempt.", terminal: false, kind: "network" },
+      dropnotfound:    { message: "This drop doesn't exist anymore.", terminal: true, kind: "expired" },
+    };
+    if (byName[named]) return byName[named];
+  }
+
   // Already claimed / no longer active — retrying can't win.
   if (/already claimed|alreadyclaimed|already been claimed|dropinactive|no longer active|not active anymore|solved (this|the) riddle first|someone else|reserved|being claimed/.test(m))
     return { message: "Someone beat you to it — this drop has already been claimed.", terminal: true, kind: "claimed" };
@@ -59,11 +78,11 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
     return { message: "You don't have enough CELO for the tiny network fee, and the gas faucet is busy right now. Give it a minute, then tap Try again.", terminal: false, kind: "gas" };
 
   // Server proof expired / already used → just retry to mint a fresh one.
-  if (/proofexpired|proof expired|proofalreadyused|proof.*(used|expired)|deadline|signature expired/.test(m))
+  if (/proofexpired|proof expired|proofalreadyused|proof (has )?(already )?(been )?(used|expired)|deadline (passed|exceeded|expired)|signature expired/.test(m))
     return { message: "That took a little too long — tap Try again for a fresh attempt.", terminal: false, kind: "network" };
 
   // RPC / network / rate-limit — transient. Covers "Magic RPC Error [-32603] Load failed".
-  if (/load failed|network error|networkerror|timeout|timed out|failed to fetch|-32603|-32000|rpc|connection|econn|econnreset|502|503|504|bad gateway|service unavailable|rate limit|too many requests|nonce|replacement transaction/.test(m))
+  if (/load failed|network error|networkerror|timeout|timed out|failed to fetch|-32603|-32000|rpc|connection|econn|econnreset|\b50[234]\b|bad gateway|service unavailable|rate limit|too many requests|nonce|replacement transaction/.test(m))
     return { message: "Network hiccup — check your connection and tap Try again.", terminal: false, kind: "network" };
 
   if (/not whitelisted|notwhitelisted|not verified|identity|whitelist/.test(m))

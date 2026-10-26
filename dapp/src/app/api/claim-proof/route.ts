@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http, keccak256, encodePacked } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { createPublicClient, http } from "viem";
+import { signClaimProof } from "@/lib/claimProof";
 import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
@@ -314,15 +314,7 @@ export async function POST(req: NextRequest) {
     // ── 7. Sign the proof ────────────────────────────────────────────────────
     const deadline = Math.floor(Date.now() / 1000) + PROOF_TTL_S;
 
-    const hash = keccak256(
-      encodePacked(
-        ["uint256", "address", "uint256"],
-        [BigInt(dropId), claimer as `0x${string}`, BigInt(deadline)],
-      ),
-    );
-
-    const account = privateKeyToAccount(signerKey);
-    const sig     = await account.signMessage({ message: { raw: hash } });
+    const sig = await signClaimProof(signerKey, BigInt(dropId), claimer as `0x${string}`, BigInt(deadline));
 
     // Store position for future velocity checks (fire-and-forget, root-keyed)
     const nowS = Math.floor(Date.now() / 1000);

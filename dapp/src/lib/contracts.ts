@@ -253,6 +253,32 @@ export const GOOD_DROPS_ABI = [
       { name: "newExpiry", type: "uint40", indexed: false },
     ],
   },
+  // Custom errors. Without these, viem can only report a revert as a raw
+  // 4-byte selector, and friendlyClaimError (lib/claimErrors) never sees the
+  // names it matches on — so every failed claim fell through to the generic
+  // message. Mirrors contracts/contracts/GoodDrops.sol.
+  { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "InvalidAmount", inputs: [] },
+  { type: "error", name: "InvalidCoordinates", inputs: [] },
+  { type: "error", name: "InvalidExpiry", inputs: [] },
+  { type: "error", name: "HintTooLong", inputs: [] },
+  { type: "error", name: "DropNotFound", inputs: [] },
+  { type: "error", name: "AlreadyClaimed", inputs: [] },
+  { type: "error", name: "DropExpired", inputs: [] },
+  { type: "error", name: "DropNotExpired", inputs: [] },
+  { type: "error", name: "NotDropper", inputs: [] },
+  { type: "error", name: "NotWhitelisted", inputs: [] },
+  { type: "error", name: "SelfClaim", inputs: [] },
+  { type: "error", name: "DropInactive", inputs: [] },
+  { type: "error", name: "IdentityContractNotSet", inputs: [] },
+  { type: "error", name: "CannotRescueLockedTokens", inputs: [] },
+  { type: "error", name: "MinExceedsMax", inputs: [] },
+  { type: "error", name: "InvalidBatch", inputs: [] },
+  { type: "error", name: "LengthMismatch", inputs: [] },
+  { type: "error", name: "GpsProofRequired", inputs: [] },
+  { type: "error", name: "InvalidGpsProof", inputs: [] },
+  { type: "error", name: "ProofExpired", inputs: [] },
+  { type: "error", name: "ProofAlreadyUsed", inputs: [] },
 ] as const;
 
 export const ERC20_ABI = [

@@ -66,3 +66,29 @@ describe("extractErrorText", () => {
     expect(extractErrorText(null)).toBe("");
   });
 });
+
+describe("friendlyClaimError — hex in verbose errors", () => {
+  // viem's full message embeds the sender, args and calldata in hex. Digits like
+  // 503 inside an address must not read as an HTTP 503 and hide the real reason.
+  const verbose = (name: string) => ({
+    shortMessage: `The contract function "claimWithProof" reverted.`,
+    message: `The contract function "claimWithProof" reverted.\n\nError: ${name}()\n\nContract Call:\n  address: 0x261565422e8ec1340f84d3adadbf4ad5fc7d5131\n  function: claimWithProof(uint256 dropId, uint256 deadline, bytes sig)\n  sender: 0x5034a502bd5049f504aa00000000000000032603`,
+  });
+
+  it("still sees NotWhitelisted when the sender address contains 502/503/504", () => {
+    expect(friendlyClaimError(verbose("NotWhitelisted")).kind).toBe("verify");
+  });
+  it("isn't fooled by the word 'deadline' in the function signature", () => {
+    expect(friendlyClaimError(verbose("SelfClaim")).kind).toBe("self");
+    expect(friendlyClaimError(verbose("ProofExpired")).kind).toBe("network");
+  });
+  it("still sees AlreadyClaimed and DropExpired through hex noise", () => {
+    expect(friendlyClaimError(verbose("AlreadyClaimed")).kind).toBe("claimed");
+    expect(friendlyClaimError(verbose("DropExpired")).kind).toBe("expired");
+  });
+  it("still treats a real 503 / -32603 as a network problem", () => {
+    expect(friendlyClaimError(new Error("HTTP request failed. Status: 503")).kind).toBe("network");
+    expect(friendlyClaimError(new Error("Magic RPC Error: [-32603] Load failed")).kind).toBe("network");
+  });
+});
+
