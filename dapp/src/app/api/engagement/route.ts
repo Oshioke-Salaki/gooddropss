@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import type { HunterStreak } from "@/types";
+import { effectiveStreak } from "@/lib/streak";
 
 export const runtime = "nodejs";
 
@@ -28,8 +29,9 @@ export async function GET(req: NextRequest) {
     const root = await resolveIdentityRoot(address);
     const raw = await redis.get<string>(keys.streak(root));
     if (!raw) return NextResponse.json({ streak: { current: 0, best: 0, lastDate: "" } });
-    const streak: HunterStreak = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return NextResponse.json({ streak });
+    const stored: HunterStreak = typeof raw === "string" ? JSON.parse(raw) : raw;
+    // Decay on read: a streak abandoned weeks ago must not show as live.
+    return NextResponse.json({ streak: effectiveStreak(stored) });
   } catch (e) {
     console.error("[engagement/get]", e);
     return NextResponse.json({ streak: null });
