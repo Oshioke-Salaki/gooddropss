@@ -308,3 +308,53 @@ async function fetchAllDropsUncached(): Promise<Drop[]> {
   _allDropsCache = { at: Date.now(), data: deduped };
   return deduped;
 }
+
+// ── Targeted queries ──────────────────────────────────────────────────────────
+// The full scan above pages through every drop ever made. These ask the
+// subgraph only for what a screen needs, so a phone never has to.
+
+const FIELDS = "id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint";
+
+/** Page through drops matching a GraphQL `where` body (cursor on id, as above). */
+async function fetchDropsWhere(where: string, vars: Record<string, string>): Promise<Drop[]> {
+  if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
+  const varDecl = Object.keys(vars).map((k) => `, $${k}: String!`).join("");
+  const query = `query Q($lastId: ID!${varDecl}) {
+    drops(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $lastId, ${where} }) { ${FIELDS} }
+  }`;
+  const out: Drop[] = [];
+  let lastId = "0";
+  for (let page = 0; page < 50; page++) {
+    const res = await fetch(SUBGRAPH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables: { lastId, ...vars } }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Subgraph request failed: ${res.status}`);
+    const json = await res.json();
+    if (json.errors?.length) throw new Error(json.errors[0].message);
+    const rows: SubgraphDrop[] = json.data?.drops ?? [];
+    out.push(...rows.map(toDrop));
+    if (rows.length < 1000) break;
+    lastId = rows[rows.length - 1].id;
+  }
+  return out;
+}
+
+/** Drops that can still be claimed right now (active and not expired). */
+export function fetchLiveDrops(nowSec = Math.floor(Date.now() / 1000)): Promise<Drop[]> {
+  return fetchDropsWhere("status: 0, expiry_gt: $now", { now: String(nowSec) });
+}
+
+/** Every drop a wallet created or claimed, newest first, de-duplicated. */
+export async function fetchDropsForAddress(address: string): Promise<Drop[]> {
+  const a = address.toLowerCase();
+  const [made, found] = await Promise.all([
+    fetchDropsWhere("dropper: $a", { a }),
+    fetchDropsWhere("claimer: $a", { a }),
+  ]);
+  const byId = new Map<string, Drop>();
+  for (const d of [...made, ...found]) byId.set(d.id.toString(), d);
+  return [...byId.values()].sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+}

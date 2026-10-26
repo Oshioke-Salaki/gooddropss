@@ -1,112 +1,60 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { useDrops } from "@/hooks/useDrops";
-import { resolveRoots } from "@/lib/roots";
-import { DROP_STATUS } from "@/types";
-import type { Rank } from "./components/types";
+import { useCallback, useEffect, useState } from "react";
+import { boardFromJson, type Board, type BoardJson } from "@/lib/board";
 
-const ZERO = "0x0000000000000000000000000000000000000000";
+const EMPTY: Board = { droppers: [], hunters: [], droppedWei: 0n, claimedWei: 0n, totalDrops: 0, totalClaims: 0 };
+
+// One board per page load, shared by every component that asks for it (the
+// Rankings page and the profile both mount this hook).
+let shared: { at: number; board: Board } | null = null;
+let inflight: Promise<Board> | null = null;
+const SHARED_TTL_MS = 30_000;
+
+async function loadBoard(fresh: boolean): Promise<Board> {
+  if (!fresh && shared && Date.now() - shared.at < SHARED_TTL_MS) return shared.board;
+  if (!fresh && inflight) return inflight;
+  const p = fetch(`/api/board${fresh ? "?fresh=1" : ""}`, fresh ? { cache: "no-store" } : undefined)
+    .then((r) => (r.ok ? (r.json() as Promise<BoardJson>) : Promise.reject(new Error(`board ${r.status}`))))
+    .then((j) => {
+      const board = boardFromJson(j);
+      shared = { at: Date.now(), board };
+      return board;
+    })
+    .finally(() => { inflight = null; });
+  inflight = p;
+  return p;
+}
 
 /**
- * Builds both leaderboards from the subgraph.
+ * Both leaderboards, built on the server (see /api/board and lib/board).
  *
- * Entries are grouped by GoodDollar identity ROOT, so someone who migrated
- * wallets is one row rather than two. Each group still displays the wallet they
- * actually use — the most recently active member — so the row shows a current
- * address and the username attached to it.
- *
- * `rootsLoading` matters: until roots resolve, every wallet is its own group, so
- * the board would render un-merged and then visibly re-shuffle. The page keeps
- * skeletons up through that window.
+ * Entries are grouped by GoodDollar identity root and each row shows the wallet
+ * that person actually uses. Same return shape as before, so the Rankings page
+ * and the profile read it unchanged — but the phone now downloads one small,
+ * CDN-cached JSON instead of paging the entire drop history and resolving every
+ * wallet's identity itself.
  */
 export function useLeaderboard() {
-  const { drops, fetchDrops } = useDrops();
-  const [roots, setRoots] = useState<Map<string, string>>(new Map());
-  const [rootsLoading, setRootsLoading] = useState(true);
-  // useDrops starts with loading=false and an empty array, so trusting its flag
-  // would render the empty state for a frame before the first fetch even starts.
-  // This only flips once that fetch has actually settled.
-  const [dropsLoaded, setDropsLoaded] = useState(false);
+  const [board, setBoard] = useState<Board>(() => shared?.board ?? EMPTY);
+  const [loading, setLoading] = useState(() => !shared);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchDrops().finally(() => { if (!cancelled) setDropsLoaded(true); });
-    return () => { cancelled = true; };
-  }, [fetchDrops]);
-
-  useEffect(() => {
-    if (!dropsLoaded) return;
-    if (drops.length === 0) { setRootsLoading(false); return; }
-
-    const addrs = new Set<string>();
-    for (const d of drops) {
-      addrs.add(d.dropper.toLowerCase());
-      if (d.claimer !== ZERO) addrs.add(d.claimer.toLowerCase());
+  const load = useCallback(async (fresh: boolean) => {
+    try {
+      const b = await loadBoard(fresh);
+      setBoard(b);
+      setError(false);
+    } catch (e) {
+      console.error("[useLeaderboard]", e);
+      setError(true);
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    let cancelled = false;
-    setRootsLoading(true);
-    resolveRoots([...addrs])
-      .then((m) => { if (!cancelled) setRoots(m); })
-      .catch(() => { /* resolveRoots never throws, but don't hang on a surprise */ })
-      .finally(() => { if (!cancelled) setRootsLoading(false); });
-    return () => { cancelled = true; };
-  }, [drops, dropsLoaded]);
+  useEffect(() => { load(false); }, [load]);
 
-  const board = useMemo(() => {
-    type Agg = { wei: bigint; count: number; displayAddr: string; latest: number };
-    const hunterMap = new Map<string, Agg>();
-    const dropperMap = new Map<string, Agg>();
-    let claimedWei = 0n;
-    let droppedWei = 0n;
-    let claimCount = 0;
+  const refresh = useCallback(() => load(true), [load]);
 
-    const keyOf = (addr: string) => roots.get(addr.toLowerCase()) ?? addr.toLowerCase();
-
-    const bump = (map: Map<string, Agg>, key: string, wallet: string, amount: bigint, when: number) => {
-      const prev = map.get(key);
-      if (!prev) { map.set(key, { wei: amount, count: 1, displayAddr: wallet, latest: when }); return; }
-      const newer = when >= prev.latest;
-      map.set(key, {
-        wei: prev.wei + amount,
-        count: prev.count + 1,
-        displayAddr: newer ? wallet : prev.displayAddr,
-        latest: newer ? when : prev.latest,
-      });
-    };
-
-    for (const drop of drops) {
-      bump(dropperMap, keyOf(drop.dropper), drop.dropper.toLowerCase(), drop.amount, drop.createdAt || 0);
-      droppedWei += drop.amount;
-
-      if (drop.status === DROP_STATUS.Claimed && drop.claimer !== ZERO) {
-        bump(hunterMap, keyOf(drop.claimer), drop.claimer.toLowerCase(), drop.amount,
-             drop.claimedAt || drop.createdAt || 0);
-        claimedWei += drop.amount;
-        claimCount += 1;
-      }
-    }
-
-    const toRanks = (map: Map<string, Agg>): Rank[] =>
-      Array.from(map.values())
-        .map(({ wei, count, displayAddr }) => ({ address: displayAddr, totalWei: wei, count }))
-        // Ties broken by count then address, so the order is stable across
-        // renders instead of depending on Map insertion order.
-        .sort((a, b) =>
-          a.totalWei === b.totalWei
-            ? b.count - a.count || a.address.localeCompare(b.address)
-            : b.totalWei > a.totalWei ? 1 : -1,
-        );
-
-    return {
-      droppers: toRanks(dropperMap),
-      hunters: toRanks(hunterMap),
-      droppedWei,
-      claimedWei,
-      totalDrops: drops.length,
-      totalClaims: claimCount,
-    };
-  }, [drops, roots]);
-
-  return { ...board, loading: !dropsLoaded || rootsLoading, refresh: fetchDrops };
+  return { ...board, loading, error, refresh };
 }

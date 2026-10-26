@@ -23,9 +23,9 @@ import { NearbyLocationReporter } from "@/components/NearbyLocationReporter";
 import { ColdStartCard } from "@/components/ColdStartCard";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
-import { useDrops } from "@/hooks/useDrops";
+import { useLiveDrops } from "@/hooks/useLiveDrops";
 import { useHiddenDrops } from "@/hooks/useHiddenDrops";
-import { parseDropHint, gpsToDeg } from "@/lib/utils";
+import { parseDropHint } from "@/lib/utils";
 import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
 
@@ -40,26 +40,33 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 });
 
 export default function HomePage() {
-  const { drops: allDrops, loading, fetchDrops, markClaimed } = useDrops();
+  const { drops: allDrops, loading, fetchDrops, markClaimed } = useLiveDrops();
   const hiddenDrops = useHiddenDrops();
   // Drop admins moderated away are removed everywhere in the UI, not just the map.
   const drops = useMemo(
     () => (hiddenDrops.size === 0 ? allDrops : allDrops.filter((d) => !hiddenDrops.has(d.id.toString()))),
     [allDrops, hiddenDrops],
   );
-  useDropNotifications(drops); // fires browser notification when own drop is claimed
+  useDropNotifications(); // fires a browser notification when one of your drops is claimed
 
-  // Demand heatmap: where hunters have CLAIMED drops (public, from the subgraph
-  // data already loaded). Shows droppers where the players are, so drops land
-  // where they'll be found. Toggled off by default.
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const heatmapPoints = useMemo(
-    () => allDrops
-      .filter((d) => d.status === DROP_STATUS.Claimed)
-      .map((d) => ({ lat: gpsToDeg(d.lat), lng: gpsToDeg(d.lng) }))
-      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && !(p.lat === 0 && p.lng === 0)),
-    [allDrops],
-  );
+  // Demand heatmap: where hunters have CLAIMED drops. Shows droppers where the
+  // players are, so drops land where they'll be found. Off by default, and its
+  // points are only fetched the first time it's switched on — the map itself
+  // only ever loads live drops.
+  // No toggle in the UI yet; flip this (or wire a control to it) to bring it back.
+  const [showHeatmap] = useState(false);
+  const [heatmapPoints, setHeatmapPoints] = useState<{ lat: number; lng: number }[]>([]);
+  useEffect(() => {
+    if (!showHeatmap || heatmapPoints.length > 0) return;
+    let alive = true;
+    fetch("/api/drops/heat")
+      .then((r) => r.json())
+      .then((d: { points?: [number, number][] }) => {
+        if (alive && Array.isArray(d.points)) setHeatmapPoints(d.points.map(([lat, lng]) => ({ lat, lng })));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [showHeatmap, heatmapPoints.length]);
   const [selectedDrop, setSelectedDrop] = useState<Drop | null>(null);
   const [showCreate, setShowCreate]     = useState(false);
   const [showChain,  setShowChain]      = useState(false);
@@ -226,6 +233,7 @@ export default function HomePage() {
         userLoc={userLoc}
         loading={loading}
         onDrop={() => setShowCreate(true)}
+        onShowNearest={(lat, lng) => setFocusCoord({ lat, lng })}
       />
 
       {/* Hunting mode — full screen immersive overlay */}

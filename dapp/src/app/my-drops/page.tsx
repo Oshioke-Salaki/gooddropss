@@ -4,7 +4,7 @@ import { useAccount, useWriteContract } from "wagmi";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Nav } from "@/components/Nav";
-import { useDrops } from "@/hooks/useDrops";
+import { useMyDrops } from "@/hooks/useMyDrops";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
@@ -32,14 +32,14 @@ export default function MyDropsPage() {
   // isConnected=true with a leftover address even when the user has signed out —
   // which wrongly surfaced someone else's drops. Gate on the auth state too.
   const isConnected = authenticated && !!address;
-  const { drops, loading, fetchDrops } = useDrops();
+  const { drops, loading, fetchDrops } = useMyDrops(isConnected ? address : undefined);
   const { writeContractAsync } = useWriteContract();
   const [tab, setTab] = useState<Tab>("created");
   const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
   const [reactivating, setReactivating] = useState<bigint | null>(null);
   const [bulkBusy, setBulkBusy]         = useState<"reclaim" | "reactivate" | null>(null);
   const [sharingDrop, setSharingDrop]   = useState<Drop | null>(null);
-  // useDrops starts with loading=false and no drops, so the first paint would
+  // The hook starts with loading=false and no drops, so the first paint would
   // show the empty state for a frame. Hold the skeleton until the first fetch settles.
   const [fetched, setFetched] = useState(false);
 

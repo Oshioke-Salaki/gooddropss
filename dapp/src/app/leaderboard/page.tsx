@@ -28,6 +28,8 @@ export default function LeaderboardPage() {
     totalDrops,
     totalClaims,
     loading,
+    error,
+    refresh,
   } = useLeaderboard();
 
   const [tab, setTab] = useState<Tab>("droppers");
@@ -141,6 +143,19 @@ export default function LeaderboardPage() {
                   <RankRowSkeleton key={i} />
                 ))}
               </>
+            ) : error && droppers.length === 0 && hunters.length === 0 ? (
+              // Failed to load is not the same as "nobody yet" — say so, and offer a retry.
+              <div className="border-t border-line px-6 py-20 text-center flex flex-col items-center" role="alert">
+                <p className="text-lg/none text-heading mb-3">Couldn&apos;t load the rankings</p>
+                <p className="text-sm/[140%] text-nav-muted mb-6">Check your connection and try again.</p>
+                <button
+                  type="button"
+                  onClick={refresh}
+                  className="h-11 px-6 rounded-full bg-brand text-white text-sm/none cursor-pointer motion-safe:transition-colors hover:bg-brand/90"
+                >
+                  Try again
+                </button>
+              </div>
             ) : filtered.length === 0 ? (
               <div className="border-t border-line px-6 py-20 text-center">
                 <p className="text-lg/none text-heading mb-3">

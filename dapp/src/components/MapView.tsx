@@ -13,6 +13,7 @@ import {
   landmarkBadgeSize, PIN_TIP, LM,
 } from "@/components/map/markers";
 import { MAP_STYLE } from "@/components/map/style";
+import { isLightDevice, prefersReducedMotion } from "@/lib/deviceTier";
 import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
 
@@ -205,6 +206,8 @@ export default function MapView({
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
+  const lightRef = useRef(false);
+  const flatRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
   const [locating, setLocating]         = useState(false);
@@ -258,13 +261,21 @@ export default function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    // Light mode (Data Saver, 2G, low-RAM or low-core phones): no 3D buildings,
+    // a flat camera and a capped render resolution — the three biggest GPU and
+    // battery costs on an entry-level Android. See lib/deviceTier.
+    lightRef.current = isLightDevice();
+    flatRef.current = lightRef.current || prefersReducedMotion();
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
       center: [0, 20],
       zoom: 2.4,
-      maxPitch: 62,
+      maxPitch: flatRef.current ? 0 : 62,
       attributionControl: false,
+      ...(lightRef.current
+        ? { pixelRatio: Math.min(typeof window !== "undefined" ? window.devicePixelRatio : 1, 1.5), fadeDuration: 0 }
+        : {}),
     });
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.touchZoomRotate.enableRotation();
@@ -327,6 +338,7 @@ export default function MapView({
       // 3D buildings at close zoom — pure wow-factor; guarded because layer
       // naming varies across style versions and this must never break the map.
       try {
+        if (lightRef.current) throw new Error("light device");
         const style = map.getStyle();
         const srcId = Object.keys(style.sources ?? {}).find(
           (k) => (style.sources as Record<string, { type?: string }>)[k]?.type === "vector",
@@ -666,7 +678,7 @@ export default function MapView({
           const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           onUserLocation(loc);
           setLocPerm("granted");
-          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 16, pitch: 48, duration: 1800 });
+          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 16, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1800 });
         },
         (err) => {
           if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
@@ -692,7 +704,7 @@ export default function MapView({
         }
       };
     }).catch(() => doRequest());
-  }, [onUserLocation]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [onUserLocation]);  
 
   // Continuous high-accuracy watch once permission is granted.
   useEffect(() => {
@@ -716,7 +728,7 @@ export default function MapView({
       (pos) => {
         const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         onUserLocation(loc);
-        mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 17, pitch: 48, duration: 1400 });
+        mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 17, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1400 });
         setLocating(false);
         setLocPerm("granted");
       },
@@ -743,7 +755,7 @@ export default function MapView({
       return;
     }
     if (mapRef.current && userLocation) {
-      mapRef.current.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 17, pitch: 48, duration: 1400 });
+      mapRef.current.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 17, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1400 });
       return;
     }
     requestLocation();

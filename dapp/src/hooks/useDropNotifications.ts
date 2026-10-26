@@ -2,13 +2,32 @@
 import { useEffect, useRef } from "react";
 import { useAccount } from "wagmi";
 import { formatG$ } from "@/lib/utils";
-import { DROP_STATUS, type Drop } from "@/types";
+import { DROP_STATUS } from "@/types";
+import { useMyDrops } from "@/hooks/useMyDrops";
 
-// Monitors the user's own drops for new claims and fires browser/push notifications.
-export function useDropNotifications(drops: Drop[]) {
+// Server push already covers claims when the app is closed (api/push/webhook);
+// this is the in-app backup, so it can afford to be unhurried.
+const POLL_MS = 180_000;
+
+// Watches the signed-in person's own drops for new claims and fires a browser
+// notification. Polls their drops (not the whole map) every few minutes while the
+// tab is visible — the map only carries live drops, so a claimed drop of yours
+// would otherwise never be seen here.
+export function useDropNotifications() {
   const { address } = useAccount();
+  const { drops, fetchDrops } = useMyDrops(address);
   const prevClaimedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef    = useRef(false);
+
+  useEffect(() => {
+    initializedRef.current = false;
+    prevClaimedIdsRef.current = new Set();
+    if (!address) return;
+    fetchDrops({ fresh: false });
+    const tick = () => { if (document.visibilityState === "visible") fetchDrops({ fresh: true }); };
+    const id = window.setInterval(tick, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [address, fetchDrops]);
 
   useEffect(() => {
     if (!address || drops.length === 0) return;

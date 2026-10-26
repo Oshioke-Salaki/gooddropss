@@ -3,6 +3,7 @@ import { getRedis } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { getCompConfig, compPhase, tierPrizeG } from "@/lib/competition";
 import { computeScores } from "@/lib/competitionV2";
+import { memo } from "@/lib/serverCache";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,18 @@ export async function GET(req: NextRequest) {
 
   const cfg = await getCompConfig(redis);
   const phase = compPhase(cfg, now);
-  const { entries, stats } = await computeScores(cfg);
+  // Scoring reads the whole drop set, resolves identities and checks
+  // verification — seconds of work that every poll (and every ?address variant,
+  // which the CDN caches separately) used to redo. Compute once per minute per
+  // instance and share it; once the window has closed the result is final, so
+  // hold it longer. The config is part of the key, so an admin edit takes effect
+  // on the next request.
+  const settled = phase === "ended";
+  const { entries, stats } = await memo(
+    `comp:scores:${cfg.id}:${cfg.startsAt}:${cfg.endsAt}:${cfg.potWei}:${cfg.minDropWei ?? ""}`,
+    settled ? 10 * 60_000 : 60_000,
+    () => computeScores(cfg),
+  );
 
   const allRoots = [...new Set(entries.flatMap((a) => [a.root, ...a.claimers.map((c) => c.root)]))];
   const nameOf = await usernames(redis, allRoots);
