@@ -14,6 +14,7 @@ import {
 } from "@/components/map/markers";
 import { MAP_STYLE } from "@/components/map/style";
 import { isLightDevice, prefersReducedMotion } from "@/lib/deviceTier";
+import { countDropsPerLandmark } from "@/lib/landmarkDrops";
 import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
 
@@ -515,6 +516,16 @@ export default function MapView({
         )
       : [];
 
+    // Each drop counts toward its nearest landmark only, so two places a few
+    // metres apart can't both claim the same chests.
+    const perLandmark = aggregate
+      ? countDropsPerLandmark(
+          liveDrops.map((d) => ({ lat: gpsToDeg(d.lat), lng: gpsToDeg(d.lng) })),
+          landmarksRef.current.filter((l) => l.status === "active" && Number.isFinite(l.lat) && Number.isFinite(l.lng)),
+          LANDMARK_DROP_RADIUS_M,
+        )
+      : null;
+
     // Candidates, with their screen box, ranked by what deserves the space.
     const candidates = [];
     const centre = map.getCenter();
@@ -523,13 +534,7 @@ export default function MapView({
       if (!Number.isFinite(lm.lat) || !Number.isFinite(lm.lng)) continue;
       if (!bounds.contains([lm.lng, lm.lat])) continue; // only render what's on-screen
 
-      const dropCount = aggregate
-        ? liveDrops.filter(
-            (d) =>
-              haversineDistance(lm.lat, lm.lng, gpsToDeg(d.lat), gpsToDeg(d.lng)) <=
-              LANDMARK_DROP_RADIUS_M,
-          ).length
-        : 0;
+      const dropCount = perLandmark?.get(lm.id) ?? 0;
 
       const pt = map.project([lm.lng, lm.lat]);
       const size = landmarkBadgeSize(lm.name, aggregate && dropCount > 0);
