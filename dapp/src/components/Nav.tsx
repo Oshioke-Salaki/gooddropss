@@ -78,20 +78,12 @@ function WalletButton({
   if (!ready) return null;
 
   if (!authenticated) {
-    // Sign in — brand pill. Icon artwork: public/logo-mark-white.svg
+    // Sign in — brand pill, text only (the logo already sits beside it in the bar).
     return (
       <button
         onClick={login}
-        className="flex items-center gap-2 rounded-full bg-brand px-6 py-[11px] text-base font-normal leading-none text-white whitespace-nowrap cursor-pointer transition-opacity hover:opacity-90"
+        className="flex items-center rounded-full bg-brand px-6 py-[11px] text-base font-normal leading-none text-white whitespace-nowrap cursor-pointer transition-opacity hover:opacity-90"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/logo-mark-white.svg"
-          alt=""
-          width={18}
-          height={18}
-          className="w-[18px] h-[18px] shrink-0"
-        />
         Sign in
       </button>
     );
