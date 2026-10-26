@@ -16,6 +16,7 @@ import {
 import { UserHandle } from "@/components/UserHandle";
 import { Sheet } from "@/components/ui/Sheet";
 import { DROP_STATUS, type Drop } from "@/types";
+import { shareOrCopy } from "@/lib/share";
 
 const STATUS_LABEL: Record<number, string> = {
   [DROP_STATUS.Active]: "Active",
@@ -285,7 +286,12 @@ export function QRShareModal({ drop, onClose }: { drop: Drop; onClose: () => voi
         {canShare && (
           <button
             type="button"
-            onClick={() => navigator.share?.({ title: "GoodDrops", url })}
+            onClick={async () => {
+              if ((await shareOrCopy({ title: "GoodDrops", url })) === "copied") {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            }}
             className="w-full h-14 rounded-full bg-nav-active text-white text-base/none flex items-center justify-center gap-2
               cursor-pointer motion-safe:transition-opacity hover:opacity-90"
           >

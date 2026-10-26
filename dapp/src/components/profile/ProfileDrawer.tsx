@@ -8,6 +8,7 @@ import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/l
 import { ProfileContent } from "./ProfileContent";
 import { BadgeViewer } from "./BadgeViewer";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
+import { shareOrCopy } from "@/lib/share";
 
 export interface OpenProfileDetail {
   address: string;
@@ -87,16 +88,9 @@ function ProfileDrawer({
   const share = useCallback(async () => {
     const url = `${window.location.origin}/hunter/${address.toLowerCase()}`;
     const title = "GoodDrops hunter";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, url });
-        return;
-      }
-      await navigator.clipboard.writeText(url);
+    if ((await shareOrCopy({ title, url })) === "copied") {
       setShared(true);
       setTimeout(() => setShared(false), 1800);
-    } catch {
-      /* user dismissed the share sheet, or clipboard is blocked */
     }
   }, [address]);
 

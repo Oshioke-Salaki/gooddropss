@@ -4,6 +4,7 @@ import { useAccount } from "wagmi";
 import { Share2, Download, Check, Loader2 } from "lucide-react";
 import { formatG$, RARITY, X_HANDLES, X_HASHTAGS, type DropRarity } from "@/lib/utils";
 import { withRef } from "@/lib/referral";
+import { prefersNativeShare } from "@/lib/share";
 
 interface Props {
   amount:   bigint;
@@ -140,19 +141,21 @@ export function ShareableClaimCard({ amount, rarity, place, handle, dropId, site
       const blob = await renderToBlob();
       const file = blob ? new File([blob], "gooddrops-claim.png", { type: "image/png" }) : null;
 
-      // Native share with image where the platform supports files
-      if (
-        file &&
-        typeof navigator !== "undefined" &&
-        navigator.canShare?.({ files: [file] })
-      ) {
-        await navigator.share({ files: [file], text: shareText, url: shareUrl });
-        return;
-      }
-      // Plain native share (no file)
-      if (typeof navigator !== "undefined" && "share" in navigator) {
-        await navigator.share({ text: shareText, url: shareUrl });
-        return;
+      // Phones: the native sheet, with the image where the platform takes files.
+      // Desktop browsers often expose navigator.share but refuse it, so they skip
+      // straight to the X intent below.
+      if (prefersNativeShare()) {
+        try {
+          if (file && navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ files: [file], text: shareText, url: shareUrl });
+          } else {
+            await navigator.share({ text: shareText, url: shareUrl });
+          }
+          return;
+        } catch (e) {
+          if ((e as { name?: string } | null)?.name === "AbortError") return; // cancelled
+          // refused — fall through to the X intent
+        }
       }
       // Desktop fallback → X intent
       window.open(

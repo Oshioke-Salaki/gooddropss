@@ -36,6 +36,7 @@ import { checkBadgesAfterClaim } from "@/components/BadgeCelebration";
 import { fireChestReward } from "@/components/ChestReward";
 import { DROP_STATUS, type Drop, type Campaign } from "@/types";
 import { track, claimFailReason } from "@/lib/analytics";
+import { shareOrCopy } from "@/lib/share";
 
 // ── Fetch campaign for sponsored drops ────────────────────────────────────────
 function useCampaign(campaignId: string | null) {
@@ -832,7 +833,12 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         {typeof navigator !== "undefined" && "share" in navigator && (
           <button
             type="button"
-            onClick={() => navigator.share?.({ title: "GoodDrops — hidden G$", url: pageUrl })}
+            onClick={async () => {
+              if ((await shareOrCopy({ title: "GoodDrops — hidden G$", url: pageUrl })) === "copied") {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            }}
             className={DARK}
           >
             <Share2 className="w-4 h-4" strokeWidth={2} />

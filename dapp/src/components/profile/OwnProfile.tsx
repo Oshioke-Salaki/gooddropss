@@ -20,6 +20,7 @@ import { QuestCard } from "@/components/quests/QuestCard";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
 import { useHunterStreak } from "./useHunterStreak";
 import { track } from "@/lib/analytics";
+import { shareOrCopy } from "@/lib/share";
 
 const MEDALS = ["/first-medal.svg", "/second-medal.svg", "/third-medal.svg"];
 
@@ -91,14 +92,7 @@ export function OwnProfile({ address }: { address: string }) {
 
   const share = useCallback(async () => {
     const title = profile?.username ? `@${profile.username} on GoodDrops` : "My GoodDrops profile";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, url: profileUrl });
-        return;
-      }
-      await navigator.clipboard.writeText(profileUrl);
-      flash("share");
-    } catch { /* share sheet dismissed, or clipboard blocked */ }
+    if ((await shareOrCopy({ title, url: profileUrl })) === "copied") flash("share");
   }, [profile?.username, profileUrl, flash]);
 
   const loading = data === null;

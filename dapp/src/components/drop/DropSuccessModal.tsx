@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Check, Copy, Navigation, Share2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
+import { shareOrCopy } from "@/lib/share";
 
 interface Props {
   /** Whole-G$ amount of a single drop, as typed. */
@@ -53,6 +54,7 @@ export function DropSuccessModal({
   durationSeconds, onViewOnMap,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
 
   const copy = useCallback(async () => {
@@ -71,12 +73,10 @@ export function DropSuccessModal({
       : qty > 1
         ? `I just hid ${qty} G$ drops on GoodDrops. First verified human there takes it.`
         : `I just hid ${amount} G$ on GoodDrops. First verified human there takes it.`;
-    try {
-      if (navigator.share) { await navigator.share({ title: "GoodDrops", text, url }); return; }
-      await navigator.clipboard.writeText(`${text} ${url}`);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch { /* share sheet dismissed */ }
+    if ((await shareOrCopy({ title: "GoodDrops", text, url })) === "copied") {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 1800);
+    }
   }, [shareUrl, isPrivate, qty, amount]);
 
   const each = Number(amount) || 0;
@@ -159,7 +159,9 @@ export function DropSuccessModal({
           className="h-12 rounded-full bg-brand text-white text-sm/none flex items-center justify-center gap-2 cursor-pointer
             motion-safe:transition-colors hover:bg-brand/90"
         >
-          <Share2 className="w-4 h-4" strokeWidth={2} /> {isPrivate ? "Send link" : "Share"}
+          {shareCopied
+            ? <><Check className="w-4 h-4" strokeWidth={2} /> Link copied</>
+            : <><Share2 className="w-4 h-4" strokeWidth={2} /> {isPrivate ? "Send link" : "Share"}</>}
         </button>
         <button
           type="button"

@@ -8,6 +8,7 @@ import {
 import { Logo } from "@/components/Logo";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import type { Spot } from "@/types";
+import { shareOrCopy } from "@/lib/share";
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
   food: UtensilsCrossed, retail: ShoppingBag, services: Wrench, transport: Bus, other: Store,
@@ -31,13 +32,8 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
   const payUrl = `https://gooddrops.xyz/?spot=${id}`;
 
   async function share() {
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: spot?.name ?? "Pay with G$", text: `Pay ${spot?.name ?? "this shop"} with G$`, url: payUrl });
-        return;
-      }
-    } catch { /* user dismissed — fall through to copy */ }
-    copy();
+    const r = await shareOrCopy({ title: spot?.name ?? "Pay with G$", text: `Pay ${spot?.name ?? "this shop"} with G$`, url: payUrl });
+    if (r === "copied") { setCopied(true); setTimeout(() => setCopied(false), 1800); }
   }
   function copy() {
     navigator.clipboard?.writeText(payUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }).catch(() => {});
