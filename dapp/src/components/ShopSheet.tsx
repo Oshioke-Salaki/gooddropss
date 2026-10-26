@@ -1,11 +1,10 @@
 "use client";
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { useWriteContract } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { parseUnits } from "viem";
 import {
-  Store, Check, Gift, MapPin, Eye, X, UtensilsCrossed, ShoppingBag,
+  Store, Check, Gift, MapPin, Eye, ExternalLink, Loader2, UtensilsCrossed, ShoppingBag,
   Wrench, Bus, type LucideIcon,
 } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
@@ -14,11 +13,17 @@ import { haversineDistance, formatG$, formatUsdApprox } from "@/lib/utils";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { Celebration } from "@/components/Celebration";
+import { Sheet } from "@/components/ui/Sheet";
 import type { Spot, LatLng } from "@/types";
 
 // How close a customer must be to pay — generous enough for GPS drift indoors,
 // tight enough that payment still guarantees the merchant real foot traffic.
 const PAY_RADIUS_M = 150;
+
+/** "2685" → "2.7km", "640" → "640m" — distances read better at a glance. */
+function fmtDistance(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1).replace(/\.0$/, "")}km` : `${m}m`;
+}
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
   food: UtensilsCrossed, retail: ShoppingBag, services: Wrench, transport: Bus, other: Store,
@@ -34,20 +39,32 @@ interface Props {
   preview?: boolean;
 }
 
+/**
+ * Pay-at-the-shop sheet. Opens from a spot pin on the map and, in preview
+ * mode, from the merchant's own card. Payment is a plain G$ transfer to the
+ * merchant's wallet, gated on being physically within PAY_RADIUS_M.
+ */
 export function ShopSheet({ spot, userLocation, onClose, preview = false }: Props) {
+  if (!spot) return null;
+  return <ShopSheetBody spot={spot} userLocation={userLocation} onClose={onClose} preview={preview} />;
+}
+
+// Split so the hooks and form state mount fresh for each shop — reopening on a
+// different spot can never show the previous amount or a stale "paid" screen.
+function ShopSheetBody({
+  spot, userLocation, onClose, preview,
+}: { spot: Spot; userLocation: LatLng | null; onClose: () => void; preview: boolean }) {
   const { address, isConnected } = useSignedInAccount();
   const { login } = useAuth();
   const { balance } = useGoodDollarProfile();
   const { writeContractAsync } = useWriteContract();
 
-  const [amount, setAmount]   = useState("");
-  const [status, setStatus]   = useState<PayStatus>("idle");
-  const [errMsg, setErrMsg]   = useState("");
-  const [paidTx, setPaidTx]   = useState("");
+  const [amount, setAmount] = useState("");
+  const [status, setStatus] = useState<PayStatus>("idle");
+  const [errMsg, setErrMsg] = useState("");
+  const [paidTx, setPaidTx] = useState("");
 
-  const open = spot !== null;
-
-  const distance = spot && userLocation
+  const distance = userLocation
     ? Math.round(haversineDistance(userLocation.lat, userLocation.lng, spot.lat, spot.lng))
     : null;
   const inRange = distance !== null && distance <= PAY_RADIUS_M;
@@ -56,11 +73,11 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
   try { amountWei = amount ? parseUnits(amount, 18) : 0n; } catch { /* partial input */ }
   const insufficient = amountWei > 0n && amountWei > balance;
 
-  const canPay =
-    isConnected && inRange && amountWei > 0n && !insufficient && status === "idle";
+  const canPay = isConnected && inRange && amountWei > 0n && !insufficient && status === "idle";
+  const usd = amountWei > 0n ? formatUsdApprox(amountWei) : null;
 
   async function handlePay() {
-    if (!spot || !address || !canPay) return;
+    if (!address || !canPay) return;
     setStatus("paying");
     setErrMsg("");
     try {
@@ -81,8 +98,9 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
       }).catch(() => {});
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Payment failed — try again.");
-      setStatus("error");
+      const msg = err.shortMessage ?? err.message ?? "";
+      setErrMsg(/reject|denied|cancel/i.test(msg) ? "" : (msg || "Payment failed — try again."));
+      setStatus(/reject|denied|cancel/i.test(msg) ? "idle" : "error");
     }
   }
 
@@ -94,298 +112,183 @@ export function ShopSheet({ spot, userLocation, onClose, preview = false }: Prop
     onClose();
   }
 
+  const Icon = CATEGORY_ICON[spot.category] ?? Store;
+
+  const ctaLabel =
+    status === "paying" ? "Paying…"
+    : status === "error" ? "Try again"
+    : !inRange ? "Get closer to pay"
+    : amountWei === 0n ? "Enter an amount"
+    : insufficient ? "Not enough G$"
+    : `Pay ${amount} G$`;
+
   return (
-    <AnimatePresence>
-      {open && spot && (
+    <Sheet title="Pay with G$" onClose={close} dismissible={status !== "paying"}>
+      {status === "done" ? (
         <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={close}
-            style={{
-              position: "fixed", inset: 0, zIndex: 1100,
-              background: "rgba(17,17,17,0.5)", backdropFilter: "blur(3px)",
-            }}
-          />
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 350 }}
-            style={{
-              position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1101,
-              maxWidth: 520, margin: "0 auto",
-              maxHeight: "88dvh", overflowY: "auto",
-              fontFamily: "'Space Grotesk', sans-serif",
-            }}
-          >
-            {/* ── Dark hero header ─────────────────────────────────────────── */}
-            <div style={{
-              background: "#111",
-              borderTop: "4px solid #BFFD00",
-              borderRadius: "24px 24px 0 0",
-              padding: "14px 20px 22px",
-              position: "relative",
-            }}>
-              <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                <div style={{ width: 36, height: 4, borderRadius: 2, background: "#333" }} />
-              </div>
-              <button
-                onClick={close}
-                style={{
-                  position: "absolute", top: 14, right: 16,
-                  width: 30, height: 30, borderRadius: "50%",
-                  background: "rgba(255,255,255,0.07)", border: "none",
-                  color: "#666", cursor: "pointer", fontFamily: "inherit",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 14, fontWeight: 700,
-                }}
-              ><X size={15} /></button>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <span style={{
-                  background: "#BFFD00", color: "#111",
-                  fontSize: 9, fontWeight: 900,
-                  padding: "3px 10px", borderRadius: 100,
-                  letterSpacing: "0.12em", textTransform: "uppercase",
-                  display: "inline-flex", alignItems: "center", gap: 4,
-                }}>
-                  <Store size={11} /> Accepts G$
-                </span>
-                {spot.discount && (
-                  <span style={{
-                    background: "#FF6400", color: "#fff",
-                    fontSize: 9, fontWeight: 900,
-                    padding: "3px 10px", borderRadius: 100,
-                    letterSpacing: "0.08em", textTransform: "uppercase",
-                    display: "inline-flex", alignItems: "center", gap: 4,
-                  }}>
-                    <Gift size={11} /> {spot.discount}
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 52, height: 52, flexShrink: 0,
-                  background: "#BFFD00", borderRadius: 14,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  color: "#111",
-                }}>
-                  {(() => { const I = CATEGORY_ICON[spot.category] ?? Store; return <I size={26} />; })()}
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <p style={{ margin: 0, color: "#fff", fontWeight: 900, fontSize: 22, lineHeight: 1.15 }}>
-                    {spot.name}
-                  </p>
-                  {spot.description && (
-                    <p style={{ margin: "3px 0 0", color: "#888", fontSize: 12, lineHeight: 1.4 }}>
-                      {spot.description}
-                    </p>
-                  )}
-                  {spot.placeName && (
-                    <p style={{ margin: "4px 0 0", color: "#BFFD00", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                      <MapPin size={12} /> {spot.placeName}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Body ─────────────────────────────────────────────────────── */}
-            <div style={{ background: "#f5f4f0", padding: "18px 18px 40px", display: "flex", flexDirection: "column", gap: 12 }}>
-
-              {status === "done" ? (
-                <>
-                  <Celebration active count={30} />
-                  <div style={{
-                    background: "#111", border: "2px solid #111",
-                    borderRadius: 18, boxShadow: "4px 4px 0 #BFFD00",
-                    padding: "28px 20px", textAlign: "center",
-                  }}>
-                    <div className="success-pop" style={{
-                      width: 74, height: 74, margin: "0 auto 14px",
-                      background: "#BFFD00", borderRadius: "50%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <Check size={38} color="#111" strokeWidth={3} />
-                    </div>
-                    <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 22, color: "#BFFD00" }}>
-                      Paid with G$!
-                    </p>
-                    <p style={{ margin: "0 0 4px", fontSize: 15, color: "#fff", fontWeight: 700 }}>
-                      {amount} G$ → {spot.name}
-                    </p>
-                    <a
-                      href={`https://celoscan.io/tx/${paidTx}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: "#666", textDecoration: "underline" }}
-                    >
-                      View transaction ↗
-                    </a>
-                    <button
-                      onClick={close}
-                      style={{
-                        marginTop: 18, width: "100%", padding: "14px",
-                        background: "#BFFD00", color: "#111",
-                        border: "none", borderRadius: 14,
-                        fontWeight: 900, fontSize: 15,
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {preview && (
-                    <div style={{
-                      background: "#111", color: "#BFFD00",
-                      border: "2px solid #111", borderRadius: 12,
-                      padding: "10px 14px", fontSize: 12.5, fontWeight: 800,
-                      display: "flex", alignItems: "center", gap: 8,
-                    }}>
-                      <Eye size={15} className="shrink-0" /> Preview — this is how customers see your shop. Payment is disabled here.
-                    </div>
-                  )}
-
-                  {/* Proximity gate */}
-                  <div style={{
-                    background: inRange ? "#BFFD00" : "#fff",
-                    border: "2px solid #111", borderRadius: 14,
-                    boxShadow: "2px 2px 0 #111",
-                    padding: "13px 16px",
-                    display: "flex", alignItems: "center", gap: 12,
-                  }}>
-                    <MapPin size={22} color="#111" style={{ flexShrink: 0 }} />
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 14, color: "#111" }}>
-                        {!userLocation ? "Enable GPS to pay here"
-                          : inRange ? "You're at the shop!"
-                          : `${distance}m away`}
-                      </p>
-                      <p style={{ margin: 0, fontSize: 11, color: inRange ? "#333" : "#888" }}>
-                        {inRange
-                          ? "Payment unlocked — pay in person with G$"
-                          : `Get within ${PAY_RADIUS_M}m to unlock payment`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Amount input */}
-                  <div style={{
-                    background: "#fff", border: "2px solid #111",
-                    borderRadius: 14, boxShadow: "2px 2px 0 #111",
-                    padding: "14px 16px",
-                  }}>
-                    <p style={{ margin: "0 0 8px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>
-                      Amount to pay
-                    </p>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        placeholder="0"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        style={{
-                          flex: 1, minWidth: 0,
-                          background: "transparent", border: "none", outline: "none",
-                          fontSize: 38, fontWeight: 900, color: "#111",
-                          fontFamily: "inherit",
-                        }}
-                      />
-                      <span style={{ fontSize: 22, fontWeight: 900, color: "#BFFD00", WebkitTextStroke: "1px #111" }}>G$</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
-                      <span style={{ fontSize: 11, color: insufficient ? "#FF3B3B" : "#888", fontWeight: 600 }}>
-                        {insufficient ? "Not enough G$" : `Balance: ${formatG$(balance)} G$`}
-                      </span>
-                      {amountWei > 0n && formatUsdApprox(amountWei) && (
-                        <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>
-                          {formatUsdApprox(amountWei)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {status === "error" && errMsg && (
-                    <div style={{
-                      background: "#FFE5E5", border: "2px solid #FF3B3B",
-                      borderRadius: 12, padding: "12px 14px",
-                      fontSize: 13, color: "#FF3B3B", fontWeight: 600,
-                    }}>
-                      {errMsg}
-                    </div>
-                  )}
-
-                  {/* Pay CTA */}
-                  {preview ? (
-                    <button
-                      disabled
-                      style={{
-                        width: "100%", padding: "18px",
-                        background: "#eee", color: "#aaa",
-                        border: "2.5px solid #ddd", borderRadius: 16,
-                        fontWeight: 900, fontSize: 17,
-                        cursor: "not-allowed", fontFamily: "inherit",
-                      }}
-                    >
-                      Preview only
-                    </button>
-                  ) : !isConnected ? (
-                    <button
-                      onClick={login}
-                      style={{
-                        width: "100%", padding: "18px",
-                        background: "#111", color: "#BFFD00",
-                        border: "2.5px solid #111", borderRadius: 16,
-                        boxShadow: "4px 4px 0 #BFFD00",
-                        fontWeight: 900, fontSize: 17,
-                        cursor: "pointer", fontFamily: "inherit",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                      }}
-                    >
-                      <Store size={18} /> Sign in to pay
-                    </button>
-                  ) : (
-                    <button
-                      onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handlePay}
-                      disabled={status === "paying" || (status !== "error" && !canPay)}
-                      style={{
-                        width: "100%", padding: "18px",
-                        background: (canPay || status === "error") ? "#BFFD00" : "#eee",
-                        color: (canPay || status === "error") ? "#111" : "#aaa",
-                        border: "2.5px solid",
-                        borderColor: (canPay || status === "error") ? "#111" : "#ddd",
-                        borderRadius: 16,
-                        boxShadow: (canPay || status === "error") ? "4px 4px 0 #111" : "none",
-                        fontWeight: 900, fontSize: 17,
-                        cursor: (canPay || status === "error") ? "pointer" : "not-allowed",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      {status === "paying" ? "Paying…"
-                        : status === "error" ? "Try again"
-                        : !inRange ? "Get closer to pay"
-                        : amountWei === 0n ? "Enter an amount"
-                        : insufficient ? "Not enough G$"
-                        : `Pay ${amount} G$`}
-                    </button>
-                  )}
-
-                  <p style={{ margin: 0, fontSize: 11, color: "#888", textAlign: "center", lineHeight: 1.5 }}>
-                    G$ goes directly to the merchant&apos;s wallet — no middleman, near-zero fees.
-                  </p>
-                </>
+          <Celebration active count={30} />
+          <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
+            <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+              <Check className="w-9 h-9" strokeWidth={2.25} />
+            </span>
+            <p className="text-xl/none text-heading">Paid with G$</p>
+            <p className="text-sm/[140%] text-nav-muted">
+              {amount} G$ sent to {spot.name}. It&apos;s in their wallet already.
+            </p>
+            <a
+              href={`https://celoscan.io/tx/${paidTx}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm/none text-brand hover:underline"
+            >
+              View transaction <ExternalLink className="w-4 h-4" />
+            </a>
+            <button
+              type="button"
+              onClick={close}
+              className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                motion-safe:transition-colors hover:bg-brand/90"
+            >
+              Done
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex flex-col gap-y-6 pt-6">
+          {/* ── Shop ─────────────────────────────────────────────────────── */}
+          <div className="flex items-center gap-4 min-w-0">
+            <span className="w-14 h-14 shrink-0 rounded-full bg-surface flex items-center justify-center text-heading">
+              <Icon className="w-6 h-6" strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0 flex flex-col gap-y-2">
+              <p className="text-lg/none text-heading truncate">{spot.name}</p>
+              {spot.description && (
+                <p className="text-sm/[140%] text-nav-muted line-clamp-2">{spot.description}</p>
+              )}
+              {spot.placeName && (
+                <p className="flex items-center gap-1.5 text-sm/none text-nav-muted truncate">
+                  <MapPin className="w-4 h-4 shrink-0" strokeWidth={2} />
+                  <span className="truncate">{spot.placeName}</span>
+                </p>
               )}
             </div>
-          </motion.div>
-        </>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft text-brand px-3 py-2 text-sm/none">
+              <Store className="w-4 h-4" strokeWidth={2} /> Accepts G$
+            </span>
+            {spot.discount && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-streak-bg text-streak px-3 py-2 text-sm/none min-w-0">
+                <Gift className="w-4 h-4 shrink-0" strokeWidth={2} />
+                <span className="truncate">{spot.discount}</span>
+              </span>
+            )}
+          </div>
+
+          {preview && (
+            <div className="flex items-start gap-3 rounded-2xl bg-surface px-4 py-3 text-sm/[140%] text-nav-muted">
+              <Eye className="w-4.5 h-4.5 shrink-0 mt-px text-heading" strokeWidth={1.75} />
+              <span>Preview — this is how customers see your shop. Payment is disabled here.</span>
+            </div>
+          )}
+
+          {/* ── Proximity gate ───────────────────────────────────────────── */}
+          <div
+            className={`flex items-center gap-3 rounded-full p-2 pr-5 border ${
+              inRange ? "border-transparent bg-brand-soft" : "border-line bg-white"
+            }`}
+          >
+            <span
+              className={`w-11.5 h-11.5 shrink-0 rounded-full flex items-center justify-center ${
+                inRange ? "bg-white text-brand" : "bg-surface text-heading"
+              }`}
+            >
+              <MapPin className="w-5 h-5" strokeWidth={1.75} />
+            </span>
+            <div className="min-w-0 flex flex-col gap-y-1">
+              <p className={`text-base/none ${inRange ? "text-brand" : "text-heading"}`}>
+                {!userLocation ? "Turn on location to pay here"
+                  : inRange ? "You're at the shop"
+                  : `${fmtDistance(distance!)} away`}
+              </p>
+              <p className={`text-sm/[140%] ${inRange ? "text-brand/70" : "text-nav-muted"}`}>
+                {inRange ? "Payment unlocked — pay in person with G$" : `Get within ${PAY_RADIUS_M}m to unlock payment`}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Amount ───────────────────────────────────────────────────── */}
+          <div>
+            <label className="relative block">
+              <span className="sr-only">Amount to pay in G$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                placeholder="0"
+                value={amount}
+                disabled={status === "paying"}
+                onChange={(e) => { setAmount(e.target.value); if (status === "error") { setStatus("idle"); setErrMsg(""); } }}
+                className="w-full h-14 rounded-full bg-surface pl-5 pr-14 text-base/none text-heading
+                  placeholder:text-nav-muted border border-transparent outline-none
+                  motion-safe:transition-colors focus:border-brand disabled:opacity-60"
+              />
+              <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">
+                G$
+              </span>
+            </label>
+            <p
+              role="status"
+              aria-live="polite"
+              className={`h-4 mt-3 px-5 text-sm/none truncate flex justify-between gap-3 ${
+                errMsg ? "text-danger" : insufficient ? "text-danger" : "text-nav-muted"
+              }`}
+            >
+              <span className="truncate">
+                {errMsg ? errMsg : insufficient ? "Not enough G$" : `Balance: ${balance === 0n ? "0" : formatG$(balance)} G$`}
+              </span>
+              {!errMsg && usd && <span className="shrink-0">{usd}</span>}
+            </p>
+          </div>
+
+          {/* ── CTA ──────────────────────────────────────────────────────── */}
+          {preview ? (
+            <button
+              type="button"
+              disabled
+              className="w-full h-14 rounded-full bg-[#A4A4A4] text-white text-base/none cursor-not-allowed"
+            >
+              Preview only
+            </button>
+          ) : !isConnected ? (
+            <button
+              type="button"
+              onClick={login}
+              className="w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                motion-safe:transition-colors hover:bg-brand/90"
+            >
+              Sign in to pay
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handlePay}
+              disabled={status === "paying" || (status !== "error" && !canPay)}
+              className="w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
+                disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
+            >
+              {status === "paying" && <Loader2 className="w-5 h-5 animate-spin" />}
+              {ctaLabel}
+            </button>
+          )}
+
+          <p className="text-xs/[140%] text-nav-muted text-center -mt-2">
+            G$ goes straight to the shop&apos;s wallet — no middleman, near-zero fees.
+          </p>
+        </div>
       )}
-    </AnimatePresence>
+    </Sheet>
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
 import { Loader2, AlertCircle } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 // Google OAuth returns here — a single, fixed URL, because Google matches
 // redirect URIs exactly (so we can't bounce back to an arbitrary page).
@@ -102,43 +103,37 @@ export default function AuthCallbackPage() {
   }, [isConnected, connectors, connectAsync, router]);
 
   return (
-    <div style={{
-      minHeight: "100dvh", background: "#f5f4f0",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 20, fontFamily: "'Space Grotesk', sans-serif",
-    }}>
-      <div style={{
-        width: "100%", maxWidth: 380, textAlign: "center",
-        background: "#fff", border: "2.5px solid #111", borderRadius: 24,
-        boxShadow: "6px 6px 0 #111", padding: "34px 26px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 18 }}>
-          <span style={{ fontWeight: 900, fontSize: 18 }}>good</span>
-          <span style={{ background: "#111", color: "#BFFD00", padding: "2px 8px", fontSize: 13, fontWeight: 900, borderRadius: 4 }}>drops.</span>
-        </div>
+    <div className="min-h-dvh bg-surface font-sans flex items-center justify-center p-5">
+      <div
+        role="status"
+        aria-live="polite"
+        className="w-full max-w-[400px] bg-white rounded-3xl p-6 text-center flex flex-col items-center gap-y-4"
+        style={{ boxShadow: "0px 0px 12px 0px #0000000A" }}
+      >
+        <Logo size="md" />
 
         {err ? (
           <>
-            <AlertCircle size={40} color="#C81E1E" style={{ margin: "0 auto 12px", display: "block" }} />
-            <p style={{ margin: "0 0 18px", fontWeight: 800, fontSize: 15, color: "#C81E1E" }}>{err}</p>
+            <span className="w-14 h-14 rounded-full bg-surface text-danger flex items-center justify-center">
+              <AlertCircle className="w-7 h-7" strokeWidth={1.75} />
+            </span>
+            <p className="text-base/[140%] text-heading">{err}</p>
             <button
+              type="button"
               onClick={() => router.replace("/")}
-              style={{
-                width: "100%", padding: "14px",
-                background: "#BFFD00", color: "#111",
-                border: "2.5px solid #111", borderRadius: 16,
-                boxShadow: "4px 4px 0 #111",
-                fontWeight: 900, fontSize: 15, cursor: "pointer", fontFamily: "inherit",
-              }}
+              className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                motion-safe:transition-colors hover:bg-brand/90"
             >
               Back to GoodDrops
             </button>
           </>
         ) : (
           <>
-            <Loader2 size={40} className="animate-spin" color="#111" style={{ margin: "0 auto 14px", display: "block" }} />
-            <p style={{ margin: 0, fontWeight: 900, fontSize: 17 }}>Signing you in…</p>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "#5a5a5a" }}>
+            <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+              <Loader2 className="w-7 h-7 animate-spin" strokeWidth={1.75} />
+            </span>
+            <p className="text-xl/none text-heading">Signing you in…</p>
+            <p className="text-sm/[140%] text-nav-muted">
               Setting up your wallet. This only takes a second.
             </p>
           </>

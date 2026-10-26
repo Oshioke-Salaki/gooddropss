@@ -1,6 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { Medal, Trash2, Layers } from "lucide-react";
 import type { BadgeDef, BadgeSetDef, BadgeRule } from "@/lib/badges";
+import { badgeArt } from "@/components/profile/badgeArt";
+import {
+  AdminPage, Button, Card, ChoiceChip, EmptyState, Field, Hint, Input, RowsSkeleton, SectionTitle, Select, Tag,
+} from "@/components/admin/ui";
 
 // Admin · Badges — see every badge (builtin + custom), create event/venue
 // badges and collections (sets), and watch holder counts. Builtins are code-
@@ -20,11 +25,19 @@ const RULE_OPTIONS: { value: RuleType; label: string; params: ("n" | "g" | "drop
   { value: "fast_claim_within",      label: "Claimed within S seconds",      params: ["seconds"] },
 ];
 
-const inputStyle: React.CSSProperties = {
-  width: "100%", boxSizing: "border-box", padding: "10px 12px", background: "#fff",
-  border: "2px solid #111", borderRadius: 10, fontSize: 14, fontWeight: 600,
-  fontFamily: "inherit", outline: "none",
-};
+/** The badge's picture: illustration when we have one, its stored glyph until then. */
+function BadgeMark({ badge, size = 44 }: { badge: Pick<BadgeDef, "id" | "emoji">; size?: number }) {
+  const art = badgeArt(badge.id);
+  return (
+    <span
+      className="rounded-full bg-surface flex items-center justify-center shrink-0 overflow-hidden"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.45) }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {art ? <img src={art} alt="" className="w-full h-full object-contain" /> : badge.emoji}
+    </span>
+  );
+}
 
 export default function AdminBadgesPage() {
   const [builtins, setBuiltins] = useState<BadgeDef[]>([]);
@@ -117,119 +130,156 @@ export default function AdminBadgesPage() {
   const params = RULE_OPTIONS.find((r) => r.value === ruleType)?.params ?? [];
   const allBadges = [...builtins, ...customs];
 
-  const chip = (b: BadgeDef, custom: boolean) => (
-    <div key={b.id} style={{ background: "#fff", border: "2px solid #111", borderRadius: 12, padding: "10px 12px", boxShadow: "2px 2px 0 #111" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 18 }}>{b.emoji}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 900, fontSize: 13.5 }}>{b.name} <span style={{ color: "#999", fontWeight: 600, fontSize: 11 }}>· {holders[b.id] ?? 0} holders</span></p>
-          <p style={{ margin: "1px 0 0", fontSize: 11.5, color: "#777" }}>{b.description}</p>
-        </div>
-        {custom ? (
-          <button onClick={() => post({ op: "badge:delete", id: b.id }).then((d) => d && setOk(`Deleted ${b.name}.`))} disabled={busy}
-            style={{ border: "2px solid #C81E1E", color: "#C81E1E", background: "#fff", borderRadius: 8, padding: "4px 9px", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-            Delete
-          </button>
-        ) : (
-          <span style={{ fontSize: 10, fontWeight: 800, color: "#aaa", textTransform: "uppercase" }}>built-in</span>
-        )}
+  const row = (b: BadgeDef, custom: boolean) => (
+    <div key={b.id} className="flex items-center gap-3 border border-line rounded-full p-2 pr-3 lg:pr-4 min-w-0">
+      <BadgeMark badge={b} />
+      <div className="flex-1 min-w-0">
+        <p className="text-base/none text-heading truncate">
+          {b.name} <span className="text-sm text-nav-muted">· {holders[b.id] ?? 0} holders</span>
+        </p>
+        <p className="text-sm/none text-nav-muted mt-1.5 truncate">{b.description}</p>
       </div>
+      {custom ? (
+        <Button
+          size="sm" variant="danger" disabled={busy}
+          onClick={() => post({ op: "badge:delete", id: b.id }).then((d) => d && setOk(`Deleted ${b.name}.`))}
+          aria-label={`Delete ${b.name}`}
+        >
+          <Trash2 className="w-4 h-4" strokeWidth={2} /> <span className="hidden sm:inline">Delete</span>
+        </Button>
+      ) : (
+        <Tag>Built-in</Tag>
+      )}
     </div>
   );
 
   return (
-    <div style={{ minHeight: "100dvh", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif" }}>
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "28px 16px 60px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, letterSpacing: "-0.02em" }}>Badges</h1>
-        <p style={{ color: "#5a5a5a", fontSize: 13.5, margin: "4px 0 18px" }}>
-          Status hunters earn from GPS-verified claims. Create event collections and venue badges here — they award automatically.
-        </p>
+    <AdminPage
+      title="Badges"
+      subtitle="Status hunters earn from GPS-verified claims. Create event collections and venue badges here; they award automatically."
+    >
+      <Hint text={err || ok} tone={err ? "bad" : "ok"} className="mb-3" />
 
-        {err && <p style={{ color: "#C81E1E", fontWeight: 700, fontSize: 13, margin: "0 0 10px" }}>{err}</p>}
-        {ok && <p style={{ color: "#3a7d00", fontWeight: 700, fontSize: 13, margin: "0 0 10px" }}>{ok}</p>}
-        {loading ? <p style={{ color: "#888", fontWeight: 700 }}>Loading…</p> : (
-          <>
-            {/* Existing badges */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {customs.map((b) => chip(b, true))}
-              {builtins.map((b) => chip(b, false))}
-            </div>
-
-            {/* Create badge */}
-            <h2 style={{ fontSize: 16, fontWeight: 900, margin: "24px 0 10px" }}>Create a badge</h2>
-            <div style={{ background: "#fff", border: "2px solid #111", borderRadius: 14, padding: 14, boxShadow: "3px 3px 0 #111", display: "grid", gap: 10 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", gap: 8 }}>
-                <input value={bEmoji} onChange={(e) => setBEmoji(e.target.value)} placeholder="🏅" style={{ ...inputStyle, textAlign: "center" }} aria-label="Emoji" />
-                <input value={bId} onChange={(e) => setBId(e.target.value.toLowerCase())} placeholder="id-slug (e.g. devconnect-1)" style={inputStyle} />
-                <input value={bName} onChange={(e) => setBName(e.target.value)} placeholder="Name" style={inputStyle} />
+      {loading ? (
+        <RowsSkeleton count={6} height="h-16" />
+      ) : (
+        <>
+          {/* Existing badges */}
+          <Card>
+            <SectionTitle className="mb-5">All badges</SectionTitle>
+            {allBadges.length === 0 ? (
+              <EmptyState icon={Medal} title="No badges yet" />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {customs.map((b) => row(b, true))}
+                {builtins.map((b) => row(b, false))}
               </div>
-              <input value={bDesc} onChange={(e) => setBDesc(e.target.value)} placeholder="Description (shown on the wall)" style={inputStyle} />
-              <select value={ruleType} onChange={(e) => setRuleType(e.target.value as RuleType)} style={inputStyle}>
-                {RULE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {params.includes("n") && <input value={pN} onChange={(e) => setPN(e.target.value)} placeholder="N" type="number" style={{ ...inputStyle, width: 110 }} />}
-                {params.includes("g") && <input value={pG} onChange={(e) => setPG(e.target.value)} placeholder="G$" type="number" style={{ ...inputStyle, width: 110 }} />}
-                {params.includes("seconds") && <input value={pSeconds} onChange={(e) => setPSeconds(e.target.value)} placeholder="Seconds" type="number" style={{ ...inputStyle, width: 130 }} />}
-                {params.includes("dropIds") && <input value={pDropIds} onChange={(e) => setPDropIds(e.target.value)} placeholder="Drop ids, comma-separated" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />}
-                {params.includes("geo") && (<>
-                  <input value={pLat} onChange={(e) => setPLat(e.target.value)} placeholder="Lat" style={{ ...inputStyle, width: 120 }} />
-                  <input value={pLng} onChange={(e) => setPLng(e.target.value)} placeholder="Lng" style={{ ...inputStyle, width: 120 }} />
-                  <input value={pRadius} onChange={(e) => setPRadius(e.target.value)} placeholder="Radius m" type="number" style={{ ...inputStyle, width: 120 }} />
-                </>)}
-                {params.includes("campaign") && <input value={pCampaign} onChange={(e) => setPCampaign(e.target.value)} placeholder="Campaign id" style={{ ...inputStyle, width: 180 }} />}
-              </div>
-              <button onClick={createBadge} disabled={busy || !bId || !bName}
-                style={{ height: 46, background: "#BFFD00", border: "2.5px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", boxShadow: "3px 3px 0 #111" }}>
-                {busy ? "Saving…" : "Create badge"}
-              </button>
-            </div>
+            )}
+          </Card>
 
-            {/* Sets */}
-            <h2 style={{ fontSize: 16, fontWeight: 900, margin: "24px 0 10px" }}>Collections (sets)</h2>
-            {sets.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {/* Create badge */}
+          <Card className="mt-6">
+            <SectionTitle className="mb-5">Create a badge</SectionTitle>
+            <div className="grid grid-cols-[88px_1fr] lg:grid-cols-[88px_1fr_1fr] gap-3">
+              <Field label="Glyph">
+                <Input value={bEmoji} onChange={(e) => setBEmoji(e.target.value)} className="text-center" aria-label="Badge glyph" />
+              </Field>
+              <Field label="Id">
+                <Input value={bId} onChange={(e) => setBId(e.target.value.toLowerCase())} placeholder="devconnect-1" spellCheck={false} />
+              </Field>
+              <Field label="Name">
+                <Input value={bName} onChange={(e) => setBName(e.target.value)} placeholder="Name" />
+              </Field>
+            </div>
+            <div className="mt-4">
+              <Field label="Description"><Input value={bDesc} onChange={(e) => setBDesc(e.target.value)} placeholder="Shown on the badge wall" /></Field>
+            </div>
+            <div className="mt-4">
+              <Field label="Rule">
+                <Select value={ruleType} onChange={(e) => setRuleType(e.target.value as RuleType)}>
+                  {RULE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="flex gap-3 flex-wrap mt-4">
+              {params.includes("n") && <Input value={pN} onChange={(e) => setPN(e.target.value)} placeholder="N" type="number" className="w-32!" aria-label="N" />}
+              {params.includes("g") && <Input value={pG} onChange={(e) => setPG(e.target.value)} placeholder="G$" type="number" className="w-32!" aria-label="G$" />}
+              {params.includes("seconds") && <Input value={pSeconds} onChange={(e) => setPSeconds(e.target.value)} placeholder="Seconds" type="number" className="w-36!" aria-label="Seconds" />}
+              {params.includes("dropIds") && <Input value={pDropIds} onChange={(e) => setPDropIds(e.target.value)} placeholder="Drop ids, comma-separated" className="flex-1 w-auto! min-w-[200px]" aria-label="Drop ids" />}
+              {params.includes("geo") && (<>
+                <Input value={pLat} onChange={(e) => setPLat(e.target.value)} placeholder="Lat" className="w-32!" aria-label="Latitude" />
+                <Input value={pLng} onChange={(e) => setPLng(e.target.value)} placeholder="Lng" className="w-32!" aria-label="Longitude" />
+                <Input value={pRadius} onChange={(e) => setPRadius(e.target.value)} placeholder="Radius m" type="number" className="w-32!" aria-label="Radius in metres" />
+              </>)}
+              {params.includes("campaign") && <Input value={pCampaign} onChange={(e) => setPCampaign(e.target.value)} placeholder="Campaign id" className="w-48!" aria-label="Campaign id" />}
+            </div>
+            <Button variant="primary" size="lg" className="mt-6" onClick={createBadge} busy={busy} disabled={!bId || !bName}>
+              {busy ? "Saving…" : "Create badge"}
+            </Button>
+          </Card>
+
+          {/* Sets */}
+          <Card className="mt-6">
+            <SectionTitle className="mb-5">Collections</SectionTitle>
+            {sets.length > 0 ? (
+              <div className="flex flex-col gap-2 mb-6">
                 {sets.map((s) => (
-                  <div key={s.id} style={{ background: "#fff", border: "2px solid #111", borderRadius: 12, padding: "10px 12px", boxShadow: "2px 2px 0 #111", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 18 }}>{s.emoji}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13.5 }}>{s.name}</p>
-                      <p style={{ margin: "1px 0 0", fontSize: 11.5, color: "#777" }}>{s.badgeIds.length} badges: {s.badgeIds.join(", ")}</p>
+                  <div key={s.id} className="flex items-center gap-3 border border-line rounded-full p-2 pr-3 lg:pr-4 min-w-0">
+                    <BadgeMark badge={s} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base/none text-heading truncate">{s.name}</p>
+                      <p className="text-sm/none text-nav-muted mt-1.5 truncate">{s.badgeIds.length} badges: {s.badgeIds.join(", ")}</p>
                     </div>
-                    <button onClick={() => post({ op: "set:delete", id: s.id }).then((d) => d && setOk(`Deleted set ${s.name}.`))} disabled={busy}
-                      style={{ border: "2px solid #C81E1E", color: "#C81E1E", background: "#fff", borderRadius: 8, padding: "4px 9px", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
-                      Delete
-                    </button>
+                    <Button
+                      size="sm" variant="danger" disabled={busy}
+                      onClick={() => post({ op: "set:delete", id: s.id }).then((d) => d && setOk(`Deleted set ${s.name}.`))}
+                      aria-label={`Delete ${s.name}`}
+                    >
+                      <Trash2 className="w-4 h-4" strokeWidth={2} /> <span className="hidden sm:inline">Delete</span>
+                    </Button>
                   </div>
                 ))}
               </div>
+            ) : (
+              <p className="text-sm/[140%] text-nav-muted mb-6 flex items-center gap-2">
+                <Layers className="w-4 h-4" strokeWidth={2} /> No collections yet. Group two or more badges below.
+              </p>
             )}
-            <div style={{ background: "#fff", border: "2px solid #111", borderRadius: 14, padding: 14, boxShadow: "3px 3px 0 #111", display: "grid", gap: 10 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "72px 1fr 1fr", gap: 8 }}>
-                <input value={sEmoji} onChange={(e) => setSEmoji(e.target.value)} placeholder="🏆" style={{ ...inputStyle, textAlign: "center" }} aria-label="Set emoji" />
-                <input value={sId} onChange={(e) => setSId(e.target.value.toLowerCase())} placeholder="set-id (e.g. devconnect-2026)" style={inputStyle} />
-                <input value={sName} onChange={(e) => setSName(e.target.value)} placeholder="Set name" style={inputStyle} />
-              </div>
-              <input value={sDesc} onChange={(e) => setSDesc(e.target.value)} placeholder="Description" style={inputStyle} />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {allBadges.map((b) => {
-                  const on = sBadges.has(b.id);
-                  return (
-                    <button key={b.id} onClick={() => setSBadges((prev) => { const nx = new Set(prev); if (on) nx.delete(b.id); else nx.add(b.id); return nx; })}
-                      style={{ padding: "6px 10px", borderRadius: 100, border: "2px solid #111", background: on ? "#111" : "#fff", color: on ? "#fff" : "#111", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                      {b.emoji} {b.name}
-                    </button>
-                  );
-                })}
-              </div>
-              <button onClick={createSet} disabled={busy || !sId || !sName || sBadges.size < 2}
-                style={{ height: 46, background: sBadges.size >= 2 ? "#BFFD00" : "#e8e7e2", border: "2.5px solid #111", borderRadius: 12, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", boxShadow: sBadges.size >= 2 ? "3px 3px 0 #111" : "none" }}>
-                {busy ? "Saving…" : `Create set (${sBadges.size} badges picked)`}
-              </button>
+
+            <div className="grid grid-cols-[88px_1fr] lg:grid-cols-[88px_1fr_1fr] gap-3">
+              <Field label="Glyph">
+                <Input value={sEmoji} onChange={(e) => setSEmoji(e.target.value)} className="text-center" aria-label="Set glyph" />
+              </Field>
+              <Field label="Id">
+                <Input value={sId} onChange={(e) => setSId(e.target.value.toLowerCase())} placeholder="devconnect-2026" spellCheck={false} />
+              </Field>
+              <Field label="Name">
+                <Input value={sName} onChange={(e) => setSName(e.target.value)} placeholder="Set name" />
+              </Field>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+            <div className="mt-4">
+              <Field label="Description"><Input value={sDesc} onChange={(e) => setSDesc(e.target.value)} placeholder="Description" /></Field>
+            </div>
+            <p className="text-sm/none text-nav-muted mt-5 mb-3 px-1">Badges in this set</p>
+            <div className="flex flex-wrap gap-2">
+              {allBadges.map((b) => {
+                const on = sBadges.has(b.id);
+                return (
+                  <ChoiceChip
+                    key={b.id} on={on}
+                    onClick={() => setSBadges((prev) => { const nx = new Set(prev); if (on) nx.delete(b.id); else nx.add(b.id); return nx; })}
+                  >
+                    <BadgeMark badge={b} size={20} /> {b.name}
+                  </ChoiceChip>
+                );
+              })}
+            </div>
+            <Button variant="primary" size="lg" className="mt-6" onClick={createSet} busy={busy} disabled={!sId || !sName || sBadges.size < 2}>
+              {busy ? "Saving…" : `Create set (${sBadges.size} picked)`}
+            </Button>
+          </Card>
+        </>
+      )}
+    </AdminPage>
   );
 }

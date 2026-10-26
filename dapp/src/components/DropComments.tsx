@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Send, Loader2 } from "lucide-react";
+import { ChevronDown, MessageCircle, Send, Loader2 } from "lucide-react";
 import { useAccount } from "wagmi";
 import { UserHandle } from "@/components/UserHandle";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import type { Comment } from "@/app/api/comments/[dropId]/route";
 
 function timeAgo(ts: number): string {
@@ -68,19 +70,26 @@ export function DropComments({ dropId, dropper }: Props) {
     }
   }
 
+  const canPost = !!text.trim() && !posting;
+
   return (
-    <div style={{ borderTop: "2px solid #f0f0f0", paddingTop: 16 }}>
+    <div className="border-t border-line pt-4 font-sans">
       {/* Toggle header */}
       <button
+        type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 w-full text-left"
-        style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}
+        aria-expanded={open}
+        className="flex items-center gap-2.5 w-full text-left cursor-pointer rounded-full
+          motion-safe:transition-colors hover:text-heading text-nav-muted"
       >
-        <MessageCircle size={15} color="#888" />
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-          Comments {comments.length > 0 && !open ? `(${comments.length})` : ""}
+        <MessageCircle className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+        <span className="text-sm/none text-heading">
+          Comments{comments.length > 0 && !open ? ` (${comments.length})` : ""}
         </span>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "#bbb" }}>{open ? "▲" : "▼"}</span>
+        <ChevronDown
+          className={`w-4 h-4 ml-auto shrink-0 motion-safe:transition-transform ${open ? "rotate-180" : ""}`}
+          strokeWidth={2}
+        />
       </button>
 
       <AnimatePresence>
@@ -90,126 +99,74 @@ export function DropComments({ dropId, dropper }: Props) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            style={{ overflow: "hidden" }}
+            className="overflow-hidden"
           >
-            <div style={{ paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="pt-4 flex flex-col gap-3">
               {/* Comment input */}
               {isConnected ? (
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-                  <textarea
-                    value={text}
-                    onChange={(e) => setText(e.target.value.slice(0, 280))}
-                    placeholder="Leave a note for hunters…"
-                    rows={2}
-                    style={{
-                      flex: 1,
-                      border: "2px solid #e8e6e0",
-                      borderRadius: 10,
-                      padding: "8px 12px",
-                      fontSize: 13,
-                      fontFamily: "inherit",
-                      resize: "none",
-                      outline: "none",
-                      background: "#f9f9f7",
-                    }}
-                    onFocus={(e) => { e.currentTarget.style.borderColor = "#111"; }}
-                    onBlur={(e)  => { e.currentTarget.style.borderColor = "#e8e6e0"; }}
-                  />
+                <form
+                  className="flex gap-2 items-end"
+                  onSubmit={(e) => { e.preventDefault(); handlePost(); }}
+                >
+                  <label className="flex-1 min-w-0">
+                    <span className="sr-only">Your comment</span>
+                    <textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value.slice(0, 280))}
+                      placeholder="Leave a note for hunters…"
+                      rows={2}
+                      disabled={posting}
+                      className="w-full rounded-2xl bg-surface px-4 py-3 text-sm/[140%] text-heading placeholder:text-nav-muted
+                        border border-transparent outline-none resize-none motion-safe:transition-colors focus:border-brand
+                        disabled:opacity-60"
+                    />
+                  </label>
                   <button
-                    onClick={handlePost}
-                    disabled={posting || !text.trim()}
-                    style={{
-                      width: 38, height: 38,
-                      background: text.trim() ? "#111" : "#e8e6e0",
-                      border: "none",
-                      borderRadius: 10,
-                      cursor: posting || !text.trim() ? "not-allowed" : "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      flexShrink: 0,
-                    }}
+                    type="submit"
+                    disabled={!canPost}
+                    aria-label="Post comment"
+                    className="w-11 h-11 shrink-0 rounded-full bg-brand text-white flex items-center justify-center cursor-pointer
+                      motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed"
                   >
                     {posting
-                      ? <Loader2 size={16} color="#fff" style={{ animation: "spin 1s linear infinite" }} />
-                      : <Send size={16} color={text.trim() ? "#BFFD00" : "#aaa"} />}
+                      ? <Loader2 className="w-[18px] h-[18px] animate-spin" />
+                      : <Send className="w-[18px] h-[18px]" strokeWidth={2} />}
                   </button>
-                </div>
+                </form>
               ) : (
-                <p style={{ fontSize: 12, color: "#aaa", margin: 0 }}>
-                  Sign in to leave a comment
-                </p>
+                <p className="text-sm/none text-nav-muted">Sign in to leave a comment</p>
               )}
 
-              {error && (
-                <p style={{ fontSize: 12, color: "#ff3b3b", margin: 0 }}>{error}</p>
-              )}
+              {error && <p role="alert" className="text-sm/none text-danger">{error}</p>}
 
               {/* Comment list */}
               {loading ? (
-                <div style={{ display: "flex", gap: 6, alignItems: "center", color: "#aaa", fontSize: 12 }}>
-                  <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-                  Loading comments…
+                <div className="flex flex-col gap-2">
+                  {Array.from({ length: 2 }, (_, i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}
                 </div>
               ) : comments.length === 0 ? (
-                <p style={{ fontSize: 12, color: "#bbb", margin: 0 }}>
-                  No comments yet. Be the first!
-                </p>
+                <p className="text-sm/none text-nav-muted">No comments yet. Be the first.</p>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 240, overflowY: "auto" }}>
+                <div className="flex flex-col gap-2 max-h-60 overflow-y-auto overscroll-contain">
                   {comments.map((c) => {
                     const isDropper = !!dropper && c.author.toLowerCase() === dropper.toLowerCase();
                     const isMe      = address?.toLowerCase() === c.author.toLowerCase();
                     return (
-                      <div key={c.id} style={{
-                        background: isDropper ? "#111" : "#f5f4f0",
-                        border: isDropper ? "1.5px solid #333" : "1.5px solid #e8e6e0",
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
-                          <UserHandle
-                            address={c.author}
-                            style={{
-                              fontSize: 11, fontWeight: 800,
-                              color: isDropper ? "#888" : "#888",
-                            }}
-                          />
-
-                          {/* Dropper badge — shown for drop creator */}
-                          {isDropper && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 900,
-                              background: "#BFFD00", color: "#111",
-                              borderRadius: 4, padding: "1px 6px",
-                              letterSpacing: "0.04em",
-                            }}>
-                              📍 Dropper
-                            </span>
-                          )}
-
-                          {/* You badge — shown for the connected user (non-dropper) */}
-                          {isMe && !isDropper && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 900, color: "#111",
-                              background: "#BFFD00", borderRadius: 4, padding: "1px 5px",
-                            }}>you</span>
-                          )}
-
-                          {/* You + dropper combined */}
-                          {isMe && isDropper && (
-                            <span style={{
-                              fontSize: 9, fontWeight: 900, color: "#BFFD00",
-                              background: "transparent", borderRadius: 4, padding: "1px 5px",
-                              border: "1px solid #333",
-                            }}>you</span>
-                          )}
-
-                          <span style={{ marginLeft: "auto", fontSize: 10, color: isDropper ? "#555" : "#bbb" }}>
-                            {timeAgo(c.timestamp)}
-                          </span>
+                      <div key={c.id} className="flex gap-3 rounded-2xl bg-surface px-4 py-3">
+                        <ProfileAvatar address={c.author} size={28} ringColor="transparent" className="mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <UserHandle address={c.author} className="text-sm/none text-heading" />
+                            {isDropper && (
+                              <span className="rounded-full bg-brand-soft text-brand px-2 py-1 text-xs/none">Dropper</span>
+                            )}
+                            {isMe && (
+                              <span className="rounded-full bg-white text-nav-muted px-2 py-1 text-xs/none">you</span>
+                            )}
+                            <span className="ml-auto text-xs/none text-nav-muted">{timeAgo(c.timestamp)}</span>
+                          </div>
+                          <p className="mt-1.5 text-sm/[140%] text-heading break-words">{c.text}</p>
                         </div>
-                        <p style={{ margin: 0, fontSize: 13, color: isDropper ? "#ccc" : "#333", lineHeight: 1.4 }}>
-                          {c.text}
-                        </p>
                       </div>
                     );
                   })}

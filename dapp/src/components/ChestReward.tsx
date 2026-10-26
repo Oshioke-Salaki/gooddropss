@@ -44,36 +44,43 @@ export function ChestReward() {
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           onClick={() => setReward(null)}
-          style={{
-            position: "fixed", inset: 0, zIndex: 5000,
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            background: "rgba(8,8,10,0.72)", backdropFilter: "blur(3px)",
-            fontFamily: "'Space Grotesk', sans-serif", pointerEvents: "auto",
-          }}
+          role="status"
+          aria-live="assertive"
+          // Dark glass on purpose: this is the one full-screen "you won" beat, and
+          // the gold chest needs contrast to glow.
+          className="fixed inset-0 z-[5000] flex flex-col items-center justify-center font-sans
+            bg-[#121607]/70 backdrop-blur-sm"
         >
           <motion.div
             initial={{ scale: 0.5, y: 20 }} animate={{ scale: 1, y: 0 }}
             transition={{ type: "spring", damping: 16, stiffness: 300 }}
-            style={{ position: "relative", width: 180, height: 180 }}
+            className="relative w-[180px] h-[180px]"
           >
             {/* radial flash */}
-            <div className="chest-reward-flash" style={{
-              position: "absolute", inset: "-30%", borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(255,225,120,0.9), rgba(255,225,120,0) 60%)",
-            }} />
+            <div
+              className="chest-reward-flash absolute -inset-[30%] rounded-full"
+              style={{ background: "radial-gradient(circle, rgba(255,225,120,0.9), rgba(255,225,120,0) 60%)" }}
+            />
 
             {/* coins */}
             {coins.map((c, i) => (
-              <span key={i} className="chest-reward-coin" style={{
-                position: "absolute", left: "50%", top: "42%", fontSize: 26,
-                // @ts-expect-error CSS custom props
-                "--dx": `${c.dx}px`, "--dy": `${c.dy}px`,
-                marginLeft: -13, animationDelay: `${0.7 + i * 0.04}s`,
-              }}>🪙</span>
+              <span
+                key={i}
+                className="chest-reward-coin absolute left-1/2 top-[42%] -ml-2.5 w-5 h-5 rounded-full
+                  bg-[#FFD700] border-2 border-[#c99b26] shadow-[inset_0_-2px_0_#e0b73a]"
+                style={{
+                  // @ts-expect-error CSS custom props
+                  "--dx": `${c.dx}px`, "--dy": `${c.dy}px`,
+                  animationDelay: `${0.7 + i * 0.04}s`,
+                }}
+              />
             ))}
 
             {/* chest */}
-            <div className="chest-reward-shake" style={{ position: "absolute", inset: 0, filter: "drop-shadow(0 6px 16px rgba(0,0,0,.5)) drop-shadow(0 0 22px rgba(255,215,0,.55))" }}>
+            <div
+              className="chest-reward-shake absolute inset-0"
+              style={{ filter: "drop-shadow(0 6px 16px rgba(0,0,0,.5)) drop-shadow(0 0 22px rgba(255,215,0,.55))" }}
+            >
               <svg width="180" height="180" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
                 {/* body */}
                 <rect x="16" y="46" width="64" height="38" rx="5" fill={GOLD.body} stroke={GOLD.bodyDark} strokeWidth="2.5" />
@@ -92,13 +99,11 @@ export function ChestReward() {
             </div>
           </motion.div>
 
-          <div className="chest-reward-amount" style={{ marginTop: 8, textAlign: "center" }}>
-            <p style={{ margin: 0, fontSize: 40, fontWeight: 900, color: "#BFFD00", lineHeight: 1, textShadow: "0 2px 12px rgba(191,253,0,.5)" }}>
+          <div className="chest-reward-amount mt-2 text-center">
+            <p className="font-anta text-[40px]/none text-white" style={{ textShadow: "0 2px 12px rgba(255,215,0,.45)" }}>
               +{reward.amount} G$
             </p>
-            <p style={{ margin: "6px 0 0", fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              Claimed! 🎉
-            </p>
+            <p className="mt-2 text-sm/none text-white/80">Claimed</p>
           </div>
         </motion.div>
       )}

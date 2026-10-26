@@ -1,15 +1,18 @@
 "use client";
 import dynamic from "next/dynamic";
+import { MapPin } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAccount } from "wagmi";
-import { Nav, BottomNav } from "@/components/Nav";
+import { Nav } from "@/components/Nav";
 import { LandmarkCreator } from "@/components/LandmarkCreator";
 import { checkBadgesAfterClaim } from "@/components/BadgeCelebration";
 import { LandmarkManageSheet } from "@/components/LandmarkManageSheet";
+import { MapSearchBar } from "@/components/MapSearchBar";
+import { MapActionButtons } from "@/components/MapActionButtons";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { isAdminAddress } from "@/lib/admins";
-import { CreateDropSheet } from "@/components/CreateDropSheet";
+import { DropGDrawer } from "@/components/drop/DropGDrawer";
 import { ChainDropCreator } from "@/components/ChainDropCreator";
 import { ClaimSheet } from "@/components/ClaimSheet";
 import { HuntingMode } from "@/components/HuntingMode";
@@ -29,9 +32,9 @@ import { DROP_STATUS } from "@/types";
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex flex-col items-center justify-center bg-cream gap-3">
-      <div className="text-4xl animate-bounce">📍</div>
-      <p className="font-bold text-muted text-sm animate-pulse">Loading map…</p>
+    <div className="w-full h-full flex flex-col items-center justify-center bg-surface gap-3 font-sans">
+      <MapPin className="w-8 h-8 text-brand motion-safe:animate-bounce" strokeWidth={1.75} />
+      <p className="text-sm/none text-nav-muted animate-pulse">Loading map…</p>
     </div>
   ),
 });
@@ -81,6 +84,14 @@ export default function HomePage() {
   // Places/Suggestions lists). Read once, then strip the param so a later manual
   // pan isn't yanked back on re-render.
   const [focusCoord, setFocusCoord] = useState<{ lat: number; lng: number } | null>(null);
+  // The mobile nav rail hangs over the search band; Nav broadcasts its state so we
+  // pull the band rather than leave a sliver of it showing beneath the rail.
+  const [navMenuOpen, setNavMenuOpen] = useState(false);
+  useEffect(() => {
+    const onMenu = (e: Event) => setNavMenuOpen(!!(e as CustomEvent).detail?.open);
+    window.addEventListener("gd:navmenu", onMenu);
+    return () => window.removeEventListener("gd:navmenu", onMenu);
+  }, []);
   // Deep-link a shop's pay sheet: /?spot=<id> (the merchant's pay-here QR poster).
   const [spotDeepLinkId, setSpotDeepLinkId] = useState<string | null>(null);
   useEffect(() => {
@@ -142,7 +153,7 @@ export default function HomePage() {
       <Nav />
 
       {/* Full-screen map — starts below header, ends above bottom nav on mobile */}
-      <div className="absolute top-14 left-0 right-0 bottom-16 sm:bottom-0">
+      <div className="absolute top-nav left-0 right-0 bottom-0">
         <MapView
           drops={drops.filter((d) => {
             // Must go through parseDropHint, not a startsWith: a riddle-locked
@@ -169,140 +180,40 @@ export default function HomePage() {
         />
       </div>
 
-      {/* Status badge — hidden while placing a landmark, so the placement
-          instruction banner owns the centered top slot (they'd otherwise overlap). */}
-      {!placingLandmark && (
-      <div
-        style={{
-          position: "fixed",
-          // Header is 56px; the verification banner sits directly under it and
-          // wraps to two lines on mobile, so clear whatever height it reports.
-          top: "calc(70px + var(--gd-banner-h, 0px))",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 999,
-          fontFamily: "inherit",
-          pointerEvents: "none",
-          transition: "top 0.2s ease",
-        }}
-      >
-        {loading && (
-          <div className="bg-cream border-2 border-ink rounded-full px-4 py-1.5 text-xs font-bold shadow-brutal-sm animate-pulse whitespace-nowrap">
-            Loading drops…
-          </div>
-        )}
-        {!loading && drops.length === 0 && (
-          <div className="bg-cream border-2 border-ink rounded-full px-4 py-1.5 text-xs font-bold shadow-brutal-sm whitespace-nowrap">
-            No drops yet — be the first! 💰
-          </div>
-        )}
-        {!loading && drops.length > 0 && (
-          <div className="bg-lime border-2 border-ink rounded-full px-4 py-1.5 text-xs font-black shadow-brutal-sm whitespace-nowrap">
-            {drops.filter((d) => d.status === 0 && d.expiry > Math.floor(Date.now() / 1000)).length} drops live
-          </div>
-        )}
-      </div>
+      {/* Location search. Below lg it's a full-bleed band flush under the nav; at lg
+          and up a floating card over the map's top-left. Hidden while placing a
+          landmark (it would steal taps meant for the map) and while the mobile nav
+          rail is open (the rail covers this slot). Sits under the nav (z-1100) but
+          above every map control. */}
+      {!placingLandmark && !navMenuOpen && (
+        <div
+          className="fixed left-0 right-0 lg:right-auto z-[900] lg:pt-4 lg:pl-[60px]"
+          style={{ top: "calc(var(--spacing-nav) + var(--gd-banner-h, 0px))", transition: "top 0.2s ease" }}
+        >
+          <MapSearchBar
+            landmarks={landmarks}
+            onSelect={(lm) => setFocusCoord({ lat: lm.lat, lng: lm.lng })}
+          />
+        </div>
       )}
 
-      {/* Demand heatmap toggle — shows where hunters have claimed drops, so
-          droppers can drop where the players are. Only when there's history. */}
-      {!placingLandmark && heatmapPoints.length > 0 && (
-        <button
-          onClick={() => setShowHeatmap((v) => !v)}
-          aria-pressed={showHeatmap}
-          style={{
-            position: "fixed",
-            top: "calc(70px + var(--gd-banner-h, 0px))",
-            left: "12px", zIndex: 999,
-            background: showHeatmap ? "#BFFD00" : "rgba(24,24,24,0.92)",
-            color: showHeatmap ? "#111" : "#BFFD00",
-            border: "2px solid #111111",
-            boxShadow: showHeatmap ? "2px 2px 0 #111111" : "2px 2px 0 rgba(191,253,0,0.5)",
-            fontWeight: 800, fontSize: "12px",
-            padding: "7px 12px", borderRadius: "100px",
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: "5px",
-            backdropFilter: "blur(4px)",
-            transition: "top 0.2s ease",
-          }}
-        >
-          <span>🔥</span><span>{showHeatmap ? "Hotspots on" : "Hotspots"}</span>
-        </button>
-      )}
-
-      {/* Action buttons — fixed so Leaflet's stacking context can't bury them */}
+      {/* Action buttons — fixed so the map's stacking context can't bury them */}
       <div
-        className="map-actions"
-        style={{
-          position: "fixed",
-          // Lift clear of the cold-start sheet when it's up; --gd-cold-inset is 0 otherwise.
-          bottom: "calc(96px + var(--gd-cold-inset, 0px))",
-          right: "20px", zIndex: 999,
-          display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-end",
-          transition: "bottom 0.2s ease",
-        }}
+        className="map-actions fixed z-[999] right-5 lg:right-[60px]
+          bottom-[calc(20px+var(--gd-cold-inset,0px))] lg:bottom-[calc(60px+var(--gd-cold-inset,0px))] transition-[bottom] duration-200"
       >
-        {!placingLandmark && (<>
-        {/* Admin: name a place · Verified hunter: suggest a place (→ review) */}
-        {canPlaceLandmark && (
-          <button
-            onClick={() => { setPickedCoord(null); setPlacingLandmark(true); }}
-            style={{
-              background: "#181818",
-              color: "#BFFD00",
-              border: "2.5px solid #111111",
-              boxShadow: "3px 3px 0 #111111",
-              fontWeight: 800, fontSize: "12px",
-              padding: "9px 14px", borderRadius: "12px",
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: "6px",
-            }}
-          >
-            <span>🏷️</span><span>{isAdmin ? "Name place" : "Suggest place"}</span>
-          </button>
+        {!placingLandmark && (
+          <MapActionButtons
+            onDropG={() => setShowCreate(true)}
+            onDropChain={() => setShowChain(true)}
+            onNamePlace={canPlaceLandmark
+              ? () => { setPickedCoord(null); setPlacingLandmark(true); }
+              : undefined}
+            namePlaceLabel={isAdmin ? "Name place" : "Suggest place"}
+          />
         )}
-        {/* Hunt Chain FAB */}
-        <button
-          onClick={() => setShowChain(true)}
-          style={{
-            background: "#111111", color: "#BFFD00",
-            border: "2.5px solid #111111",
-            boxShadow: "3px 3px 0 #BFFD00",
-            fontWeight: 800, fontSize: "13px",
-            padding: "10px 16px", borderRadius: "14px",
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: "6px",
-            transition: "box-shadow 0.1s, transform 0.1s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #BFFD00"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #BFFD00"; e.currentTarget.style.transform = "translate(0,0)"; }}
-        >
-          <span>Drop Chain</span>
-          <span>🔗</span>
-        </button>
-        {/* Drop G$ FAB */}
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{
-            background: "#bffd00", color: "#111111",
-            border: "2.5px solid #111111",
-            boxShadow: "3px 3px 0 #111111",
-            fontWeight: 800, fontSize: "15px",
-            padding: "12px 20px", borderRadius: "16px",
-            cursor: "pointer", fontFamily: "inherit",
-            display: "flex", alignItems: "center", gap: "8px",
-            transition: "box-shadow 0.1s, transform 0.1s",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.boxShadow = "1px 1px 0 #111111"; e.currentTarget.style.transform = "translate(2px,2px)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "3px 3px 0 #111111"; e.currentTarget.style.transform = "translate(0,0)"; }}
-        >
-          <span>Drop G$</span>
-          <span>💰</span>
-        </button>
-        </>)}
       </div>
 
-      <BottomNav />
       <ActivityTicker />
       <PushPermissionBanner />
       <NearbyLocationReporter userLoc={userLoc} />
@@ -327,13 +238,14 @@ export default function HomePage() {
         />
       )}
 
-      <CreateDropSheet
-        open={showCreate}
+      {showCreate && (
+      <DropGDrawer
         userLocation={userLoc}
         claimPoints={heatmapPoints}
         onClose={() => setShowCreate(false)}
-        onSuccess={() => { setShowCreate(false); fetchDrops(); }}
+        onSuccess={fetchDrops}
       />
+      )}
 
       <ChainDropCreator
         open={showChain}

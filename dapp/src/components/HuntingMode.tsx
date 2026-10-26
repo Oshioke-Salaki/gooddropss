@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useAccount, useWriteContract } from "wagmi";
-import { ArrowLeft, Lock, CheckCircle, Navigation } from "lucide-react";
+import { ArrowLeft, Check, Loader2, Lock, Navigation } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { ensureGasForClaim } from "@/lib/ensureGas";
@@ -31,6 +31,7 @@ interface Props {
 type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error";
 
 const MAX_RANGE = 800;
+const BRAND = "#2727E2";
 
 export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords }: Props) {
   const { address } = useAccount();
@@ -79,10 +80,10 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
 
   function statusText() {
     if (distance === null) return "Acquiring GPS…";
-    if (distance <= 15)    return "Right on it! Claim now!";
-    if (distance <= CLAIM_RADIUS_M) return "You're here — claim it!";
-    if (distance <= 200)   return "Almost there…";
-    if (distance <= 400)   return "Getting warmer…";
+    if (distance <= 15)    return "Right on it. Claim now";
+    if (distance <= CLAIM_RADIUS_M) return "You're here. Claim it";
+    if (distance <= 200)   return "Almost there";
+    if (distance <= 400)   return "Getting warmer";
     return "Head towards the arrow";
   }
 
@@ -130,112 +131,83 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
     }
   }
 
+  const busy = claimStatus === "claiming" || claimStatus === "gassing";
+  const claimable = isClose || claimStatus === "error";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 40 }}
       transition={{ type: "spring", damping: 28, stiffness: 380 }}
-      style={{
-        position: "fixed", inset: 0, zIndex: 1500,
-        background: "#08090f",
-        display: "flex", flexDirection: "column",
-        overflow: "hidden",
-        fontFamily: "'Space Grotesk', sans-serif",
-      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Hunting mode"
+      className="fixed inset-0 z-[1500] bg-surface font-sans flex flex-col overflow-hidden"
     >
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div style={{
-        padding: "env(safe-area-inset-top, 16px) 20px 14px",
-        paddingTop: "max(env(safe-area-inset-top, 0px), 16px)",
-        display: "flex", alignItems: "center", gap: 12,
-        borderBottom: "1px solid #1e1e2e",
-        flexShrink: 0,
-        background: "#0a0b12",
-      }}>
+      <div
+        className="shrink-0 flex items-center gap-3 px-4 lg:px-15 pb-4 bg-white border-b border-line"
+        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 16px)" }}
+      >
         <button
+          type="button"
           onClick={onClose}
-          style={{
-            background: "#1a1a2e", border: "1px solid #333",
-            borderRadius: 10, width: 38, height: 38,
-            cursor: "pointer", color: "#888",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            flexShrink: 0,
-          }}
+          aria-label="Back to map"
+          className="w-10 h-10 shrink-0 rounded-full bg-surface text-heading flex items-center justify-center
+            cursor-pointer motion-safe:transition-colors hover:bg-nav-controls"
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft className="w-5 h-5" strokeWidth={1.75} />
         </button>
 
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{
-              background: rarityInfo.color, color: rarityInfo.textColor,
-              fontSize: 10, fontWeight: 900, padding: "2px 8px",
-              borderRadius: 100, letterSpacing: "0.08em",
-              textTransform: "uppercase", flexShrink: 0,
-            }}>
+        <div className="flex-1 min-w-0 flex flex-col gap-y-1.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-surface px-2.5 py-1.5 text-xs/none text-heading">
+              <span className="w-2 h-2 rounded-full" style={{ background: rarityInfo.color }} aria-hidden />
               {rarityInfo.label}
             </span>
-            <span style={{ color: "#fff", fontWeight: 900, fontSize: 20 }}>
-              {formatG$(drop.amount)} G$
-            </span>
+            <span className="text-xl/none text-heading truncate">{formatG$(drop.amount)} G$</span>
           </div>
           {drop.hint && (
-            <p style={{ margin: "3px 0 0", color: "#444", fontSize: 12, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              "{drop.hint}"
-            </p>
+            <p className="text-sm/none text-nav-muted truncate">&ldquo;{drop.hint}&rdquo;</p>
           )}
         </div>
       </div>
 
       {/* ── Main ────────────────────────────────────────────────────────────── */}
       {claimStatus === "done" ? (
-        // Success state
-        <div style={{
-          flex: 1, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", gap: 24, padding: "40px 24px",
-        }}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6 text-center">
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ type: "spring", damping: 14, stiffness: 300 }}
-            style={{
-              width: 100, height: 100, borderRadius: "50%",
-              background: rarityInfo.color,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: `0 0 60px ${rarityInfo.color}60`,
-            }}
+            className="w-24 h-24 rounded-full bg-brand-soft text-brand flex items-center justify-center"
           >
-            <CheckCircle size={52} color={rarityInfo.textColor} strokeWidth={2.5} />
+            <Check className="w-12 h-12" strokeWidth={2.5} />
           </motion.div>
-          <div style={{ textAlign: "center" }}>
-            <p style={{ color: "#fff", fontSize: 28, fontWeight: 900, margin: 0 }}>You got it!</p>
-            <p style={{ color: "#555", fontSize: 15, margin: "8px 0 0" }}>
-              {formatG$(drop.amount)} G$ is yours!
-            </p>
+          <div className="flex flex-col gap-y-3">
+            <p className="text-[32px]/none text-heading">You got it</p>
+            <p className="text-base/[140%] text-nav-muted">{formatG$(drop.amount)} G$ is in your wallet.</p>
           </div>
           <button
+            type="button"
             onClick={onSuccess}
-            style={{
-              padding: "15px 40px",
-              background: rarityInfo.color, color: rarityInfo.textColor,
-              border: "none", borderRadius: 16,
-              fontWeight: 900, fontSize: 16,
-              cursor: "pointer", fontFamily: "inherit",
-            }}
+            className="h-14 px-10 rounded-full bg-brand text-white text-base/none cursor-pointer
+              motion-safe:transition-colors hover:bg-brand/90"
           >
             Back to map
           </button>
         </div>
       ) : (
-        <div style={{
-          flex: 1, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "space-between",
-          padding: "28px 24px max(env(safe-area-inset-bottom, 0px), 24px)",
-        }}>
+        <div
+          className="flex-1 flex flex-col items-center justify-between gap-6 px-6 pt-7 w-full max-w-[440px] mx-auto"
+          style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 24px)" }}
+        >
+          {/* Ring + status read as one unit; the actions sit at the thumb end. */}
+          <div className="flex flex-col items-center gap-6 my-auto">
           {/* Proximity ring */}
-          <div style={{ position: "relative" }}>
-            <svg width={240} height={240} viewBox="0 0 240 240" style={{ overflow: "visible" }}>
+          <div className="relative">
+            <svg width={240} height={240} viewBox="0 0 240 240" className="overflow-visible">
               {/* Outer tick marks */}
               {Array.from({ length: 36 }, (_, i) => {
                 const a  = ((i * 10) - 90) * Math.PI / 180;
@@ -244,67 +216,64 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
                   <line key={i}
                     x1={120 + r1 * Math.cos(a)} y1={120 + r1 * Math.sin(a)}
                     x2={120 + 120 * Math.cos(a)} y2={120 + 120 * Math.sin(a)}
-                    stroke={i % 9 === 0 ? "#2a2a3e" : "#181828"}
+                    stroke={i % 9 === 0 ? "#D0D0D0" : "#E4E4E4"}
                     strokeWidth={i % 9 === 0 ? 1.5 : 0.8}
                   />
                 );
               })}
 
               {/* Track circle */}
-              <circle cx={120} cy={120} r={R} fill="none" stroke="#151520" strokeWidth={16} />
+              <circle cx={120} cy={120} r={R} fill="none" stroke="#ECECEC" strokeWidth={16} />
 
               {/* Ambient glow when in range */}
               {isClose && (
                 <circle cx={120} cy={120} r={R} fill="none"
-                  stroke={rarityInfo.color} strokeWidth={16} opacity={0.12}
+                  stroke={BRAND} strokeWidth={16} opacity={0.18}
                   className="hunt-ring-pulse"
-                  style={{ filter: `blur(6px)` }}
+                  style={{ filter: "blur(6px)" }}
                 />
               )}
 
-              {/* Progress arc */}
+              {/* Progress arc. A round cap on a zero-length dash still paints a
+                  dot, so the cap only comes in once there is an arc to cap. */}
               <circle
                 cx={120} cy={120} r={R}
                 fill="none"
-                stroke={isClose ? rarityInfo.color : "#BFFD0033"}
+                stroke={BRAND}
+                strokeOpacity={isClose ? 1 : 0.35}
                 strokeWidth={16}
-                strokeLinecap="round"
+                strokeLinecap={proximityPct > 2 ? "round" : "butt"}
                 strokeDasharray={`${strokeDash} ${circumference}`}
                 transform="rotate(-90 120 120)"
                 style={{
-                  transition: "stroke-dasharray 0.7s ease, stroke 0.5s ease",
-                  filter: isClose ? `drop-shadow(0 0 8px ${rarityInfo.color})` : "none",
+                  transition: "stroke-dasharray 0.7s ease, stroke-opacity 0.5s ease",
+                  filter: isClose ? "drop-shadow(0 0 8px rgba(39,39,226,0.45))" : "none",
                 }}
               />
 
               {/* Bearing arrow (points toward drop) */}
               {liveLocation && distance !== null && distance > CLAIM_RADIUS_M && (
                 <g transform={`translate(120,120) rotate(${bearing})`}>
-                  <path
-                    d="M0,-66 L-7,-46 L0,-54 L7,-46 Z"
-                    fill={rarityInfo.color}
-                    opacity={0.9}
-                    style={{ filter: `drop-shadow(0 0 4px ${rarityInfo.color})` }}
-                  />
+                  <path d="M0,-66 L-7,-46 L0,-54 L7,-46 Z" fill={BRAND} />
                 </g>
               )}
 
               {/* Center: distance */}
               {distance !== null ? (
                 <>
-                  <text x={120} y={107} textAnchor="middle"
-                    fill="white" fontSize={isClose ? 46 : 42} fontWeight={900}
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  <text x={120} y={110} textAnchor="middle"
+                    fill="#121607" fontSize={isClose ? 46 : 42}
+                    style={{ fontFamily: "var(--font-anta), 'Anta', sans-serif" }}>
                     {distance < 1000 ? distance : `${(distance / 1000).toFixed(1)}k`}
                   </text>
-                  <text x={120} y={130} textAnchor="middle" fill="#333" fontSize={13}
-                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  <text x={120} y={134} textAnchor="middle" fill="#6B6E63" fontSize={13}
+                    style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
                     {distance < 1000 ? "metres away" : "km away"}
                   </text>
                 </>
               ) : (
-                <text x={120} y={124} textAnchor="middle" fill="#333" fontSize={13}
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                <text x={120} y={124} textAnchor="middle" fill="#6B6E63" fontSize={13}
+                  style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
                   Locating…
                 </text>
               )}
@@ -316,74 +285,46 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
             key={statusText()}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            style={{
-              color: isClose ? rarityInfo.color : "#555",
-              fontSize: 15, fontWeight: 700, margin: 0,
-              textAlign: "center",
-              transition: "color 0.5s",
-            }}
+            role="status"
+            aria-live="polite"
+            className={`text-base/none text-center motion-safe:transition-colors ${isClose ? "text-brand" : "text-nav-muted"}`}
           >
             {statusText()}
           </motion.p>
+          </div>
 
-          {/* Directions button */}
+          {/* Directions */}
           <button
+            type="button"
             onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              color: "#555",
-              fontSize: 13,
-              fontWeight: 600,
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              padding: "6px 0",
-              width: "100%",
-            }}
+            className="h-11 px-5 rounded-full border border-line bg-white text-sm/none text-heading
+              flex items-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface"
           >
-            <Navigation size={13} />
+            <Navigation className="w-4 h-4" strokeWidth={2} />
             Open in Google Maps
           </button>
 
-          {/* Claim button */}
-          <div style={{ width: "100%" }}>
-            {claimStatus === "error" && errMsg && (
-              <div style={{
-                background: "rgba(255,59,59,0.1)", border: "1px solid #ff3b3b44",
-                borderRadius: 10, padding: "10px 14px", marginBottom: 12,
-                color: "#ff3b3b", fontSize: 13, fontWeight: 600,
-              }}>
-                {errMsg}
-              </div>
-            )}
+          {/* Claim */}
+          <div className="w-full">
+            <p role="alert" className="h-4 mb-3 px-5 text-sm/none text-danger text-center truncate">
+              {claimStatus === "error" ? errMsg : ""}
+            </p>
             <button
+              type="button"
               onClick={claimStatus === "error"
                 ? () => { setClaimStatus("idle"); setErrMsg(""); }
                 : handleClaim}
-              disabled={claimStatus === "claiming" || claimStatus === "gassing" || (!isClose && claimStatus !== "error")}
-              style={{
-                width: "100%", padding: "17px",
-                background: isClose || claimStatus === "error" ? rarityInfo.color : "#111",
-                color: isClose || claimStatus === "error" ? rarityInfo.textColor : "#333",
-                border: `1.5px solid ${isClose || claimStatus === "error" ? rarityInfo.color : "#1e1e2e"}`,
-                borderRadius: 16,
-                fontWeight: 900, fontSize: 17,
-                cursor: isClose || claimStatus === "error" ? "pointer" : "not-allowed",
-                fontFamily: "inherit",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-                transition: "all 0.35s ease",
-                boxShadow: isClose ? `0 0 24px ${rarityInfo.color}50` : "none",
-              }}
+              disabled={busy || !claimable}
+              className="w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2
+                cursor-pointer motion-safe:transition-colors hover:bg-brand/90
+                disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
+              style={isClose && !busy ? { boxShadow: "0 8px 24px rgba(39,39,226,0.3)" } : undefined}
             >
-              {claimStatus === "gassing"  ? "⛽ Topping up gas…" :
-               claimStatus === "claiming" ? "Claiming…" :
+              {claimStatus === "gassing"  ? <><Loader2 className="w-5 h-5 animate-spin" /> Topping up gas…</> :
+               claimStatus === "claiming" ? <><Loader2 className="w-5 h-5 animate-spin" /> Claiming…</> :
                claimStatus === "error"    ? "Try again" :
                isClose ? `Claim ${formatG$(drop.amount)} G$` :
-               <><Lock size={16} /> Get closer to unlock</>}
+               <><Lock className="w-[18px] h-[18px]" strokeWidth={2} /> Get closer to unlock</>}
             </button>
           </div>
         </div>

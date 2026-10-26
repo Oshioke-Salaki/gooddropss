@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { Lock, ArrowRight, Loader2, Eye, EyeOff } from "lucide-react";
+import { Lock, Loader2, Eye, EyeOff } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 export function AdminLogin({ configured }: { configured: boolean }) {
   const [pw, setPw]     = useState("");
@@ -29,80 +30,69 @@ export function AdminLogin({ configured }: { configured: boolean }) {
   }
 
   return (
-    <div style={{
-      minHeight: "100dvh", background: "#f5f4f0",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 20, fontFamily: "'Space Grotesk', sans-serif",
-    }}>
-      <div style={{
-        width: "100%", maxWidth: 380,
-        background: "#fff", border: "2.5px solid #111", borderRadius: 24,
-        boxShadow: "6px 6px 0 #111", padding: "28px 26px",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span>good</span>
-          <span style={{ background: "#111", color: "#BFFD00", padding: "2px 8px", fontSize: 13, fontWeight: 900, borderRadius: 4 }}>drops.</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "14px 0 4px" }}>
-          <Lock size={18} />
-          <h1 style={{ fontSize: 22, fontWeight: 900, margin: 0, letterSpacing: "-0.02em" }}>Admin access</h1>
+    <div className="min-h-dvh bg-surface font-sans flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-[400px] bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 lg:p-8">
+        <Logo size="md" />
+
+        <div className="flex items-center gap-3 mt-8">
+          <span className="w-11.5 h-11.5 rounded-full bg-surface flex items-center justify-center text-heading shrink-0">
+            <Lock className="w-5 h-5" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-xl/none text-heading">Admin access</h1>
+            <p className="text-sm/none text-nav-muted mt-2">
+              {configured ? "Enter the admin password to continue." : "Not configured"}
+            </p>
+          </div>
         </div>
 
         {configured ? (
-          <>
-            <p style={{ fontSize: 13.5, color: "#5a5a5a", margin: "0 0 18px", lineHeight: 1.5 }}>
-              Enter the admin password to continue.
-            </p>
-            <div style={{ position: "relative" }}>
+          <form className="mt-6 flex flex-col" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+            <label className="relative block">
+              <span className="sr-only">Password</span>
               <input
                 type={show ? "text" : "password"}
                 value={pw}
                 autoFocus
-                onChange={(e) => setPw(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
+                autoComplete="current-password"
+                onChange={(e) => { setPw(e.target.value); setErr(""); }}
                 placeholder="Password"
-                style={{
-                  width: "100%", padding: "14px 44px 14px 16px", fontSize: 16, fontWeight: 600,
-                  border: "2px solid #111", borderRadius: 14, outline: "none",
-                  fontFamily: "inherit", background: "#f5f4f0",
-                }}
+                disabled={busy}
+                aria-invalid={!!err}
+                className="w-full h-14 rounded-full bg-surface pl-5 pr-14 text-base/none text-heading
+                  placeholder:text-nav-muted border border-transparent outline-none
+                  motion-safe:transition-colors focus:border-brand disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={() => setShow((v) => !v)}
                 aria-label={show ? "Hide password" : "Show password"}
-                title={show ? "Hide password" : "Show password"}
-                style={{
-                  position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                  width: 32, height: 32, border: "none", background: "transparent",
-                  color: "#888", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center
+                  text-nav-muted cursor-pointer motion-safe:transition-colors hover:text-heading hover:bg-white"
               >
-                {show ? <EyeOff size={18} /> : <Eye size={18} />}
+                {show ? <EyeOff className="w-5 h-5" strokeWidth={1.75} /> : <Eye className="w-5 h-5" strokeWidth={1.75} />}
               </button>
-            </div>
-            {err && <p style={{ color: "#C81E1E", fontWeight: 700, fontSize: 13, margin: "10px 0 0" }}>{err}</p>}
+            </label>
+
+            {/* Fixed-height slot so the button never jumps when an error lands. */}
+            <p role="status" aria-live="polite" className="h-4 mt-3 px-5 text-sm/none text-danger truncate">
+              {err}
+            </p>
+
             <button
-              onClick={submit}
+              type="submit"
               disabled={!pw || busy}
-              style={{
-                width: "100%", padding: "15px", marginTop: 14,
-                background: pw && !busy ? "#BFFD00" : "#e8e6e0",
-                color: pw && !busy ? "#111" : "#aaa",
-                border: "2.5px solid", borderColor: pw && !busy ? "#111" : "#ddd",
-                borderRadius: 16, boxShadow: pw && !busy ? "4px 4px 0 #111" : "none",
-                fontWeight: 900, fontSize: 16, cursor: pw && !busy ? "pointer" : "not-allowed",
-                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              }}
+              className="mt-3 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
+                disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
             >
-              {busy ? <Loader2 size={18} className="animate-spin" /> : <>Unlock <ArrowRight size={18} /></>}
+              {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> Checking…</> : "Unlock"}
             </button>
-          </>
+          </form>
         ) : (
-          <p style={{ fontSize: 13.5, color: "#C81E1E", fontWeight: 600, margin: "8px 0 0", lineHeight: 1.5 }}>
-            Admin password isn&apos;t configured. Set <b>ADMIN_PASSWORD</b> in the server
-            environment to enable access.
+          <p className="mt-6 text-sm/[140%] text-danger">
+            Admin password isn&apos;t configured. Set <span className="text-heading">ADMIN_PASSWORD</span> in the
+            server environment to enable access.
           </p>
         )}
       </div>

@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Award } from "lucide-react";
+import { badgeArt } from "@/components/profile/badgeArt";
 
-interface EarnedBadge { name: string; emoji: string }
+interface EarnedBadge { id?: string; name: string; emoji: string }
 
 // After a successful claim, call this — it re-evaluates badges (which also
 // awards them server-side) and fires the celebration banner for anything new.
@@ -25,7 +27,7 @@ export async function checkBadgesAfterClaim(address: string | undefined) {
   } catch { /* silent */ }
 }
 
-// Global banner: "🏅 Badge unlocked". Mounted once in Providers.
+// Global toast: "Badge unlocked". Mounted once in Providers.
 export function BadgeCelebration() {
   const [queue, setQueue] = useState<EarnedBadge[]>([]);
 
@@ -46,6 +48,7 @@ export function BadgeCelebration() {
   }, [queue]);
 
   const current = queue[0];
+  const art = current?.id ? badgeArt(current.id) : null;
 
   return (
     <AnimatePresence>
@@ -56,24 +59,24 @@ export function BadgeCelebration() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -16, scale: 0.95 }}
           transition={{ type: "spring", damping: 22, stiffness: 380 }}
-          style={{
-            position: "fixed", left: "50%", transform: "translateX(-50%)",
-            top: "calc(72px + env(safe-area-inset-top))", zIndex: 4500,
-            display: "flex", alignItems: "center", gap: 10,
-            background: "#111", border: "2px solid #BFFD00", borderRadius: 16,
-            padding: "10px 16px", boxShadow: "0 10px 34px rgba(0,0,0,0.5)",
-            fontFamily: "'Space Grotesk', sans-serif", pointerEvents: "none",
-            maxWidth: "calc(100vw - 24px)",
-          }}
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 -translate-x-1/2 z-[4500] pointer-events-none font-sans
+            flex items-center gap-3 bg-white rounded-full p-2 pr-5
+            shadow-[0px_4px_24px_0px_#00000014] max-w-[calc(100vw-24px)]"
+          style={{ top: "calc(var(--spacing-nav) + 12px + env(safe-area-inset-top))" }}
         >
-          <span style={{ fontSize: 26, lineHeight: 1 }}>{current.emoji}</span>
-          <div style={{ minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#BFFD00" }}>
-              Badge unlocked
-            </p>
-            <p style={{ margin: "1px 0 0", fontSize: 15, fontWeight: 900, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {current.name}
-            </p>
+          {art ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={art} alt="" className="w-11.5 h-11.5 shrink-0 object-contain" />
+          ) : (
+            <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+              <Award className="w-5 h-5" strokeWidth={1.75} />
+            </span>
+          )}
+          <div className="min-w-0 flex flex-col gap-y-1">
+            <p className="text-xs/none text-nav-muted">Badge unlocked</p>
+            <p className="text-base/none text-heading truncate">{current.name}</p>
           </div>
         </motion.div>
       )}

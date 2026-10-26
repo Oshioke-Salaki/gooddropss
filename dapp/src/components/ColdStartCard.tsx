@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { X, Bell, MapPin, Check } from "lucide-react";
+import { X, Bell, MapPin, Check, Loader2 } from "lucide-react";
 import { haversineDistance, formatG$, gpsToDeg } from "@/lib/utils";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { DROP_STATUS, type Drop, type LatLng } from "@/types";
@@ -53,6 +53,10 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
   // buttons) lift above the sheet instead of sitting on top of it. Measured
   // rather than hardcoded because the copy — and therefore the height — changes
   // between the "no drops at all" and "drops exist but far away" states.
+  //
+  // Only below lg: there the card spans the width and really does cover the
+  // controls. At lg and up it's a 440px panel in the middle with the controls
+  // clear on either side, so lifting them would just leave them floating.
   const cardRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const root = document.documentElement;
@@ -60,11 +64,14 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
     const el = cardRef.current;
     if (!visible || !el) { clear(); return clear; }
 
-    const publish = () => root.style.setProperty("--gd-cold-inset", `${el.offsetHeight + 12}px`);
+    const wide = window.matchMedia("(min-width: 1024px)");
+    const publish = () =>
+      root.style.setProperty("--gd-cold-inset", wide.matches ? "0px" : `${el.offsetHeight + 12}px`);
     publish();
     const ro = new ResizeObserver(publish);
     ro.observe(el);
-    return () => { ro.disconnect(); clear(); };
+    wide.addEventListener("change", publish);
+    return () => { ro.disconnect(); wide.removeEventListener("change", publish); clear(); };
   }, [visible]);
 
   if (!visible) return null;
@@ -75,85 +82,81 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop }: Props) {
   }
 
   const subscribed = status === "subscribed";
+  const notifyOff = subscribing || subscribed || status === "unsupported";
 
   return (
     <div
       ref={cardRef}
+      role="region"
+      aria-label={activeDrops.length === 0 ? "Be the first to drop" : "No drops near you yet"}
+      className="modal-rise fixed left-1/2 -translate-x-1/2 w-[min(440px,calc(100vw-24px))] font-sans
+        bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-5"
       style={{
-        position: "fixed", left: "50%",
         // Sit directly above the bottom nav rather than at a fixed 92px, which
         // on mobile put it underneath the nav's own shadow.
         bottom: "calc(var(--gd-nav-h, 0px) + 12px)",
-        transform: "translateX(-50%)",
-        width: "min(440px, calc(100vw - 24px))",
         // Above the FABs (999) and the map controls (1000) — it's a prompt that
         // needs an answer, so nothing should overlap it. The others move aside
         // via --gd-cold-inset.
         zIndex: 1001,
-        background: "#111", color: "#fff",
-        border: "2px solid #111", borderRadius: 20,
-        boxShadow: "4px 4px 0 #BFFD00",
-        padding: "18px 18px 16px",
-        fontFamily: "inherit",
       }}
     >
-      <button
-        onClick={() => setDismissed(true)}
-        aria-label="Dismiss"
-        style={{
-          position: "absolute", top: 12, right: 12,
-          width: 28, height: 28, borderRadius: "50%",
-          background: "rgba(255,255,255,0.08)", border: "none",
-          color: "#888", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <X size={15} />
-      </button>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <MapPin size={18} color="#BFFD00" />
-        <p style={{ margin: 0, fontWeight: 900, fontSize: 16 }}>
+      <div className="flex items-center gap-3">
+        <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+          <MapPin className="w-5 h-5" strokeWidth={1.75} />
+        </span>
+        <p className="flex-1 min-w-0 text-lg/none text-heading truncate">
           {activeDrops.length === 0 ? "Be the first to drop" : "No drops near you yet"}
         </p>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          aria-label="Dismiss"
+          className="w-8 h-8 shrink-0 rounded-full bg-surface text-nav-muted flex items-center justify-center
+            cursor-pointer motion-safe:transition-colors hover:bg-nav-controls hover:text-heading"
+        >
+          <X className="w-4 h-4" strokeWidth={2} />
+        </button>
       </div>
 
       {/* Copy adapts: genuinely-empty vs. drops-exist-but-far */}
-      <p style={{ margin: "0 0 14px", fontSize: 13, color: "#aaa", lineHeight: 1.5 }}>
+      <p className="text-sm/[140%] text-nav-muted mt-3">
         {activeDrops.length === 0 ? (
           <>Hide some G$ around your neighbourhood and start the treasure hunt where you live — your drop could be the one that pulls people onto the map here.</>
         ) : (
-          <>GoodDrops is live — <b style={{ color: "#BFFD00" }}>{activeDrops.length}</b> drop{activeDrops.length !== 1 ? "s" : ""} holding{" "}
-          <b style={{ color: "#BFFD00" }}>{formatG$(totalHiddenWei)} G$</b> hidden around the world right now. Be the first to bring the hunt to your area.</>
+          <>
+            GoodDrops is live — <span className="text-heading">{activeDrops.length}</span> drop{activeDrops.length !== 1 ? "s" : ""} holding{" "}
+            <span className="text-heading">{formatG$(totalHiddenWei)} G$</span> hidden around the world right now. Be the first to bring the hunt to your area.
+          </>
         )}
       </p>
 
-      <div style={{ display: "flex", gap: 10 }}>
+      <div className="flex gap-2.5 mt-4">
         <button
+          type="button"
           onClick={onDrop}
-          style={{
-            flex: 1, background: "#BFFD00", color: "#111",
-            border: "2px solid #BFFD00", borderRadius: 12,
-            padding: "12px", fontWeight: 900, fontSize: 14,
-            cursor: "pointer", fontFamily: "inherit",
-          }}
+          className="flex-1 h-11 rounded-full bg-brand text-white text-sm/none cursor-pointer
+            motion-safe:transition-colors hover:bg-brand/90 whitespace-nowrap"
         >
-          💰 Hide the first drop
+          Hide the first drop
         </button>
         <button
+          type="button"
           onClick={handleNotify}
-          disabled={subscribing || subscribed || status === "unsupported"}
-          style={{
-            flex: 1, background: "transparent", color: subscribed ? "#BFFD00" : "#fff",
-            border: "2px solid rgba(255,255,255,0.25)", borderRadius: 12,
-            padding: "12px", fontWeight: 800, fontSize: 13,
-            cursor: subscribed || status === "unsupported" ? "default" : "pointer",
-            fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          }}
+          disabled={notifyOff}
+          aria-live="polite"
+          className={`flex-1 h-11 rounded-full text-sm/none flex items-center justify-center gap-2 whitespace-nowrap
+            motion-safe:transition-colors ${
+            subscribed
+              ? "bg-brand-soft text-brand cursor-default"
+              : "border border-line bg-white text-heading hover:bg-surface cursor-pointer disabled:cursor-default disabled:opacity-60"
+          }`}
         >
-          {subscribed ? <><Check size={15} /> Notifying</>
-            : <><Bell size={15} /> {subscribing ? "…" : "Notify me"}</>}
+          {subscribed
+            ? <><Check className="w-4 h-4" strokeWidth={2} /> Notifying</>
+            : subscribing
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> Notify me</>
+              : <><Bell className="w-4 h-4" strokeWidth={2} /> Notify me</>}
         </button>
       </div>
     </div>

@@ -36,7 +36,7 @@ export function useDropNotifications(drops: Drop[]) {
       const drop = myDrops.find((d) => String(d.id) === id);
       if (!drop) continue;
 
-      const title = "Your drop was claimed! 🎯";
+      const title = "Your drop was claimed";
       const body  = `Someone found your ${formatG$(drop.amount)} G$ drop!`;
 
       // Browser notification (works when tab is open or PWA is in foreground)

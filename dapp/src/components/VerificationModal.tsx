@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { BadgeCheck, Camera, Check, ExternalLink, Loader2, ScanFace, ShieldCheck } from "lucide-react";
+import { Sheet } from "@/components/ui/Sheet";
 import type { VerificationStatus } from "@/hooks/useVerification";
 
 interface Props {
@@ -11,6 +12,17 @@ interface Props {
   onRefresh: () => void;
 }
 
+const STEPS = [
+  { Icon: Camera,     label: "Allow your camera" },
+  { Icon: ScanFace,   label: "Quick face scan" },
+  { Icon: BadgeCheck, label: "Verified for good" },
+];
+
+/**
+ * GoodDollar face verification, inside the app. The scan itself runs in
+ * GoodDollar's iframe; this is the frame around it: what to expect, a way out
+ * if the camera won't start in the iframe, and the confirmation.
+ */
 export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh }: Props) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
 
@@ -24,242 +36,116 @@ export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh }
     }
   }, [status, isOpen, onClose]);
 
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? "hidden" : "unset";
-    return () => { document.body.style.overflow = "unset"; };
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
+  const verified = status === "verified";
+
   return (
-    <AnimatePresence>
-      <div
-        style={{
-          position: "fixed", inset: 0, zIndex: 1100,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "16px",
-        }}
-      >
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          style={{ position: "absolute", inset: 0, background: "rgba(17,17,17,0.82)", backdropFilter: "blur(3px)" }}
-        />
-
-        {/* Modal card */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 16 }}
-          transition={{ duration: 0.2 }}
-          style={{
-            position: "relative",
-            width: "100%", maxWidth: "520px",
-            height: "min(85vh, 680px)",
-            background: "#f5f4f0",
-            borderRadius: "20px",
-            border: "2px solid #111111",
-            boxShadow: "4px 4px 0 #111111",
-            display: "flex", flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          {/* Header */}
-          <div
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "14px 20px",
-              borderBottom: "2px solid #111111",
-              background: "#f5f4f0",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ fontSize: "18px" }}>🛡️</span>
-              <span style={{ fontWeight: 900, fontSize: "15px", letterSpacing: "-0.01em" }}>
-                GoodDollar Verification
-              </span>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                width: "28px", height: "28px", borderRadius: "50%",
-                border: "2px solid #111111", background: "transparent",
-                cursor: "pointer", fontWeight: 900, fontSize: "12px",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontFamily: "inherit", lineHeight: 1,
-              }}
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Content */}
-          <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-
-            {/* Verified state */}
-            {status === "verified" && (
-              <div
-                style={{
-                  position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-                  alignItems: "center", justifyContent: "center",
-                  padding: "32px", textAlign: "center",
-                  background: "#bffd00",
-                }}
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                  style={{ fontSize: "64px", marginBottom: "16px" }}
-                >
-                  🎯
-                </motion.div>
-                <p style={{ fontWeight: 900, fontSize: "22px", letterSpacing: "-0.02em", marginBottom: "8px", color: "#111" }}>
-                  You&apos;re Verified!
-                </p>
-                <p style={{ fontSize: "14px", color: "#333", lineHeight: 1.5 }}>
-                  Your GoodDollar identity is confirmed. You can now claim drops.
-                </p>
-              </div>
-            )}
-
-            {/* FV iframe */}
-            {status !== "verified" && fvLink && (
-              <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
-                <div style={{ flex: 1, position: "relative" }}>
-                  {!iframeLoaded && (
-                    <div
-                      style={{
-                        position: "absolute", inset: 0, display: "flex",
-                        flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "14px",
-                      }}
-                    >
-                      <div
-                        className="animate-spin"
-                        style={{
-                          width: "32px", height: "32px", borderRadius: "50%",
-                          border: "3px solid #ddd", borderTopColor: "#111111",
-                        }}
-                      />
-                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                        Initialising face verification…
-                      </span>
-                    </div>
-                  )}
-                  <iframe
-                    src={fvLink}
-                    style={{
-                      width: "100%", height: "100%", border: "none",
-                      opacity: iframeLoaded ? 1 : 0,
-                      transition: "opacity 0.5s",
-                    }}
-                    onLoad={() => setIframeLoaded(true)}
-                    allow="camera"
-                  />
-                </div>
-
-                {/* Fallback footer */}
-                <div
-                  style={{
-                    padding: "10px 20px", borderTop: "2px solid #111111",
-                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
-                    background: "#f5f4f0", flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Camera not working?
+    <Sheet title="Verify you're human" onClose={onClose} width={520}>
+      {verified ? (
+        <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
+          <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+            <Check className="w-7 h-7" strokeWidth={2} />
+          </span>
+          <p className="text-xl/none text-heading">You&apos;re verified</p>
+          <p className="text-sm/[140%] text-nav-muted">
+            Your GoodDollar identity is confirmed. You can now claim drops.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* What's about to happen, in three beats. */}
+          <ol className="mt-5 grid grid-cols-3 gap-2">
+            {STEPS.map(({ Icon, label }, i) => (
+              <li key={label} className="rounded-2xl bg-surface p-3 flex flex-col gap-2 min-w-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-5 h-5 shrink-0 rounded-full bg-white text-heading text-[11px]/none flex items-center justify-center">
+                    {i + 1}
                   </span>
-                  <a
-                    href={fvLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "flex", alignItems: "center", gap: "5px",
-                      padding: "6px 12px",
-                      background: "#111111", color: "#bffd00",
-                      border: "none", borderRadius: "8px",
-                      fontSize: "12px", fontWeight: 800, textDecoration: "none",
-                      whiteSpace: "nowrap", fontFamily: "inherit",
-                    }}
-                  >
-                    Open in New Tab ↗
-                  </a>
-                </div>
-              </div>
-            )}
+                  <Icon className="w-4 h-4 text-brand" strokeWidth={2} />
+                </span>
+                <span className="text-xs/[130%] text-heading">{label}</span>
+              </li>
+            ))}
+          </ol>
 
-            {/* Loading / generating link state */}
-            {status !== "verified" && !fvLink && (
-              <div
-                style={{
-                  position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-                  alignItems: "center", justifyContent: "center",
-                  padding: "32px", textAlign: "center",
-                }}
-              >
-                <div style={{ fontSize: "48px", marginBottom: "20px" }}>🔐</div>
-                <p style={{ fontWeight: 900, fontSize: "18px", marginBottom: "8px", letterSpacing: "-0.01em" }}>
-                  Connecting to GoodDollar
-                </p>
-                <p style={{ fontSize: "14px", color: "#666", marginBottom: "28px", lineHeight: 1.5, maxWidth: "280px" }}>
-                  Setting up a secure connection for face verification. This may take a moment.
-                </p>
-
-                {status === "error" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "200px" }}>
-                    <button
-                      onClick={onRefresh}
-                      style={{
-                        padding: "12px 24px", background: "#111111", color: "#bffd00",
-                        border: "2px solid #111111", borderRadius: "10px",
-                        boxShadow: "2px 2px 0 #bffd00",
-                        fontWeight: 900, fontSize: "14px", cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Retry
-                    </button>
-                    <button
-                      onClick={onClose}
-                      style={{
-                        padding: "12px 24px", background: "transparent", color: "#888",
-                        border: "2px solid #ccc", borderRadius: "10px",
-                        fontWeight: 700, fontSize: "14px", cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Cancel
-                    </button>
+          {fvLink ? (
+            <>
+              <div className="relative mt-4 rounded-2xl overflow-hidden bg-surface h-[min(58dvh,520px)]">
+                {!iframeLoaded && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" aria-live="polite">
+                    <Loader2 className="w-6 h-6 animate-spin text-nav-muted" />
+                    <span className="text-sm/none text-nav-muted">Starting face verification…</span>
                   </div>
-                ) : (
-                  <div
-                    className="animate-spin"
-                    style={{
-                      width: "32px", height: "32px", borderRadius: "50%",
-                      border: "3px solid #ddd", borderTopColor: "#111111",
-                    }}
-                  />
                 )}
+                <iframe
+                  src={fvLink}
+                  title="GoodDollar face verification"
+                  className="w-full h-full border-0 motion-safe:transition-opacity duration-500"
+                  style={{ opacity: iframeLoaded ? 1 : 0 }}
+                  onLoad={() => setIframeLoaded(true)}
+                  allow="camera"
+                />
               </div>
-            )}
-          </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              padding: "10px 20px", borderTop: "2px solid #111111",
-              textAlign: "center", flexShrink: 0,
-            }}
-          >
-            <p style={{ fontSize: "11px", color: "#888" }}>
-              GoodDrops uses GoodDollar for privacy-focused identity verification
-            </p>
-          </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+              {/* Way out if the embedded camera won't start (some in-app browsers). */}
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <span className="text-sm/none text-nav-muted">Camera not working?</span>
+                <a
+                  href={fvLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 h-10 px-4 rounded-full border border-line bg-white text-sm/none text-heading
+                    flex items-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface whitespace-nowrap"
+                >
+                  Open in new tab
+                  <ExternalLink className="w-4 h-4" strokeWidth={2} />
+                </a>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
+              <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+                <ShieldCheck className="w-7 h-7" strokeWidth={1.75} />
+              </span>
+              <p className="text-xl/none text-heading">
+                {status === "error" ? "Couldn't connect to GoodDollar" : "Connecting to GoodDollar"}
+              </p>
+              <p className="text-sm/[140%] text-nav-muted max-w-[300px]">
+                {status === "error"
+                  ? "The secure link for face verification didn't come through. Try again in a moment."
+                  : "Setting up a secure connection for face verification. This may take a moment."}
+              </p>
+              {status === "error" ? (
+                <div className="w-full flex flex-col gap-2.5 mt-2">
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    className="w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                      motion-safe:transition-colors hover:bg-brand/90"
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full h-11 rounded-full border border-line bg-white text-sm/none text-heading cursor-pointer
+                      motion-safe:transition-colors hover:bg-surface"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <Loader2 className="w-6 h-6 animate-spin text-nav-muted" aria-label="Connecting" />
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      <p className="mt-5 text-xs/[140%] text-nav-muted text-center">
+        GoodDrops uses GoodDollar for privacy-focused identity verification.
+      </p>
+    </Sheet>
   );
 }

@@ -2,17 +2,14 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Plus, Minus } from "lucide-react";
-import { landmarkMeta } from "@/lib/landmarks";
+import { landmarkBadgeHTML, PIN_TIP } from "@/components/map/markers";
 import type { Landmark } from "@/types";
+import { MAP_STYLE } from "@/components/map/style";
 
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// Same dark style as MapView and BatchDropCreator. Picking a location and then
-// seeing your drop on the map should look like one continuous surface — a light
-// "positron" picker made this screen read as a different app.
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
+// Shared with MapView. Picking a location and then seeing your drop on the map
+// should look like one continuous surface — a light "positron" picker made this
+// screen read as a different app.
 
 export interface Props {
   initialCenter: { lat: number; lng: number };
@@ -23,6 +20,8 @@ export interface Props {
    *  the parent stop auto-following the live location once the user takes over. */
   onUserInteract?: () => void;
   landmarks?: Landmark[];
+  /** Hands the live map out so the shared zoom controls can drive it. */
+  onMapReady?: (map: maplibregl.Map | null) => void;
 }
 
 export default function LocationPickerMap({
@@ -32,10 +31,13 @@ export default function LocationPickerMap({
   onDragChange,
   onUserInteract,
   landmarks = [],
+  onMapReady,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
   const lastSeqRef   = useRef(-1);
+  // Pointer-down sample, used to tell a tap from a pan on pointerup.
+  const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
   const landmarkMarkersRef = useRef<maplibregl.Marker[]>([]);
 
   // Latest callbacks in refs so the init effect never needs to re-run.
@@ -45,6 +47,8 @@ export default function LocationPickerMap({
   onDragRef.current = onDragChange;
   const onUserRef = useRef(onUserInteract);
   onUserRef.current = onUserInteract;
+  const onReadyRef = useRef(onMapReady);
+  onReadyRef.current = onMapReady;
 
   // ── Init (once) ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -59,6 +63,44 @@ export default function LocationPickerMap({
     });
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     mapRef.current = map;
+    // Hand the instance up once it can take commands, so the shared zoom controls
+    // drive this map exactly as they drive the main one.
+    map.once("load", () => onReadyRef.current?.(map));
+
+    // ── Tap to place ──────────────────────────────────────────────────────
+    // The pin IS the map centre, so "tap here" is simply "recentre here" — one
+    // model, no modes, and the pin never has to know how it got moved.
+    //
+    // Deliberately not MapLibre's `click`: that still fires at the end of a pan,
+    // which would yank the map on every drag. Measuring the pointer is exact and
+    // doesn't depend on library internals — under a few px and a few hundred ms
+    // is a tap; anything more was a drag and is left alone.
+    const TAP_SLOP_PX = 6;
+    const TAP_MAX_MS = 400;
+    const canvas = map.getCanvas();
+
+    const onDown = (e: PointerEvent) => {
+      // A second finger means a pinch, not a tap — abandon the sample.
+      if (!e.isPrimary) { tapRef.current = null; return; }
+      tapRef.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
+    };
+    const onUp = (e: PointerEvent) => {
+      const down = tapRef.current;
+      tapRef.current = null;
+      if (!down || e.pointerId !== down.id) return;
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
+      if (performance.now() - down.t > TAP_MAX_MS) return;
+      const rect = canvas.getBoundingClientRect();
+      const target = map.unproject([e.clientX - rect.left, e.clientY - rect.top]);
+      // Counts as taking control, so follow-mode stops chasing the GPS fix.
+      onUserRef.current?.();
+      map.easeTo({ center: target, duration: 350 });
+    };
+    const onCancel = () => { tapRef.current = null; };
+
+    canvas.addEventListener("pointerdown", onDown);
+    canvas.addEventListener("pointerup", onUp);
+    canvas.addEventListener("pointercancel", onCancel);
 
     // The pin is a fixed crosshair in the parent; we just report the centre.
     // `originalEvent` is present only for real gestures (drag/pinch/wheel) — a
@@ -74,6 +116,10 @@ export default function LocationPickerMap({
     });
 
     return () => {
+      canvas.removeEventListener("pointerdown", onDown);
+      canvas.removeEventListener("pointerup", onUp);
+      canvas.removeEventListener("pointercancel", onCancel);
+      onReadyRef.current?.(null);
       map.remove();
       mapRef.current = null;
     };
@@ -89,8 +135,8 @@ export default function LocationPickerMap({
     map.flyTo({ center: [flyTarget.lng, flyTarget.lat], zoom: 17, duration: 700 });
   }, [flyTarget]);
 
-  // ── Landmark markers — show our curated places so droppers have real context
-  //    ("hide it near The Buidl Hub") instead of an anonymous dark map. ─────────
+  // ── Landmark markers — the SAME pills the main map draws, so the place you
+  //    pick looks like the place you saw. Built from the shared marker module.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -100,16 +146,16 @@ export default function LocationPickerMap({
 
     for (const lm of landmarks) {
       if (lm.status !== "active" || !Number.isFinite(lm.lat) || !Number.isFinite(lm.lng)) continue;
-      const meta = landmarkMeta(lm.category);
       const el = document.createElement("div");
-      el.style.cssText = "display:flex;align-items:center;gap:4px;pointer-events:none;will-change:transform;";
-      el.innerHTML =
-        `<span style="font-size:15px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))">${meta.icon}</span>` +
-        `<span style="font-size:10.5px;font-weight:800;color:#fff;background:rgba(17,17,17,.72);` +
-        `border:1px solid ${meta.color}66;padding:1px 6px;border-radius:6px;white-space:nowrap;` +
-        `text-shadow:0 1px 2px rgba(0,0,0,.6);letter-spacing:.01em;max-width:150px;overflow:hidden;` +
-        `text-overflow:ellipsis">${escapeHtml(lm.name)}</span>`;
-      const marker = new maplibregl.Marker({ element: el, anchor: "left" })
+      el.style.pointerEvents = "none";
+      // No count here: the picker has no drop data, and a pill claiming "0" would
+      // be worse than one that simply names the place.
+      el.innerHTML = landmarkBadgeHTML({ name: lm.name, dropCount: 0, aggregate: false });
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: "top-left",
+        offset: [-PIN_TIP.x, -PIN_TIP.y],
+      })
         .setLngLat([lm.lng, lm.lat])
         .addTo(map);
       landmarkMarkersRef.current.push(marker);
@@ -125,46 +171,6 @@ export default function LocationPickerMap({
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
-      {/* Zoom controls */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: 76,
-          right: 12,
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          border: "2px solid #111",
-          borderRadius: 10,
-          overflow: "hidden",
-          boxShadow: "2px 2px 0 #111",
-        }}
-      >
-        {[{ Icon: Plus, delta: 1 }, { Icon: Minus, delta: -1 }].map(({ Icon, delta }) => (
-          <button
-            key={delta}
-            onClick={() => {
-              const map = mapRef.current;
-              if (!map) return;
-              if (delta === 1) map.zoomIn({ duration: 250 });
-              else map.zoomOut({ duration: 250 });
-            }}
-            style={{
-              width: 36, height: 36,
-              background: "#fff",
-              border: "none",
-              borderBottom: delta === 1 ? "1.5px solid #111" : "none",
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
-          >
-            <Icon size={18} strokeWidth={2.5} color="#111" />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

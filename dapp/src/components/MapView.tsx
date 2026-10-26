@@ -3,193 +3,84 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import Supercluster from "supercluster";
-import { Navigation, MapPin, Plus, Minus } from "lucide-react";
-import { formatG$, gpsToDeg, getDropRarity, isFlashDrop, haversineDistance, parseDropHint } from "@/lib/utils";
+import { formatG$, gpsToDeg, haversineDistance } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
+import { MapPin, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
 import type { Drop, LatLng, Spot, Landmark } from "@/types";
 import { DROP_STATUS } from "@/types";
-import { landmarkMeta } from "@/lib/landmarks";
+import {
+  dropBadgeHTML, clusterBadgeHTML, landmarkBadgeHTML,
+  landmarkBadgeSize, PIN_TIP, LM,
+} from "@/components/map/markers";
+import { MAP_STYLE } from "@/components/map/style";
+import { MapZoomControls } from "@/components/MapZoomControls";
+import { MyLocationButton } from "@/components/MyLocationButton";
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
 
-// Free, no-API-key vector tiles (openfreemap.org) — crisp at every zoom,
-// supports rotate/pitch, and removes the Stadia raster key requirement.
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
 
-// ── Pin DOM builders (rarity-aware, dark theme) ───────────────────────────────
-// MapLibre markers are plain DOM elements, so every existing CSS pin animation
-// (pin-pulse-*, pin-flash) carries over unchanged.
 
-// The marker wrapper carries border-radius:50% AND the pin-pulse-* box-shadow,
-// but the size only ever lived on the inner div — so the wrapper stretched to the
-// full width of the map container. A 1400×58 element with border-radius:50% and a
-// coloured glow renders as a giant ellipse straight across the map. Pin the
-// wrapper to the pin's real size so its rounding and glow describe the circle we
-// actually drew.
-function sizeWrapper(el: HTMLDivElement, px: number) {
-  el.style.width      = `${px}px`;
-  el.style.height     = `${px}px`;
-  el.style.boxSizing  = "border-box";
-  el.style.lineHeight = "0";
-}
-
-// Treasure chest palettes — the materials get richer (and the chest bigger +
-// shinier) with the drop's value, so a legendary reads as "obviously loaded"
-// from across the map.
-type ChestPalette = {
-  size: number; label: number;
-  body: string; bodyDark: string; lid: string; band: string; metal: string;
-  gem: string | null; glow: string; staticGlow: string; shimmer: boolean;
-};
-const CHESTS: Record<"common" | "uncommon" | "rare" | "legendary", ChestPalette> = {
-  common:    { size: 40, label: 10,   body: "#7c5230", bodyDark: "#583a20", lid: "#8f6238", band: "#4b5563", metal: "#9ca3af", gem: null,      glow: "",                     staticGlow: "drop-shadow(0 2px 3px rgba(0,0,0,.55))", shimmer: false },
-  uncommon:  { size: 46, label: 10.5, body: "#7c5230", bodyDark: "#583a20", lid: "#8f6238", band: "#b45309", metal: "#d97706", gem: null,      glow: "",                     staticGlow: "drop-shadow(0 2px 3px rgba(0,0,0,.55)) drop-shadow(0 0 4px rgba(217,119,6,.55))", shimmer: false },
-  rare:      { size: 56, label: 11.5, body: "#2f3e5c", bodyDark: "#1e2a40", lid: "#3a4d72", band: "#cbd5e1", metal: "#e2e8f0", gem: "#38bdf8", glow: "chest-glow-rare",      staticGlow: "", shimmer: false },
-  legendary: { size: 70, label: 13,   body: "#c99b26", bodyDark: "#87640f", lid: "#e0b73a", band: "#ffe066", metal: "#fff3b0", gem: "#ff5d8f", glow: "chest-glow-legendary", staticGlow: "", shimmer: true },
-};
-
-function chestSVG(p: ChestPalette): string {
-  const gem = p.gem
-    ? `<path d="M24 8.2 l3.6 3.3 -3.6 3.6 -3.6 -3.6 z" fill="${p.gem}" stroke="#fff" stroke-width="0.7"/>` +
-      `<path d="M24 8.2 l3.6 3.3 -3.6 0 z" fill="rgba(255,255,255,0.4)"/>`
-    : "";
-  return `<svg width="${p.size}" height="${p.size}" viewBox="0 0 48 46" ${p.staticGlow ? `style="filter:${p.staticGlow};"` : ""} xmlns="http://www.w3.org/2000/svg">
-    <ellipse cx="24" cy="43.2" rx="15" ry="2.6" fill="rgba(0,0,0,0.28)"/>
-    <rect x="7" y="23" width="34" height="18" rx="2.5" fill="${p.body}" stroke="${p.bodyDark}" stroke-width="1.4"/>
-    <path d="M7 24 Q7 12 24 12 Q41 12 41 24 Z" fill="${p.lid}" stroke="${p.bodyDark}" stroke-width="1.4"/>
-    <path d="M11 21 Q13.5 15.5 24 15.2" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1.6" stroke-linecap="round"/>
-    <rect x="5.5" y="22.8" width="37" height="4.6" rx="1.3" fill="${p.band}"/>
-    <rect x="13.4" y="13" width="2.6" height="28" rx="1" fill="${p.band}" opacity="0.9"/>
-    <rect x="32" y="13" width="2.6" height="28" rx="1" fill="${p.band}" opacity="0.9"/>
-    <circle cx="9.6" cy="39" r="1.1" fill="${p.metal}"/><circle cx="38.4" cy="39" r="1.1" fill="${p.metal}"/>
-    <rect x="20.5" y="23.4" width="7" height="9" rx="1.6" fill="${p.metal}" stroke="${p.bodyDark}" stroke-width="0.8"/>
-    <circle cx="24" cy="27" r="1.3" fill="${p.bodyDark}"/><rect x="23.4" y="27" width="1.2" height="3" fill="${p.bodyDark}"/>
-    ${gem}
-  </svg>`;
-}
-
-function cornerTag(emoji: string, side: "left" | "right", color: string): string {
-  return `<div style="position:absolute;top:-3px;${side}:-5px;width:19px;height:19px;border-radius:50%;background:#111;border:1.5px solid ${color};display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;pointer-events:none;z-index:2;">${emoji}</div>`;
-}
+// ── Pin DOM builders ──────────────────────────────────────────────────────────
+// MapLibre markers are plain DOM, so the badge markup lives in map/markers.ts and
+// is injected as HTML. Keeping it there means the pill design has one home and
+// Tailwind's scanner still sees the classes.
 
 function makeDropElement(drop: Drop): HTMLDivElement {
   const el = document.createElement("div");
-  const active =
-    drop.status === DROP_STATUS.Active &&
-    drop.expiry > Math.floor(Date.now() / 1000);
-
-  // Non-live drops (expired-but-active edge cases) — a small dim opened chest.
-  if (!active) {
-    sizeWrapper(el, 34);
-    el.innerHTML = `<div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px;opacity:0.45;filter:grayscale(1);cursor:pointer;user-select:none;">📭</div>`;
-    return el;
-  }
-
-  const flash      = isFlashDrop(drop);
-  const parsed     = parseDropHint(drop.hint);
-  const isCampaign = parsed.campaignId !== null;
-  const isChain    = parsed.chainNextId !== null || parsed.isChainLast;
-  const hasRiddle  = parsed.hasRiddle;
-  const isTask     = parsed.taskMerchantId !== null;
-  const rarity     = getDropRarity(drop.amount);
-  const p          = CHESTS[rarity];
-  const label      = formatG$(drop.amount);
-
-  // Special-type badges layered on the chest (a chest can be several things).
-  const tags =
-    (isTask     ? cornerTag("🎁", "right", "#FFD700")
-      : hasRiddle ? cornerTag("🧩", "right", "#BFFD00") : "") +
-    (flash      ? cornerTag("⚡", "left",  "#FF6400") : "") +
-    (!flash && isChain    ? cornerTag("🔗", "left", "#BFFD00") : "") +
-    (!flash && !isChain && isCampaign ? cornerTag("⭐", "left", "#FFD700") : "");
-
-  // Flash overrides the glow to an urgent orange pulse; otherwise use the rarity glow.
-  const glowClass = flash ? "chest-glow-flash" : p.glow;
-  const bob = rarity !== "common" || flash;
-
-  // CRITICAL: MapLibre positions the marker by setting `transform` on the marker
-  // ELEMENT (el). The bob animation also animates `transform`, so it MUST live on
-  // an INNER wrapper — animating el's transform would override MapLibre's and snap
-  // the chest to the map's origin (top-left). el stays untouched; all visuals +
-  // animation go inside. Fixed chest-sized inner box so every chest (common →
-  // legendary) plants on its exact point; pill + tags are absolutely positioned.
   el.style.cursor = "pointer";
-  el.innerHTML = `
-    <div class="${`chest-marker ${glowClass} ${bob ? "chest-bob" : ""}`.trim()}" style="position:relative;width:${p.size}px;height:${p.size}px;user-select:none;font-family:'Space Grotesk',sans-serif;">
-      ${chestSVG(p)}
-      ${p.shimmer ? `<div style="position:absolute;inset:0;overflow:hidden;pointer-events:none;"><div class="chest-shimmer"></div></div>` : ""}
-      <div style="position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);background:#111;border:1.5px solid ${p.band};border-radius:100px;padding:0 7px;font-size:${p.label}px;font-weight:900;color:#fff;line-height:1.55;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.5);">${label}</div>
-      ${tags}
-    </div>`;
+  // The pill sizes itself from its content; forcing a square box on the marker
+  // element would clip the value chip.
+  el.innerHTML = dropBadgeHTML(drop);
   return el;
 }
 
 function makeClusterElement(count: number): HTMLDivElement {
-  // A hoard: pile of treasure with the count, hinting "lots of chests here".
   const el = document.createElement("div");
-  sizeWrapper(el, 50);
-  el.innerHTML = `<div style="
-    width:50px;height:50px;position:relative;
-    display:flex;align-items:center;justify-content:center;
-    cursor:pointer;font-family:'Space Grotesk',sans-serif;user-select:none;
-    filter:drop-shadow(0 2px 4px rgba(0,0,0,.5)) drop-shadow(0 0 6px rgba(191,253,0,.4));
-  ">
-    <span style="font-size:34px;line-height:1;">💰</span>
-    <span style="
-      position:absolute;bottom:-2px;right:-2px;
-      min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;
-      background:#BFFD00;border:2px solid #111;border-radius:100px;
-      display:flex;align-items:center;justify-content:center;
-      font-weight:900;font-size:11px;color:#111;line-height:1;
-    ">${count}</span>
-  </div>`;
+  el.style.cursor = "pointer";
+  el.innerHTML = clusterBadgeHTML(count);
   return el;
 }
 
-// GoodSpots: merchant shops that accept G$ — square tag pin, distinct from drops.
+// GoodSpots: merchant shops that accept G$. Same glass pill as the drop and
+// landmark badges (markers.ts) so it reads as one family, with a shop icon in
+// place of the chest and a brand chip in place of the value.
+const SPOT_PILL_GLASS = "bg-[#FFFFFF33] backdrop-blur-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.22)]";
+const STORE_ICON =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M15 21v-5a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v5"/>' +
+  '<path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 ' +
+  '2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10' +
+  'a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244"/>' +
+  '<path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05"/></svg>';
 function makeSpotElement(spot: Spot): HTMLDivElement {
   const el = document.createElement("div");
-  el.innerHTML = `<div style="
-    width:44px;height:44px;
-    background:#111;
-    border:2.5px solid #BFFD00;
-    border-radius:12px 12px 12px 2px;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    cursor:pointer;
-    font-family:'Space Grotesk',sans-serif;
-    user-select:none;
-    box-shadow:0 2px 10px rgba(191,253,0,0.35);
-  " title="${spot.name.replace(/"/g, "&quot;")}">
-    <span style="font-size:17px;line-height:1;">🏪</span>
-    <span style="font-size:7px;font-weight:900;color:#BFFD00;letter-spacing:0.04em;">G$ HERE</span>
-  </div>`;
+  el.style.cursor = "pointer";
+  el.title = spot.name;
+  el.innerHTML = `
+    <div class="flex items-center gap-x-1.5 rounded-full ${SPOT_PILL_GLASS} p-0.5 pl-2 select-none font-sans">
+      <span class="w-7 h-7 shrink-0 rounded-full bg-white text-heading flex items-center justify-center">${STORE_ICON}</span>
+      <span class="whitespace-nowrap rounded-full bg-brand px-2 py-1.5 text-[11px]/none text-white lg:px-2.5 lg:py-2 lg:text-xs/none">
+        G$ here
+      </span>
+    </div>`;
   return el;
 }
 
-// Admin place label — muted "map furniture". For hunters it's pointer-events:none
-// so it can never intercept a tap meant for a drop pin sitting near it. For admins
-// (`interactive`) it becomes tappable to manage the place inline, with a subtle ✎
-// affordance so its editability is discoverable.
-function makeLandmarkElement(landmark: Landmark, interactive: boolean): HTMLDivElement {
-  const meta = landmarkMeta(landmark.category);
-  const safeName = landmark.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// Place label. For hunters it's pointer-events:none so it can never intercept a
+// tap meant for a drop pill sitting near it. For admins (`interactive`) the whole
+// pill is the hit target and opens the manage sheet — no separate affordance, since
+// only admins can click it and they already know.
+function makeLandmarkElement(
+  landmark: Landmark,
+  interactive: boolean,
+  dropCount: number,
+  aggregate: boolean,
+): HTMLDivElement {
   const el = document.createElement("div");
   el.style.pointerEvents = interactive ? "auto" : "none";
   if (interactive) el.style.cursor = "pointer";
-  el.innerHTML = `<div style="
-    display:flex;align-items:center;gap:4px;
-    padding:2px 7px 2px 5px;
-    background:rgba(10,11,18,0.82);
-    border:1px solid ${interactive ? meta.color + "aa" : meta.color + "55"};
-    border-radius:100px;
-    font-family:'Space Grotesk',sans-serif;
-    white-space:nowrap;
-    box-shadow:0 1px 4px rgba(0,0,0,0.4);
-  ">
-    <span style="font-size:11px;line-height:1;">${meta.icon}</span>
-    <span style="font-size:10.5px;font-weight:700;color:#e8e8ee;letter-spacing:-0.01em;">${safeName}</span>
-    ${interactive ? `<span style="font-size:9px;line-height:1;color:${meta.color};opacity:0.85;margin-left:1px;">✎</span>` : ""}
-  </div>`;
+  el.innerHTML = landmarkBadgeHTML({ name: landmark.name, dropCount, aggregate });
   return el;
 }
 
@@ -216,7 +107,7 @@ function makeUserElement(): HTMLDivElement {
 }
 
 // Temporary "here it is" highlight dropped when previewing a place from an admin
-// list. Pulsing lime ring so it reads distinctly from the blue user dot.
+// list. Pulsing brand ring so it reads distinctly from the blue user dot.
 function makeFocusElement(): HTMLDivElement {
   const el = document.createElement("div");
   el.style.pointerEvents = "none";
@@ -224,16 +115,16 @@ function makeFocusElement(): HTMLDivElement {
     <div style="position:relative;width:22px;height:22px;">
       <div class="user-loc-pulse" style="
         position:absolute;inset:-14px;
-        background:rgba(191,253,0,0.20);
-        border:2px solid rgba(191,253,0,0.65);
+        background:rgba(39,39,226,0.18);
+        border:2px solid rgba(39,39,226,0.55);
         border-radius:50%;
       "></div>
       <div style="
         width:22px;height:22px;
-        background:#BFFD00;
-        border:3px solid #111;
+        background:#2727E2;
+        border:3px solid #ffffff;
         border-radius:50%;
-        box-shadow:0 2px 10px rgba(0,0,0,0.5);
+        box-shadow:0 2px 10px rgba(0,0,0,0.4);
       "></div>
     </div>`;
   return el;
@@ -283,6 +174,27 @@ type DropFeatureProps = { dropIndex: number };
 // Below this zoom, landmark labels are hidden — they'd clutter and overlap when
 // the map is pulled back. They appear as you zoom into a neighbourhood.
 const LANDMARK_MIN_ZOOM = 13.5;
+// Past this zoom the individual drop pills are far enough apart to read, so
+// landmarks drop their aggregate count and the chests speak for themselves.
+// Matches supercluster's own maxZoom below, so the two can't disagree.
+const DROP_DETAIL_ZOOM = 17;
+
+/**
+ * True only in the zoom band where landmark pills are on screen AND carrying a
+ * drop count — the one window in which a landmark speaks for its own drops.
+ *
+ * Outside it, nothing else represents them, so they must stay in the cluster
+ * index. Pulled back past LANDMARK_MIN_ZOOM the labels are hidden entirely, and
+ * that's exactly where excluding their drops made them vanish from the map
+ * altogether: no label, no cluster, no trace that a place had 21 chests.
+ */
+function landmarksOwnDrops(zoom: number): boolean {
+  return zoom >= LANDMARK_MIN_ZOOM && zoom < DROP_DETAIL_ZOOM;
+}
+// How close a drop has to be to count as "at" a landmark.
+const LANDMARK_DROP_RADIUS_M = 150;
+// Breathing room between two labels before they count as colliding.
+const LABEL_GAP_PX = 6;
 
 export default function MapView({
   drops, onDropClick, userLocation, onUserLocation,
@@ -326,6 +238,8 @@ export default function MapView({
   const onLandmarkClickRef = useRef(onLandmarkClick);
   onLandmarkClickRef.current = onLandmarkClick;
   const clusterRef     = useRef<Supercluster<DropFeatureProps> | null>(null);
+  // Same drops, minus any a landmark is already counting. See the index effect.
+  const clusterAwayRef = useRef<Supercluster<DropFeatureProps> | null>(null);
 
   const nearbyDrops = useMemo(() => {
     if (!userLocation) return [];
@@ -447,8 +361,15 @@ export default function MapView({
   // ── Drop clustering + markers ───────────────────────────────────────────────
   const renderDropMarkers = useCallback(() => {
     const map = mapRef.current;
-    const index = clusterRef.current;
-    if (!map || !index) return;
+    if (!map) return;
+    // Below the detail zoom, landmarks speak for their own drops — so cluster
+    // only the ones no landmark covers, or they'd be drawn twice.
+    // Only hand the landmark-adjacent drops over while a landmark is actually
+    // showing their count; otherwise cluster everything.
+    const index = landmarksOwnDrops(map.getZoom())
+      ? clusterAwayRef.current
+      : clusterRef.current;
+    if (!index) return;
 
     dropMarkersRef.current.forEach((m) => m.remove());
     dropMarkersRef.current = [];
@@ -489,19 +410,43 @@ export default function MapView({
   }, []);
 
   // Rebuild the cluster index when drops change, then re-render.
+  //
+  // Two indexes, because below DROP_DETAIL_ZOOM a landmark shows the count for
+  // its own drops. If those drops were also in the cluster index you'd see the
+  // same eleven chests twice — once on the landmark pill, once as a cluster blob
+  // beside it. The `awayFromLandmarks` index is the same drops MINUS anything a
+  // landmark is already speaking for, so at low zoom every drop is represented
+  // exactly once. Above the threshold the full index is used and every chest
+  // stands on its own point.
   useEffect(() => {
     if (!mapReady) return;
-    const index = new Supercluster<DropFeatureProps>({ radius: 62, maxZoom: 17 });
-    index.load(
-      drops.map((d, i) => ({
-        type: "Feature" as const,
-        geometry: { type: "Point" as const, coordinates: [gpsToDeg(d.lng), gpsToDeg(d.lat)] },
-        properties: { dropIndex: i },
-      })),
+    const build = (list: { d: Drop; i: number }[]) => {
+      const index = new Supercluster<DropFeatureProps>({ radius: 62, maxZoom: DROP_DETAIL_ZOOM });
+      index.load(
+        list.map(({ d, i }) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: [gpsToDeg(d.lng), gpsToDeg(d.lat)] },
+          properties: { dropIndex: i },
+        })),
+      );
+      return index;
+    };
+
+    const all = drops.map((d, i) => ({ d, i }));
+    const active = landmarks.filter((l) => l.status === "active");
+    clusterRef.current = build(all);
+    clusterAwayRef.current = build(
+      all.filter(
+        ({ d }) =>
+          !active.some(
+            (l) =>
+              haversineDistance(l.lat, l.lng, gpsToDeg(d.lat), gpsToDeg(d.lng)) <=
+              LANDMARK_DROP_RADIUS_M,
+          ),
+      ),
     );
-    clusterRef.current = index;
     renderDropMarkers();
-  }, [drops, mapReady, renderDropMarkers]);
+  }, [drops, landmarks, mapReady, renderDropMarkers]);
 
   // Re-cluster as the viewport moves.
   useEffect(() => {
@@ -537,37 +482,103 @@ export default function MapView({
     };
   }, [spots, mapReady]);
 
-  // ── Landmark labels (zoom-gated + viewport-culled) ──────────────────────────
+  // ── Landmark labels (zoom-gated, viewport-culled, collision-culled) ────────
   const renderLandmarkMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
     landmarkMarkersRef.current.forEach((m) => m.remove());
     landmarkMarkersRef.current = [];
-    if (map.getZoom() < LANDMARK_MIN_ZOOM) return; // hidden when pulled back
+    const zoom = map.getZoom();
+    if (zoom < LANDMARK_MIN_ZOOM) return; // hidden when pulled back
     const bounds = map.getBounds();
     const interactive = interactiveLandmarksRef.current;
+
+    // Below DROP_DETAIL_ZOOM the individual chests are clustered, so a landmark
+    // carries the count for its own drops instead — "12 chests at Uptown Mall"
+    // rather than one anonymous cluster blob sitting on top of the label.
+    const aggregate = landmarksOwnDrops(zoom);
+    const liveDrops = aggregate
+      ? dropsRef.current.filter(
+          (d) => d.status === DROP_STATUS.Active && d.expiry > Math.floor(Date.now() / 1000),
+        )
+      : [];
+
+    // Candidates, with their screen box, ranked by what deserves the space.
+    const candidates = [];
+    const centre = map.getCenter();
     for (const lm of landmarksRef.current) {
       if (lm.status !== "active") continue;
       if (!Number.isFinite(lm.lat) || !Number.isFinite(lm.lng)) continue;
       if (!bounds.contains([lm.lng, lm.lat])) continue; // only render what's on-screen
-      const el = makeLandmarkElement(lm, interactive);
+
+      const dropCount = aggregate
+        ? liveDrops.filter(
+            (d) =>
+              haversineDistance(lm.lat, lm.lng, gpsToDeg(d.lat), gpsToDeg(d.lng)) <=
+              LANDMARK_DROP_RADIUS_M,
+          ).length
+        : 0;
+
+      const pt = map.project([lm.lng, lm.lat]);
+      const size = landmarkBadgeSize(lm.name, aggregate && dropCount > 0);
+      candidates.push({
+        lm,
+        dropCount,
+        // The pin's tip is at `pt`, so the box hangs up-and-right of it.
+        box: {
+          left: pt.x - PIN_TIP.x,
+          top: pt.y - size.h + (LM.height - PIN_TIP.y),
+          right: pt.x - PIN_TIP.x + size.w,
+          bottom: pt.y + (LM.height - PIN_TIP.y),
+        },
+        dist: haversineDistance(centre.lat, centre.lng, lm.lat, lm.lng),
+      });
+    }
+
+    // Busiest places win, then whatever is closest to where you're looking. A map
+    // with 20 overlapping labels is less readable than one with 8, so the rest are
+    // dropped rather than stacked — they reappear as you zoom in and space opens up.
+    candidates.sort((a, b) => b.dropCount - a.dropCount || a.dist - b.dist);
+
+    const placed: { left: number; top: number; right: number; bottom: number }[] = [];
+    const overlaps = (a: typeof placed[number], b: typeof placed[number]) =>
+      a.left < b.right + LABEL_GAP_PX &&
+      a.right + LABEL_GAP_PX > b.left &&
+      a.top < b.bottom + LABEL_GAP_PX &&
+      a.bottom + LABEL_GAP_PX > b.top;
+
+    for (const c of candidates) {
+      if (placed.some((p) => overlaps(c.box, p))) continue;
+      placed.push(c.box);
+
+      const el = makeLandmarkElement(c.lm, interactive, c.dropCount, aggregate);
       if (interactive) {
         el.addEventListener("click", (e) => {
           e.stopPropagation();
-          onLandmarkClickRef.current?.(lm);
+          onLandmarkClickRef.current?.(c.lm);
         });
       }
-      const marker = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat([lm.lng, lm.lat])
+      // The pill's box is the anchor, but the PIN's tip is what marks the spot —
+      // it's absolutely positioned and overhangs the pill, so offset the element
+      // by the tip's coordinates inside it.
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: "top-left",
+        offset: [-PIN_TIP.x, -PIN_TIP.y],
+      })
+        .setLngLat([c.lm.lng, c.lm.lat])
         .addTo(map);
       landmarkMarkersRef.current.push(marker);
     }
   }, []);
 
+  // `drops` matters here too: the aggregate count on each pill is derived from the
+  // live drops nearby, so a new drop or a claim has to redraw the labels. Without
+  // it the counts only refreshed on the next pan or zoom.
   useEffect(() => {
     if (!mapReady) return;
     renderLandmarkMarkers();
-  }, [landmarks, mapReady, interactiveLandmarks, renderLandmarkMarkers]);
+  }, [landmarks, drops, mapReady, interactiveLandmarks, renderLandmarkMarkers]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -746,172 +757,88 @@ export default function MapView({
           Reliable even in a tilted 3D view where a clean "click" rarely fires. */}
       {pickingMode && (
         <>
-          <div
+          {/* The same pin the landmark labels use; its tip sits on the map centre. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/location-pin.svg"
+            alt=""
             aria-hidden
-            style={{
-              position: "absolute", top: "50%", left: "50%",
-              transform: "translate(-50%, -100%)", zIndex: 1150,
-              pointerEvents: "none", fontSize: 36,
-              filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.55))",
-            }}
-          >📍</div>
+            width={30}
+            height={48}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full z-[1150] pointer-events-none
+              w-[30px] h-12 drop-shadow-[0_3px_6px_rgba(0,0,0,0.45)] select-none"
+          />
           <button
+            type="button"
             onClick={() => { const c = mapRef.current?.getCenter(); if (c) onMapPick?.(c.lat, c.lng); }}
-            style={{
-              position: "absolute", left: "50%",
-              bottom: "calc(120px + var(--gd-cold-inset, 0px))",
-              transform: "translateX(-50%)", zIndex: 1150,
-              background: "#BFFD00", color: "#111",
-              border: "2.5px solid #111", boxShadow: "3px 3px 0 #111",
-              borderRadius: 14, padding: "12px 22px", cursor: "pointer",
-              fontFamily: "'Space Grotesk', sans-serif", fontWeight: 900, fontSize: 15,
-              display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-            }}
+            className="absolute left-1/2 -translate-x-1/2 z-[1150] font-sans h-12 pl-4 pr-6 rounded-full bg-brand text-white
+              text-sm/none flex items-center gap-2 whitespace-nowrap cursor-pointer
+              shadow-[0px_4px_16px_0px_#2727E240] motion-safe:transition-colors hover:bg-brand/90"
+            style={{ bottom: "calc(120px + var(--gd-cold-inset, 0px))" }}
           >
-            📍 Place here
+            <MapPin className="w-[18px] h-[18px]" strokeWidth={2} />
+            Place here
           </button>
         </>
       )}
 
-      {/* ── Location status banner ────────────────────────────────────────── */}
-      {locPerm === "denied" && !locateErr && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100px + var(--gd-cold-inset, 0px))",
-            left: "64px",
-            zIndex: 1000,
-            background: "#111111",
-            color: "#ffffff",
-            fontSize: "12px",
-            fontWeight: 600,
-            padding: "6px 10px",
-            borderRadius: "8px",
-            whiteSpace: "nowrap",
-            fontFamily: "inherit",
-            pointerEvents: "none",
-          }}
-        >
-          Location disabled
-        </div>
-      )}
-
-      {/* ── Locate-me error tooltip ───────────────────────────────────────── */}
-      {locateErr && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "calc(100px + var(--gd-cold-inset, 0px))",
-            left: "64px",
-            zIndex: 1000,
-            background: "#111111",
-            color: "#ffffff",
-            fontSize: "12px",
-            fontWeight: 600,
-            padding: "6px 10px",
-            borderRadius: "8px",
-            maxWidth: "220px",
-            fontFamily: "inherit",
-            pointerEvents: "none",
-          }}
-        >
-          {locateErr}
-        </div>
-      )}
-
-      {/* ── Locate-me button ──────────────────────────────────────────────── */}
-      <button
-        onClick={(e) => { e.stopPropagation(); flyToUser(); }}
-        title={locPerm === "denied" ? "Location access denied" : "Go to my location"}
-        style={{
-          position: "absolute",
-          bottom: "calc(48px + var(--gd-cold-inset, 0px))",
-          left: "12px",
-          zIndex: 1000,
-          width: "44px",
-          height: "44px",
-          background: locPerm === "denied" ? "#FFE5E5" : locating ? "#f0f0f0" : "#ffffff",
-          border: `2px solid ${locPerm === "denied" ? "#FF3B3B" : "#111111"}`,
-          borderRadius: "10px",
-          boxShadow: "2px 2px 0 #111111",
-          cursor: locating ? "wait" : "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "box-shadow 0.1s, transform 0.1s",
-          fontFamily: "inherit",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = locPerm === "denied" ? "#FFE5E5" : "#ffffff";
-        }}
+      {/* ── Map controls (zoom + locate) ──────────────────────────────────
+          One bottom-left stack so the two never drift apart. `fixed` with the
+          same bottom/inset as the action stack in page.tsx, so both corners
+          share a baseline on every breakpoint (the map box stops above the
+          mobile bottom nav, so `absolute` here would sit lower than `fixed`
+          there). Every sheet is z-1001+, so they still cover these. */}
+      <div
+        className="fixed z-[1000] flex flex-col items-start gap-3 left-5 lg:left-[60px]
+          bottom-[calc(20px+var(--gd-cold-inset,0px))] lg:bottom-[calc(60px+var(--gd-cold-inset,0px))] transition-[bottom] duration-200"
       >
-        {locPerm === "denied"
-          ? <MapPin size={20} color="#FF3B3B" />
-          : <Navigation size={20} color="#111111" strokeWidth={locating ? 1.5 : 2} />
-        }
-      </button>
+        <MapZoomControls map={mapReady ? mapRef.current : null} />
+        <MyLocationButton
+          onClick={flyToUser}
+          locating={locating}
+          denied={locPerm === "denied"}
+          error={locateErr || undefined}
+        />
+      </div>
 
       {/* ── Nearby drops chip + list ──────────────────────────────────────── */}
       {nearbyDrops.length > 0 && (
         <>
           {showNearbyList && (
-            <div
-              onClick={() => setShowNearbyList(false)}
-              style={{ position: "absolute", inset: 0, zIndex: 1000 }}
-            />
+            <div onClick={() => setShowNearbyList(false)} className="absolute inset-0 z-[1000]" aria-hidden />
           )}
 
           {showNearbyList && nearbyDrops.length > 1 && (
-            <div style={{
-              position: "absolute",
-              bottom: "62px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 1001,
-              background: "#fff",
-              border: "2px solid #111",
-              borderRadius: 16,
-              boxShadow: "4px 4px 0 #111",
-              overflow: "hidden",
-              minWidth: 220,
-              maxWidth: 300,
-            }}>
-              <div style={{ padding: "10px 14px 8px", borderBottom: "1.5px solid #eee" }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  In claim range
-                </p>
-              </div>
+            <div
+              role="menu"
+              aria-label="Drops in claim range"
+              className="absolute bottom-[68px] left-1/2 -translate-x-1/2 z-[1001] font-sans
+                w-[min(300px,calc(100vw-24px))] bg-white rounded-2xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden"
+            >
+              <p className="px-4 pt-3.5 pb-2.5 text-xs/none text-nav-muted border-b border-line">In claim range</p>
               {nearbyDrops.map(({ drop, dist }) => (
                 <button
                   key={String(drop.id)}
+                  type="button"
+                  role="menuitem"
                   onClick={() => { setShowNearbyList(false); onDropClick(drop); }}
-                  style={{
-                    width: "100%", padding: "11px 14px",
-                    background: "transparent", border: "none",
-                    borderBottom: "1px solid #f0f0f0",
-                    display: "flex", alignItems: "center", gap: 10,
-                    cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 border-b border-line last:border-b-0 text-left
+                    cursor-pointer motion-safe:transition-colors hover:bg-surface"
                 >
-                  <span style={{ fontSize: 18, flexShrink: 0 }}>💰</span>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ margin: 0, fontWeight: 800, fontSize: 14, color: "#111" }}>
-                      {formatG$(drop.amount)} G$
-                    </p>
-                    <p style={{ margin: 0, fontSize: 11, color: "#888" }}>
-                      {Math.round(dist)}m away
-                    </p>
-                  </div>
-                  <span style={{ color: "#888", fontSize: 14 }}>→</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/treasure-chest.png" alt="" width={32} height={32} className="w-8 h-8 shrink-0 select-none" />
+                  <span className="flex-1 min-w-0 flex flex-col gap-y-1">
+                    <span className="text-sm/none text-heading">{formatG$(drop.amount)} G$</span>
+                    <span className="text-xs/none text-nav-muted">{Math.round(dist)}m away</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 shrink-0 text-nav-muted" strokeWidth={2} />
                 </button>
               ))}
             </div>
           )}
 
           <button
+            type="button"
             onClick={() => {
               if (nearbyDrops.length === 1) {
                 onDropClick(nearbyDrops[0].drop);
@@ -919,83 +846,27 @@ export default function MapView({
                 setShowNearbyList((v) => !v);
               }
             }}
-            style={{
-              position: "absolute",
-              bottom: "12px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 1001,
-              background: "#BFFD00",
-              border: "2px solid #111",
-              borderRadius: 100,
-              boxShadow: "2px 2px 0 #111",
-              padding: "10px 20px",
-              fontWeight: 900,
-              fontSize: "13px",
-              color: "#111",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              whiteSpace: "nowrap",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              animation: "pulse 2s ease-in-out infinite",
-            }}
+            aria-expanded={nearbyDrops.length > 1 ? showNearbyList : undefined}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[1001] font-sans h-11 p-1 pr-5 rounded-full
+              bg-brand text-white text-sm/none flex items-center gap-2.5 whitespace-nowrap cursor-pointer
+              shadow-[0px_4px_16px_0px_#2727E240] motion-safe:transition-colors hover:bg-brand/90"
           >
-            💰
+            <span className="w-9 h-9 shrink-0 rounded-full bg-white/15 flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/treasure-chest.png" alt="" width={26} height={26} className="w-[26px] h-[26px] select-none" />
+            </span>
             {nearbyDrops.length === 1
-              ? `${formatG$(nearbyDrops[0].drop.amount)} G$ — Claim now`
+              ? `${formatG$(nearbyDrops[0].drop.amount)} G$ — claim now`
               : `${nearbyDrops.length} drops in range`}
             {nearbyDrops.length > 1 && (
-              <span style={{ opacity: 0.6, fontSize: 11 }}>{showNearbyList ? "▲" : "▼"}</span>
+              showNearbyList
+                ? <ChevronUp className="w-4 h-4 opacity-80" strokeWidth={2} />
+                : <ChevronDown className="w-4 h-4 opacity-80" strokeWidth={2} />
             )}
           </button>
         </>
       )}
 
-      {/* ── Zoom controls ─────────────────────────────────────────────────── */}
-      <div
-        style={{
-          position: "absolute",
-          bottom: "calc(100px + var(--gd-cold-inset, 0px))",
-          left: "12px",
-          zIndex: 1000,
-          display: "flex",
-          flexDirection: "column",
-          border: "2px solid #111111",
-          borderRadius: "10px",
-          overflow: "hidden",
-          boxShadow: "2px 2px 0 #111111",
-        }}
-      >
-        {[{ Icon: Plus, delta: 1 }, { Icon: Minus, delta: -1 }].map(({ Icon, delta }) => (
-          <button
-            key={delta}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!mapRef.current) return;
-              if (delta === 1) mapRef.current.zoomIn({ duration: 250 });
-              else mapRef.current.zoomOut({ duration: 250 });
-            }}
-            style={{
-              width: "36px",
-              height: "36px",
-              background: "#ffffff",
-              border: "none",
-              borderBottom: delta === 1 ? "1.5px solid #111111" : "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontFamily: "inherit",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "#BFFD00"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "#ffffff"; }}
-          >
-            <Icon size={18} strokeWidth={2.5} color="#111111" />
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

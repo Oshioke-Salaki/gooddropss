@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const { hint } = parseDropHint(drop.hint);
   const amount = `${formatG$(drop.amount)} G$`;
-  const title = `${amount} hidden somewhere 💰`;
+  const title = `${amount} hidden somewhere`;
   const description = hint
     ? `Clue: "${hint}" — Find it on GoodDrops.`
     : `${amount} is locked at a real-world GPS location. First to arrive claims it.`;

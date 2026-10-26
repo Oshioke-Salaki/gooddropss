@@ -2,22 +2,25 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import { Navigation, Search, X, MapPin } from "lucide-react";
+import { CornerUpRight, MapPin, Move, Search, X, Map as MapIcon } from "lucide-react";
+import { MapZoomControls } from "@/components/MapZoomControls";
+import { MyLocationButton } from "@/components/MyLocationButton";
+import type maplibregl from "maplibre-gl";
 import { landmarkMeta } from "@/lib/landmarks";
-import { getPositionRobust, geoErrorMessage, type GeoFail } from "@/lib/geolocate";
+import {
+  getPositionRobust,
+  geoErrorMessage,
+  type GeoFail,
+} from "@/lib/geolocate";
 import type { Landmark } from "@/types";
 
 const PickerMap = dynamic(() => import("./LocationPickerMap"), {
   ssr: false,
   loading: () => (
-    <div
-      style={{
-        width: "100%", height: "100%",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: "#e8e6e0",
-      }}
-    >
-      <span style={{ fontSize: 36, animation: "bounce 1s infinite" }}>🗺️</span>
+    <div className="w-full h-full flex items-center justify-center bg-surface">
+      <span className="w-14 h-14 rounded-full bg-white text-nav-muted flex items-center justify-center animate-pulse">
+        <MapIcon className="w-6 h-6" strokeWidth={1.75} />
+      </span>
     </div>
   ),
 });
@@ -59,7 +62,8 @@ export interface Props {
   /** Keep the pin locked onto `currentLocation` (and follow it as GPS sharpens)
    *  until the user drags — used for "pin my shop where I'm standing". */
   followLocation?: boolean;
-  /** Content inside the map pin (default 💰 for drops; e.g. a <Store/> icon for a shop). */
+  /** Optional glyph inside the map pin (e.g. a <Store/> icon for a shop). The
+   *  drop picker passes nothing — the pin artwork speaks for itself. */
   pinIcon?: React.ReactNode;
   /** Confirm-button label (default "Drop here"; e.g. "Pin my shop here"). */
   confirmLabel?: string;
@@ -78,28 +82,33 @@ export function LocationPickerSheet({
   onClose,
   landmarks = [],
   followLocation = false,
-  pinIcon = "💰",
+  pinIcon,
   confirmLabel = "Drop here",
 }: Props) {
-  const [query, setQuery]           = useState("");
+  const [query, setQuery] = useState("");
   const [showFollowHint, setShowFollowHint] = useState(false);
-  const [results, setResults]       = useState<SearchResult[]>([]);
-  const [searching, setSearching]   = useState(false);
-  const [center, setCenter]         = useState(initialCenter ?? DEFAULT_CENTER);
-  const [placeName, setPlaceName]   = useState<string | null>(null);
-  const [geocoding, setGeocoding]   = useState(false);
-  const [dragging, setDragging]     = useState(false);
-  const [flyTarget, setFlyTarget]   = useState<FlyTarget | null>(null);
-  const [locating, setLocating]     = useState(false);
-  const [locErr, setLocErr]         = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [center, setCenter] = useState(initialCenter ?? DEFAULT_CENTER);
+  const [placeName, setPlaceName] = useState<string | null>(null);
+  // The bar reads as two lines ("Algeria Cresent, TheBuidl" over "Barnawa").
+  // Presentation only — `placeName` remains what onConfirm receives.
+  const [placeSub, setPlaceSub] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [flyTarget, setFlyTarget] = useState<FlyTarget | null>(null);
+  const [locating, setLocating] = useState(false);
+  // Handed up by the picker map once it's ready, so MapZoomControls can drive it.
+  const [pickerMap, setPickerMap] = useState<maplibregl.Map | null>(null);
+  const [locErr, setLocErr] = useState("");
 
-  const searchTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const geocodeTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flySeq        = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flySeq = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // In followLocation mode: true once the user has manually moved the map, so we
   // stop yanking the pin back to the live GPS position.
-  const userMovedRef  = useRef(false);
+  const userMovedRef = useRef(false);
 
   // ── Reset on open ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -121,8 +130,13 @@ export function LocationPickerSheet({
   // converges onto the real spot instead of stranding at the first rough fix —
   // until the user drags the map, after which their choice is respected.
   useEffect(() => {
-    if (!open || !followLocation || userMovedRef.current || !currentLocation) return;
-    setFlyTarget({ lat: currentLocation.lat, lng: currentLocation.lng, seq: ++flySeq.current });
+    if (!open || !followLocation || userMovedRef.current || !currentLocation)
+      return;
+    setFlyTarget({
+      lat: currentLocation.lat,
+      lng: currentLocation.lng,
+      seq: ++flySeq.current,
+    });
   }, [open, followLocation, currentLocation]);
 
   // ── Search (debounced 400ms) ──────────────────────────────────────────────────
@@ -130,14 +144,18 @@ export function LocationPickerSheet({
     if (searchTimer.current) clearTimeout(searchTimer.current);
 
     const q = query.trim();
-    if (q.length < 3) { setResults([]); setSearching(false); return; }
+    if (q.length < 3) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
 
     setSearching(true);
     searchTimer.current = setTimeout(async () => {
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&addressdetails=1`,
-          { headers: { "Accept-Language": "en" } }
+          { headers: { "Accept-Language": "en" } },
         );
         const data: SearchResult[] = await res.json();
         setResults(data);
@@ -147,6 +165,7 @@ export function LocationPickerSheet({
         setSearching(false);
       }
     }, 400);
+
 
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query]);
@@ -168,8 +187,10 @@ export function LocationPickerSheet({
         const country = a.country ?? "";
         const parts = [area, city, country].filter(Boolean);
         setPlaceName(parts.slice(0, 2).join(", ") || city || country || null);
+        setPlaceSub(parts[1] ?? null);
       } catch {
         setPlaceName(null);
+        setPlaceSub(null);
       } finally {
         setGeocoding(false);
       }
@@ -189,6 +210,9 @@ export function LocationPickerSheet({
     setQuery("");
     setResults([]);
     searchInputRef.current?.blur();
+    const { primary, secondary } = formatResult(r);
+    setPlaceName(primary);
+    setPlaceSub(secondary || null);
     setFlyTarget({ lat, lng, seq: ++flySeq.current });
   }
 
@@ -249,6 +273,7 @@ export function LocationPickerSheet({
     setResults([]);
     searchInputRef.current?.blur();
     setPlaceName(l.name);
+    setPlaceSub(landmarkMeta(l.category).label);
     setFlyTarget({ lat: l.lat, lng: l.lng, seq: ++flySeq.current });
   }
 
@@ -260,100 +285,57 @@ export function LocationPickerSheet({
       <motion.div
         animate={{ opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none" }}
         transition={{ duration: 0.2 }}
-        style={{
-          position: "fixed", inset: 0, zIndex: 1010,
-          backgroundColor: "rgba(17,17,17,0.6)",
-          backdropFilter: "blur(2px)",
-          opacity: 0, pointerEvents: "none",
-        }}
+        className="fixed inset-0 z-[1450] bg-[#0000000A] backdrop-blur-md"
+        style={{ opacity: 0, pointerEvents: "none" }}
       />
 
-      {/* Full-screen sheet */}
+      {/* Full-screen sheet. The map owns the whole surface and every control
+          floats on it — no header, no footer bar. */}
       <motion.div
         animate={{ y: open ? 0 : "100%" }}
         initial={{ y: "100%" }}
         transition={{ type: "spring", damping: 34, stiffness: 420 }}
-        style={{
-          position: "fixed", inset: 0, zIndex: 1011,
-          background: "#f5f4f0",
-          display: "flex", flexDirection: "column",
-          overflow: "hidden",
-        }}
+        className="fixed inset-0 z-[1451] overflow-hidden bg-nav font-sans"
       >
-        {/* ── Header ─────────────────────────────────────────────────────────── */}
-        <div
-          style={{
-            padding: "14px 16px 12px",
-            borderBottom: "2px solid #111",
-            display: "flex", alignItems: "center", gap: 12,
-            background: "#f5f4f0", flexShrink: 0,
+        <PickerMap
+          initialCenter={initialCenter ?? DEFAULT_CENTER}
+          flyTarget={flyTarget}
+          onCenterChange={handleCenterChange}
+          onDragChange={setDragging}
+          onUserInteract={() => {
+            userMovedRef.current = true;
+            setShowFollowHint(false);
           }}
-        >
-          <div style={{ flex: 1 }}>
-            <p style={{ fontWeight: 900, fontSize: 17, margin: 0 }}>Choose drop location</p>
-            <p style={{ fontSize: 12, color: "#888", margin: 0, marginTop: 2 }}>
-              Pan the map or search for a place
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              width: 32, height: 32, borderRadius: "50%",
-              border: "2px solid #111", background: "transparent",
-              fontWeight: 800, fontSize: 13, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "inherit",
-            }}
-          >
-            ✕
-          </button>
-        </div>
+          landmarks={landmarks}
+          onMapReady={setPickerMap}
+        />
 
-        {/* ── Search bar ─────────────────────────────────────────────────────── */}
-        <div
-          style={{
-            padding: "10px 14px",
-            borderBottom: showResults ? "none" : "2px solid #111",
-            background: "#f5f4f0", flexShrink: 0, position: "relative", zIndex: 20,
-          }}
-        >
-          <div
-            style={{
-              display: "flex", alignItems: "center", gap: 8,
-              background: "#fff",
-              border: "2px solid #111",
-              borderRadius: showResults ? "12px 12px 0 0" : 12,
-              padding: "9px 12px",
-              boxShadow: showResults ? "none" : "2px 2px 0 #111",
-            }}
-          >
-            <Search size={16} color={searching ? "#aaa" : "#888"} style={{ flexShrink: 0 }} />
+        {/* ── Search ─────────────────────────────────────────────────────────
+            Same pill as the map page, same corner, same 320px. */}
+        <div className="absolute left-4 top-4 z-20 w-[calc(100%-32px)] lg:left-[60px] lg:top-5 lg:w-[320px]">
+          <div className="relative">
             <input
               ref={searchInputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search for a place, street or city…"
-              style={{
-                flex: 1, border: "none", outline: "none",
-                background: "transparent", fontSize: 14,
-                fontFamily: "inherit", fontWeight: 500,
-              }}
+              placeholder="Search locations..."
+              aria-label="Search locations"
+              className="w-full rounded-full bg-surface py-5 pl-6 pr-14 text-sm/none text-heading placeholder:text-nav-muted outline-none focus:ring-2 focus:ring-brand/30 motion-safe:transition-shadow"
             />
-            {query && (
-              <button
-                onClick={() => { setQuery(""); setResults([]); }}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  padding: 0, display: "flex", alignItems: "center",
-                }}
-              >
-                <X size={16} color="#888" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (query) { setQuery(""); setResults([]); }
+                else searchInputRef.current?.focus();
+              }}
+              aria-label={query ? "Clear search" : "Search"}
+              className="absolute right-6 top-1/2 -translate-y-1/2 cursor-pointer text-black"
+            >
+              {query ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+            </button>
           </div>
 
-          {/* Search results dropdown */}
           <AnimatePresence>
             {showResults && (
               <motion.div
@@ -361,77 +343,52 @@ export function LocationPickerSheet({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.12 }}
-                style={{
-                  background: "#fff",
-                  border: "2px solid #111",
-                  borderTop: "1.5px solid #ddd",
-                  borderRadius: "0 0 12px 12px",
-                  boxShadow: "2px 3px 0 #111",
-                  overflow: "hidden",
-                }}
+                className="absolute left-0 z-30 mt-2 max-h-[50vh] w-full overflow-y-auto rounded-3xl bg-white py-4 shadow-[0px_0px_12px_0px_#0000000A]"
               >
                 {/* Our curated places first — a dropper knows these names */}
-                {landmarkResults.map((l, i) => {
+                {landmarkResults.map((l) => {
                   const meta = landmarkMeta(l.category);
                   return (
                     <button
                       key={`lm-${l.id}`}
                       onClick={() => selectLandmark(l)}
-                      style={{
-                        width: "100%", padding: "11px 14px", textAlign: "left",
-                        background: "transparent", border: "none",
-                        borderTop: i > 0 ? "1px solid #f0f0f0" : "none",
-                        cursor: "pointer", fontFamily: "inherit",
-                        display: "flex", alignItems: "center", gap: 10,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      className="flex w-full cursor-pointer items-center gap-x-4 px-6 py-3 text-left motion-safe:transition-colors hover:bg-surface"
                     >
-                      <span style={{ fontSize: 17, flexShrink: 0, width: 20, textAlign: "center" }}>{meta.icon}</span>
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#111", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {l.name}
-                        </p>
-                        <p style={{ margin: 0, fontSize: 12, color: "#888", marginTop: 1 }}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface text-base leading-none">
+                        {meta.icon}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm/none text-heading">{l.name}</span>
+                        <span className="mt-2 block text-xs/none text-nav-muted">
                           Saved place · {meta.label}
-                        </p>
-                      </div>
+                        </span>
+                      </span>
                     </button>
                   );
                 })}
 
                 {searching ? (
-                  <div style={{ padding: "12px 14px", color: "#888", fontSize: 13, borderTop: landmarkResults.length > 0 ? "1px solid #f0f0f0" : "none" }}>
-                    Searching…
-                  </div>
+                  <p className="px-6 py-3 text-sm/none text-nav-muted">Searching…</p>
                 ) : (
-                  results.map((r, i) => {
+                  results.map((r) => {
                     const { primary, secondary } = formatResult(r);
                     return (
                       <button
                         key={r.place_id}
                         onClick={() => selectResult(r)}
-                        style={{
-                          width: "100%", padding: "11px 14px", textAlign: "left",
-                          background: "transparent", border: "none",
-                          borderTop: (i > 0 || landmarkResults.length > 0) ? "1px solid #f0f0f0" : "none",
-                          cursor: "pointer", fontFamily: "inherit",
-                          display: "flex", alignItems: "center", gap: 10,
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                        className="flex w-full cursor-pointer items-center gap-x-4 px-6 py-3 text-left motion-safe:transition-colors hover:bg-surface"
                       >
-                        <MapPin size={14} color="#888" style={{ flexShrink: 0 }} />
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: "#111", lineHeight: 1.3 }}>
-                            {primary}
-                          </p>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface">
+                          <MapPin size={16} className="text-heading" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm/none text-heading">{primary}</span>
                           {secondary && (
-                            <p style={{ margin: 0, fontSize: 12, color: "#888", marginTop: 1 }}>
+                            <span className="mt-2 block truncate text-xs/none text-nav-muted">
                               {secondary}
-                            </p>
+                            </span>
                           )}
-                        </div>
+                        </span>
                       </button>
                     );
                   })
@@ -441,194 +398,103 @@ export function LocationPickerSheet({
           </AnimatePresence>
         </div>
 
-        {/* ── Map area ────────────────────────────────────────────────────────── */}
-        <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-          <PickerMap
-            initialCenter={initialCenter ?? DEFAULT_CENTER}
-            flyTarget={flyTarget}
-            onCenterChange={handleCenterChange}
-            onDragChange={setDragging}
-            onUserInteract={() => { userMovedRef.current = true; setShowFollowHint(false); }}
-            landmarks={landmarks}
-          />
-
-          {/* Follow-mode reassurance — the pin auto-locks onto the merchant's live
-              position and refines as GPS sharpens; this explains the movement so
-              it doesn't read as a glitch, and invites a manual nudge. */}
-          {showFollowHint && (
-            <div
-              style={{
-                position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
-                zIndex: 1000, background: "#111", color: "#fff",
-                fontSize: 12, fontWeight: 700, padding: "7px 12px", borderRadius: 100,
-                whiteSpace: "nowrap", fontFamily: "inherit", boxShadow: "2px 2px 0 rgba(0,0,0,0.25)",
-                display: "flex", alignItems: "center", gap: 6, pointerEvents: "none",
-              }}
-            >
-              <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: "#BFFD00" }} />
-              Locking onto your location — drag to adjust
-            </div>
-          )}
-
-          {/* Center pin — stays fixed at map midpoint, lifts when dragging */}
-          <div
-            style={{
-              position: "absolute",
-              top: "50%", left: "50%",
-              transform: `translate(-50%, ${dragging ? "-120%" : "-100%"})`,
-              transition: "transform 0.15s ease",
-              zIndex: 1000,
-              pointerEvents: "none",
-              display: "flex", flexDirection: "column", alignItems: "center",
-            }}
-          >
-            {/* Pin circle */}
-            <div
-              style={{
-                width: 46, height: 46,
-                background: "#BFFD00",
-                border: "2.5px solid #111",
-                borderRadius: "50%",
-                boxShadow: dragging
-                  ? "4px 4px 0 #111"
-                  : "2px 2px 0 #111",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 20,
-                transition: "box-shadow 0.15s ease",
-              }}
-            >
-              {pinIcon}
-            </div>
-            {/* Pin stem */}
-            <div
-              style={{
-                width: 0, height: 0,
-                borderLeft: "5px solid transparent",
-                borderRight: "5px solid transparent",
-                borderTop: "10px solid #111",
-                marginTop: -1,
-              }}
-            />
-          </div>
-
-          {/* My location button */}
-          <button
-            onClick={goToMyLocation}
-            title="Go to my location"
-            style={{
-              position: "absolute", bottom: 16, right: 12, zIndex: 1000,
-              width: 44, height: 44,
-              background: locating ? "#E8E6E0" : "#fff",
-              border: "2px solid #111",
-              borderRadius: 10,
-              boxShadow: "2px 2px 0 #111",
-              cursor: locating ? "wait" : "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: "inherit",
-              transition: "box-shadow 0.1s, transform 0.1s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = "0 0 0 #111";
-              e.currentTarget.style.transform = "translate(2px,2px)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = "2px 2px 0 #111";
-              e.currentTarget.style.transform = "translate(0,0)";
-            }}
-          >
-            <Navigation size={20} color="#111" strokeWidth={locating ? 1.5 : 2} />
-          </button>
-
-          {/* Location error tooltip */}
-          {locErr && (
-            <div
-              style={{
-                position: "absolute", bottom: 68, right: 12, zIndex: 1000,
-                background: "#111", color: "#fff",
-                fontSize: 12, fontWeight: 600,
-                padding: "6px 10px", borderRadius: 8,
-                whiteSpace: "nowrap", fontFamily: "inherit",
-                pointerEvents: "none",
-              }}
-            >
-              {locErr}
-            </div>
-          )}
-        </div>
-
-        {/* ── Footer: address + confirm ────────────────────────────────────────── */}
+        {/* ── Centre pin ────────────────────────────────────────────────────
+            Anchored by its TIP, which is the point being chosen. Dragging lifts
+            it and deepens the shadow rather than scaling it — growing the pin
+            would move the tip away from the coordinate it represents. */}
         <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-[1000]"
           style={{
-            padding: "12px 14px 28px",
-            borderTop: "2px solid #111",
-            background: "#f5f4f0", flexShrink: 0,
+            transform: `translate(-50%, ${dragging ? "-108%" : "-100%"})`,
+            transition: "transform 0.15s ease",
+            filter: dragging
+              ? "drop-shadow(0 10px 10px rgba(0,0,0,0.5))"
+              : "drop-shadow(0 4px 6px rgba(0,0,0,0.4))",
           }}
         >
-          {/* Current resolved address */}
-          <div
-            style={{
-              display: "flex", alignItems: "center", gap: 10,
-              marginBottom: 12, minHeight: 40,
-            }}
-          >
-            <div
-              style={{
-                width: 36, height: 36, borderRadius: 8,
-                background: geocoding ? "#e8e6e0" : "#BFFD00",
-                border: "2px solid #111",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                flexShrink: 0,
-                transition: "background 0.2s",
-              }}
-            >
-              <MapPin size={18} color="#111" strokeWidth={geocoding ? 1.5 : 2} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              {geocoding ? (
-                <>
-                  <div style={{ height: 14, width: 140, background: "#ddd", borderRadius: 4, marginBottom: 4 }} />
-                  <div style={{ height: 11, width: 90, background: "#eee", borderRadius: 4 }} />
-                </>
-              ) : (
-                <>
-                  <p style={{ margin: 0, fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: "#111" }}>
-                    {placeName ?? "Unknown location"}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 11, color: "#888", fontFamily: "monospace", marginTop: 1 }}>
-                    {center.lat.toFixed(5)}°, {center.lng.toFixed(5)}°
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Confirm button */}
-          <button
-            onClick={() => onConfirm(center.lat, center.lng, placeName)}
-            style={{
-              width: "100%", padding: "15px",
-              background: "#BFFD00", color: "#111",
-              border: "2.5px solid #111",
-              boxShadow: "3px 3px 0 #111",
-              borderRadius: 14,
-              fontWeight: 900, fontSize: 16,
-              cursor: "pointer", fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              transition: "box-shadow 0.1s, transform 0.1s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.boxShadow = "1px 1px 0 #111";
-              e.currentTarget.style.transform = "translate(2px,2px)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.boxShadow = "3px 3px 0 #111";
-              e.currentTarget.style.transform = "translate(0,0)";
-            }}
-          >
-            <MapPin size={18} color="#111" />
-            <span>{confirmLabel}</span>
-          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/drop-location-pin-white.svg"
+            alt=""
+            width={34}
+            height={55}
+            className="h-[55px] w-[34px] select-none"
+          />
+          {pinIcon && (
+            <span className="absolute left-1/2 top-[11px] -translate-x-1/2 text-sm leading-none">
+              {pinIcon}
+            </span>
+          )}
         </div>
+
+        {/* Follow-mode reassurance — the pin auto-locks onto the merchant's live
+            position and refines as GPS sharpens; this explains the movement so it
+            doesn't read as a glitch, and invites a manual nudge. */}
+        {showFollowHint && (
+          <div className="pointer-events-none absolute left-1/2 top-24 z-[1000] flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-[#FFFFFF33] px-4 py-2 text-xs/none text-white backdrop-blur-[20px]">
+            <span className="inline-block h-2 w-2 rounded-full bg-brand" />
+            Locking onto your location — drag to adjust
+          </div>
+        )}
+
+        {/* ── Map controls — the SAME components the map page uses ─────────── */}
+        <div className="absolute bottom-5 left-5 z-[1000] flex flex-col items-start gap-3 lg:bottom-[60px] lg:left-[60px]">
+          <MapZoomControls map={pickerMap} />
+          <MyLocationButton
+            onClick={goToMyLocation}
+            locating={locating}
+            error={locErr || undefined}
+          />
+        </div>
+
+        {/* ── Confirm ────────────────────────────────────────────────────────
+            While the map is moving the label would be stale, so the hint takes
+            over — it's also the only moment the drag gesture needs explaining.
+            Settled, the bar names the spot and offers the action. */}
+        {dragging ? (
+          <div className="pointer-events-none absolute bottom-5 left-1/2 z-[1000] flex -translate-x-1/2 items-center gap-3 whitespace-nowrap text-white lg:bottom-[60px]">
+            <Move className="h-5 w-5 shrink-0" />
+            <span className="text-base/none italic">Drag and click to select a drop location</span>
+          </div>
+        ) : (
+          <div className="absolute bottom-5 left-1/2 z-[1000] flex w-[calc(100%-40px)] -translate-x-1/2 items-center justify-center lg:bottom-[60px] lg:w-auto">
+            <div className="flex min-w-0 items-center gap-x-4 rounded-full bg-white p-2">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface">
+                <CornerUpRight className="h-5 w-5 text-heading" />
+              </span>
+
+              <span className="hidden min-w-0 flex-1 flex-col gap-y-1.5 sm:flex">
+                <span className="truncate text-base/none text-heading">
+                  {/* Coordinates stand in while the reverse geocode is in flight
+                      or has nothing — the bar must never be unactionable. */}
+                  {placeName ?? `${center.lat.toFixed(5)}°, ${center.lng.toFixed(5)}°`}
+                </span>
+                <span className="truncate text-sm/none text-nav-muted">
+                  {geocoding
+                    ? "Finding this place…"
+                    : (placeSub ?? `${center.lat.toFixed(5)}°, ${center.lng.toFixed(5)}°`)}
+                </span>
+              </span>
+
+              <button
+                onClick={() => onConfirm(center.lat, center.lng, placeName)}
+                className="flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-full bg-brand px-8 py-4 text-base/none text-white motion-safe:transition-opacity hover:opacity-90"
+              >
+                <MapPin size={18} />
+                <span>{confirmLabel}</span>
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              aria-label="Cancel"
+              className="ml-4 shrink-0 cursor-pointer rounded-full bg-white p-[6px] text-nav-active motion-safe:transition-colors hover:bg-surface"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        )}
+
       </motion.div>
     </>
   );

@@ -2,6 +2,10 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useAccount, useWriteContract } from "wagmi";
+import {
+  ArrowLeft, Check, Clock, Coins, Compass, Flag, Flame, Gift, Hourglass, IdCard, Link2, Loader2,
+  MapPin, Navigation, Puzzle, RefreshCw, Search, Star, Tag, Target, Trophy, Zap,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
@@ -20,16 +24,17 @@ import {
 } from "@/lib/utils";
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { ensureGasForClaim } from "@/lib/ensureGas";
+import { Sheet } from "@/components/ui/Sheet";
 import { TaskUnlock } from "@/components/TaskUnlock";
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { fireChestReward } from "@/components/ChestReward";
 import { UserHandle } from "@/components/UserHandle";
+import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { Celebration } from "@/components/Celebration";
 import { ShareableClaimCard } from "@/components/ShareableClaimCard";
 import { SafetyNote } from "@/components/SafetyNote";
 import { DROP_STATUS, type Drop, type LatLng, type Campaign } from "@/types";
-import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
@@ -58,6 +63,166 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   onHunt?: (drop: Drop) => void;
+}
+
+/** Small pill tag used in the header rows (rarity, flash, chain, riddle, time). */
+function Chip({
+  icon, children, tone = "neutral", pulse,
+}: { icon?: React.ReactNode; children: React.ReactNode; tone?: "neutral" | "brand" | "streak" | "danger"; pulse?: boolean }) {
+  const tones = {
+    neutral: "bg-surface text-heading",
+    brand:   "bg-brand-soft text-brand",
+    streak:  "bg-streak-bg text-streak",
+    danger:  "bg-[#FFF1F1] text-danger",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs/none whitespace-nowrap ${tones[tone]} ${pulse ? "pin-flash" : ""}`}>
+      {icon}
+      {children}
+    </span>
+  );
+}
+
+/** A quiet notice card: icon circle + title + body (+ optional action). */
+function Notice({
+  icon, title, body, action, tone = "neutral",
+}: { icon: React.ReactNode; title: string; body: string; action?: React.ReactNode; tone?: "neutral" | "brand" | "streak" | "danger" }) {
+  const bg = { neutral: "bg-surface", brand: "bg-brand-soft", streak: "bg-streak-bg", danger: "bg-[#FFF1F1]" }[tone];
+  const iconTone = { neutral: "bg-white text-heading", brand: "bg-white text-brand", streak: "bg-white text-streak", danger: "bg-white text-danger" }[tone];
+  return (
+    <div className={`rounded-2xl p-4 flex items-center gap-3 ${bg}`}>
+      <span className={`w-11.5 h-11.5 shrink-0 rounded-full flex items-center justify-center ${iconTone}`}>{icon}</span>
+      <div className="min-w-0 flex-1 flex flex-col gap-y-1">
+        <p className="text-base/none text-heading">{title}</p>
+        <p className="text-sm/[140%] text-nav-muted">{body}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * The post-claim card. Exported so it can be previewed without a transaction.
+ */
+export function ClaimSuccessCard({
+  drop, parsed, address, myUsername, needsName, countUpText, isVerified, onSuccess,
+}: {
+  drop: Drop;
+  parsed: ReturnType<typeof parseDropHint>;
+  address: string | undefined;
+  myUsername: string | null;
+  needsName: boolean;
+  countUpText: string;
+  isVerified: boolean;
+  onSuccess: () => void;
+}) {
+  // Chain middle: the win is the next stop, not a share card.
+  if (parsed.chainNextId) {
+    return (
+      <div className="rounded-3xl border border-line p-6 text-center flex flex-col items-center">
+        <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+          <Link2 className="w-8 h-8" strokeWidth={1.75} />
+        </span>
+        <p className="mt-5 text-xl/none text-heading">Next stop unlocked</p>
+        <p className="mt-3 text-sm/[140%] text-nav-muted">
+          {formatG$(drop.amount)} G$ claimed. Keep going, the chain continues.
+        </p>
+        <a
+          href={`/drop/${parsed.chainNextId}`}
+          className="mt-6 w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center
+            motion-safe:transition-colors hover:bg-brand/90"
+        >
+          Go to next stop
+        </a>
+        <button
+          type="button"
+          onClick={onSuccess}
+          className="mt-3 h-11 px-5 rounded-full text-sm/none text-nav-muted cursor-pointer
+            motion-safe:transition-colors hover:bg-surface hover:text-heading"
+        >
+          Back to map
+        </button>
+      </div>
+    );
+  }
+
+  const isChainWin = parsed.isChainLast;
+  return (
+    <>
+      <Celebration active colors={isChainWin ? ["#FFD700", "#2727E2", "#FF9825", "#121607"] : undefined} />
+      <div className="rounded-3xl border border-line p-6 text-center flex flex-col items-center">
+        <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+          {isChainWin ? <Trophy className="w-8 h-8" strokeWidth={1.75} /> : <Check className="w-8 h-8" strokeWidth={2} />}
+        </span>
+        <p className="mt-5 text-xl/none text-heading">{isChainWin ? "Hunt complete" : "You found it"}</p>
+        <p className="mt-4 font-anta text-[44px]/none text-heading tabular-nums">
+          {countUpText} <span className="text-2xl text-brand">G$</span>
+        </p>
+        <p className="mt-3 text-sm/[140%] text-nav-muted">
+          {isChainWin ? "You conquered the entire chain." : "Transferred to your wallet."}
+        </p>
+
+        {/* Shareable win card + one-tap share */}
+        <div className="mt-6 w-full">
+          <ShareableClaimCard
+            amount={drop.amount}
+            rarity={getDropRarity(drop.amount)}
+            place={parsed.hint || null}
+            handle={myUsername ? `@${myUsername}` : address ? shortAddr(address) : "a hunter"}
+            dropId={drop.id.toString()}
+          />
+        </div>
+
+        {/* Post-win nudge — peak moment to claim a name, since the share card
+            and leaderboard are about to show it. */}
+        {needsName && (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
+            className="mt-4 w-full rounded-2xl bg-brand-soft p-4 flex items-center gap-3 text-left cursor-pointer
+              motion-safe:transition-opacity hover:opacity-90"
+          >
+            <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-white text-brand flex items-center justify-center">
+              <Tag className="w-5 h-5" strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0 flex-1 flex flex-col gap-y-1">
+              <span className="text-base/[130%] text-heading">Claim your hunter name</span>
+              <span className="text-sm/[140%] text-nav-muted">
+                You shared as {address ? shortAddr(address) : "a hunter"}. Set a name so people know it&apos;s you.
+              </span>
+            </span>
+          </button>
+        )}
+
+        {/* UBI prompt — verified only */}
+        {isVerified && (
+          <button
+            type="button"
+            onClick={() => { onSuccess(); setTimeout(() => window.dispatchEvent(new CustomEvent("gd:openWallet")), 300); }}
+            className="mt-3 w-full rounded-2xl bg-surface p-4 flex items-center gap-3 text-left cursor-pointer
+              motion-safe:transition-colors hover:bg-nav-controls"
+          >
+            <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-white text-heading flex items-center justify-center">
+              <Coins className="w-5 h-5" strokeWidth={1.75} />
+            </span>
+            <span className="min-w-0 flex-1 flex flex-col gap-y-1">
+              <span className="text-base/[130%] text-heading">Claim your daily G$ UBI</span>
+              <span className="text-sm/[140%] text-nav-muted">Opens your wallet to claim today&apos;s GoodDollar.</span>
+            </span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onSuccess}
+          className="mt-3 h-11 px-5 rounded-full text-sm/none text-nav-muted cursor-pointer
+            motion-safe:transition-colors hover:bg-surface hover:text-heading"
+        >
+          Done, back to map
+        </button>
+      </div>
+    </>
+  );
 }
 
 export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: Props) {
@@ -99,8 +264,6 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     parsed?.hasRiddle ?? false,
     address,
   );
-
-  const open = drop !== null;
 
   useEffect(() => {
     setStatus("idle");
@@ -164,6 +327,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // offering a retry after an error, or when the verification read failed and the
   // tap should re-run that read.
   const btnActive = canClaim || status === "error" || identityCheckFailed || terminal;
+  const busy = status === "claiming" || status === "gassing";
 
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
@@ -242,542 +406,275 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     }
   }
 
-  function claimLabel() {
-    if (status === "gassing")  return "⛽ Topping up gas…";
-    if (status === "claiming") return "⏳ Claiming…";
-    if (terminal)              return "← Back to the map";
+  function claimLabel(): React.ReactNode {
+    if (status === "gassing")  return <><Loader2 className="w-5 h-5 animate-spin" /> Topping up gas…</>;
+    if (status === "claiming") return <><Loader2 className="w-5 h-5 animate-spin" /> Claiming…</>;
+    if (terminal)              return <><ArrowLeft className="w-5 h-5" strokeWidth={2} /> Back to the map</>;
     if (status === "error")    return "Try again";
     if (!isConnected)          return "Sign in to claim";
     // Don't accuse a (possibly verified) user of needing to verify until the
     // on-chain check has actually resolved — otherwise the slow read shows a false
     // "Verification required" / "Re-verify" on the button for verified hunters.
-    if (identityLoading)       return "⏳ Checking verification…";
-    if (identityCheckFailed)   return "⚠️ Couldn't check — tap to retry";
+    if (identityLoading)       return <><Loader2 className="w-5 h-5 animate-spin" /> Checking verification…</>;
+    if (identityCheckFailed)   return "Couldn't check. Tap to retry";
     // Blacklisted by GoodDollar — verifying again won't help, so don't offer it.
-    if (isBlacklisted)         return "🚫 Not eligible to claim";
-    if (isLapsed)              return "🔄 Re-verify to claim";
-    if (!verificationOk)       return "🪪 Verification required";
-    if (isSelfDrop)            return "Can't claim own drop";
+    if (isBlacklisted)         return "Not eligible to claim";
+    if (isLapsed)              return "Re-verify to claim";
+    if (!verificationOk)       return "Verification required";
+    if (isSelfDrop)            return "Can't claim your own drop";
     if (!userLocation)         return "Enable GPS to claim";
-    if (!isClose)              return `${Math.round(distance ?? 0)}m away — get closer`;
-    if (!answerFilled)         return "🧩 Answer the riddle to claim";
-    return `Claim ${formatG$(drop!.amount)} G$ →`;
+    if (!isClose)              return `${Math.round(distance ?? 0)}m away. Get closer`;
+    if (!answerFilled)         return "Answer the riddle to claim";
+    return `Claim ${formatG$(drop!.amount)} G$`;
   }
+
+  const verifyButton = (label: string) => (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
+      className="shrink-0 h-10 px-4 rounded-full bg-nav-active text-white text-sm/none cursor-pointer
+        motion-safe:transition-opacity hover:opacity-90 whitespace-nowrap"
+    >
+      {label}
+    </button>
+  );
 
   return (
     <>
-      {/* Backdrop */}
-      <motion.div
-        animate={{ opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none" }}
-        transition={{ duration: 0.2 }}
-        onClick={onClose}
-        style={{
-          position: "fixed", inset: 0, zIndex: 1002,
-          backgroundColor: "rgba(17,17,17,0.6)",
-          backdropFilter: "blur(3px)",
-          opacity: 0, pointerEvents: "none",
-        }}
-      />
+      {drop && parsed && (() => {
+        const rarity  = getDropRarity(drop.amount);
+        const r       = RARITY[rarity];
+        const flash   = isFlashDrop(drop);
+        const isChain = parsed.chainNextId !== null || parsed.isChainLast;
+        const usd     = formatUsdApprox(drop.amount);
 
-      {/* Sheet */}
-      <motion.div
-        animate={{ y: open ? 0 : "100%" }}
-        initial={{ y: "100%" }}
-        transition={{ type: "spring", damping: 32, stiffness: 420 }}
-        style={{
-          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 1003,
-          borderRadius: "24px 24px 0 0",
-          background: "#f5f4f0",
-          maxHeight: "88dvh",
-          overflowY: "auto",
-          overflowX: "hidden",
-        }}
-      >
-        {drop && (() => {
-          const rarity  = getDropRarity(drop.amount);
-          const r       = RARITY[rarity];
-          const flash   = isFlashDrop(drop);
-          const isChain = parsed?.chainNextId !== null || parsed?.isChainLast;
-
-          // UBI prompt — verified only
-          const ubiPrompt = isVerified ? (
-            <button
-              onClick={() => { onSuccess(); setTimeout(() => window.dispatchEvent(new CustomEvent("gd:openWallet")), 300); }}
-              style={{
-                width: "100%", padding: "13px 16px",
-                background: "rgba(255,255,255,0.08)", border: "1.5px solid rgba(255,255,255,0.15)",
-                borderRadius: 12, cursor: "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: 12, textAlign: "left",
-              }}
-            >
-              <span style={{ fontSize: 22, flexShrink: 0 }}>💰</span>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#fff", lineHeight: 1.3 }}>
-                  Claim your daily G$ UBI
-                </p>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                  Tap to open wallet → claim GoodDollar UBI
-                </p>
-              </div>
-              <span style={{ color: "#555", fontSize: 16 }}>→</span>
-            </button>
-          ) : null;
-
-          return (
-            <>
-              {/* ── DARK HERO HEADER ─────────────────────────────────────────── */}
-              <div style={{
-                background: "#111",
-                borderTop: `4px solid ${flash ? "#FF6400" : r.color}`,
-                borderRadius: "24px 24px 0 0",
-                padding: "14px 20px 24px",
-                position: "relative",
-              }}>
-                {/* Drag handle */}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-                  <div style={{ width: 36, height: 4, borderRadius: 2, background: "#333" }} />
-                </div>
-
-                {/* Close */}
-                <button
-                  onClick={onClose}
-                  style={{
-                    position: "absolute", top: 14, right: 16,
-                    width: 30, height: 30, borderRadius: "50%",
-                    background: "rgba(255,255,255,0.07)", border: "none",
-                    color: "#666", cursor: "pointer", fontFamily: "inherit",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 14, fontWeight: 700,
-                  }}
-                >✕</button>
-
-                {/* Badges */}
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
-                  <span style={{
-                    background: flash ? "#FF6400" : r.color,
-                    color: flash ? "#fff" : r.textColor,
-                    fontSize: 9, fontWeight: 900,
-                    padding: "3px 10px", borderRadius: 100,
-                    letterSpacing: "0.12em", textTransform: "uppercase",
-                    animation: flash ? "pin-flash 0.8s ease-in-out infinite" : "none",
-                  }}>
-                    {flash ? "⚡ Flash Drop" : r.label}
-                  </span>
-                  {isChain && (
-                    <span style={{
-                      background: "#BFFD00", color: "#111",
-                      fontSize: 9, fontWeight: 900,
-                      padding: "3px 10px", borderRadius: 100,
-                      letterSpacing: "0.12em", textTransform: "uppercase",
-                    }}>🔗 {parsed?.isChainLast ? "Final Stop" : "Chain Drop"}</span>
-                  )}
-                  {campaign && (
-                    <span style={{
-                      background: campaign.color, color: "#111",
-                      fontSize: 9, fontWeight: 900,
-                      padding: "3px 10px", borderRadius: 100,
-                      letterSpacing: "0.12em", textTransform: "uppercase",
-                    }}>⭐ {campaign.name}</span>
-                  )}
-                  {parsed?.hasRiddle && (
-                    <span style={{
-                      background: "transparent", color: "#BFFD00",
-                      border: "1.5px solid #BFFD00",
-                      fontSize: 9, fontWeight: 900,
-                      padding: "2px 9px", borderRadius: 100,
-                      letterSpacing: "0.12em", textTransform: "uppercase",
-                    }}>🧩 Riddle</span>
-                  )}
-                </div>
-
-                {/* Amount — the star */}
-                <div style={{ lineHeight: 1, marginBottom: 14 }}>
-                  <span style={{
-                    fontSize: 72, fontWeight: 900, color: "#fff",
-                    letterSpacing: "-0.03em",
-                  }}>
-                    {formatG$(drop.amount)}
-                  </span>
-                  <span style={{
-                    fontSize: 40, fontWeight: 900,
-                    color: flash ? "#FF6400" : "#BFFD00",
-                    marginLeft: 8,
-                  }}>G$</span>
-                  {formatUsdApprox(drop.amount) && (
-                    <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#9a9db0", marginTop: 6 }}>
-                      {formatUsdApprox(drop.amount)} USD · real, spendable G$
-                    </span>
-                  )}
-                </div>
-
-                {/* Meta row */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  {isActive && (
-                    <span style={{
-                      background: flash ? "#FF640025" : "rgba(255,255,255,0.06)",
-                      color: flash ? "#FF6400" : "#888",
-                      fontSize: 11, fontWeight: 700,
-                      padding: "3px 9px", borderRadius: 6,
-                    }}>
-                      ⏰ {timeLeft(drop.expiry)}
-                    </span>
-                  )}
-                  {!isActive && (
-                    <span style={{
-                      background: drop.status === DROP_STATUS.Claimed ? "#BFFD0020" : "#FF3B3B20",
-                      color: drop.status === DROP_STATUS.Claimed ? "#BFFD00" : "#FF3B3B",
-                      fontSize: 11, fontWeight: 700,
-                      padding: "3px 9px", borderRadius: 6,
-                    }}>
-                      {drop.status === DROP_STATUS.Claimed ? "✓ Claimed" : "Expired"}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 11, color: "#555" }}>
-                    by <UserHandle address={drop.dropper} />
-                  </span>
-                  {isActive && nearby > 0 && (
-                    <span
-                      title="Opted-in hunters active near here — be quick!"
-                      style={{ background: "#FF640020", color: "#FF8A3D", fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 100 }}
-                    >
-                      🔥 {nearby === 1 ? "a hunter nearby" : `${nearby} hunters nearby`}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* ── BODY ──────────────────────────────────────────────────────── */}
-              <div style={{ padding: "18px 18px 40px", display: "flex", flexDirection: "column", gap: 12 }}>
-
-                {/* Campaign banner */}
+        return (
+          <Sheet
+            title={flash ? "Flash drop" : `${r.label} drop`}
+            onClose={onClose}
+            width={440}
+            dismissible={!busy}
+          >
+            <div className="pt-6 flex flex-col gap-4">
+              {/* ── Tags ──────────────────────────────────────────────────── */}
+              <div className="flex flex-wrap gap-2">
+                <Chip
+                  icon={<span className="w-2 h-2 rounded-full" style={{ background: r.color }} aria-hidden />}
+                  pulse={flash}
+                  tone={flash ? "streak" : "neutral"}
+                >
+                  {flash ? <><Zap className="w-3.5 h-3.5" strokeWidth={2} /> Flash</> : r.label}
+                </Chip>
+                {isChain && (
+                  <Chip tone="brand" icon={<Link2 className="w-3.5 h-3.5" strokeWidth={2} />}>
+                    {parsed.isChainLast ? "Final stop" : "Chain drop"}
+                  </Chip>
+                )}
                 {campaign && (
-                  <div style={{
-                    background: `${campaign.color}12`,
-                    border: `2px solid ${campaign.color}`,
-                    borderRadius: 14, padding: "12px 14px",
-                    display: "flex", alignItems: "center", gap: 12,
-                  }}>
-                    <div style={{
-                      width: 38, height: 38, background: campaign.color,
-                      borderRadius: 10, border: "2px solid rgba(0,0,0,0.12)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 16, fontWeight: 900, color: "#111", flexShrink: 0,
-                      overflow: "hidden",
-                    }}>
-                      {campaign.logo
-                        ? <img src={campaign.logo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        : campaign.name.charAt(0).toUpperCase()
-                      }
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: "0 0 1px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888" }}>⭐ Sponsored Drop</p>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campaign.name}</p>
-                      {campaign.description && (
-                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                          {campaign.description}
-                        </p>
-                      )}
-                      {campaign.goodcollectivePool && (
-                        <a
-                          href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`}
-                          target="_blank" rel="noopener noreferrer"
-                          style={{ textDecoration: "none", display: "inline-block", marginTop: 4, fontSize: 10, fontWeight: 800, background: "#111", color: "#BFFD00", padding: "2px 8px", borderRadius: 100 }}
-                          onClick={(e) => e.stopPropagation()}
-                        >🤝 GoodCollective Pool ↗</a>
-                      )}
-                    </div>
-                    {claims > 0 && (
-                      <div style={{ textAlign: "center", flexShrink: 0 }}>
-                        <p style={{ margin: 0, fontWeight: 900, fontSize: 20, lineHeight: 1 }}>{claims}</p>
-                        <p style={{ margin: 0, fontSize: 10, color: "#888" }}>claimed</p>
-                      </div>
+                  <Chip icon={<Star className="w-3.5 h-3.5" strokeWidth={2} />}>{campaign.name}</Chip>
+                )}
+                {parsed.hasRiddle && (
+                  <Chip tone="brand" icon={<Puzzle className="w-3.5 h-3.5" strokeWidth={2} />}>Riddle</Chip>
+                )}
+                {isTaskDrop && (
+                  <Chip icon={<Gift className="w-3.5 h-3.5" strokeWidth={2} />}>Merchant reward</Chip>
+                )}
+              </div>
+
+              {/* ── Amount, the star ───────────────────────────────────────── */}
+              <div className="flex flex-col gap-y-2">
+                <p className="font-anta text-[48px]/none text-heading">
+                  {formatG$(drop.amount)} <span className="text-2xl text-brand">G$</span>
+                </p>
+                {usd && <p className="text-sm/none text-nav-muted">{usd} USD · real, spendable G$</p>}
+              </div>
+
+              {/* ── Meta row ───────────────────────────────────────────────── */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-line pl-1 pr-3 py-1 text-xs/none text-nav-muted min-w-0">
+                  <ProfileAvatar address={drop.dropper} size={24} ringColor="transparent" />
+                  <span className="truncate">by <UserHandle address={drop.dropper} className="text-heading" /></span>
+                </span>
+                {isActive ? (
+                  <Chip tone={flash ? "streak" : "neutral"} icon={<Clock className="w-3.5 h-3.5" strokeWidth={2} />}>
+                    {timeLeft(drop.expiry)}
+                  </Chip>
+                ) : (
+                  <Chip tone={drop.status === DROP_STATUS.Claimed ? "brand" : "danger"}>
+                    {drop.status === DROP_STATUS.Claimed ? "Claimed" : "Expired"}
+                  </Chip>
+                )}
+                {isActive && nearby > 0 && (
+                  <Chip tone="streak" icon={<Flame className="w-3.5 h-3.5" strokeWidth={2} />}>
+                    {nearby === 1 ? "a hunter nearby" : `${nearby} hunters nearby`}
+                  </Chip>
+                )}
+              </div>
+
+              {/* ── Campaign ───────────────────────────────────────────────── */}
+              {campaign && (
+                <div className="rounded-2xl border border-line p-4 flex items-center gap-3">
+                  <div
+                    className="w-11.5 h-11.5 shrink-0 rounded-full overflow-hidden flex items-center justify-center text-base text-heading"
+                    style={{ background: campaign.color }}
+                  >
+                    {campaign.logo
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={campaign.logo} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      : campaign.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col gap-y-1">
+                    <p className="text-xs/none text-nav-muted">Sponsored drop</p>
+                    <p className="text-base/none text-heading truncate">{campaign.name}</p>
+                    {campaign.description && (
+                      <p className="text-sm/[140%] text-nav-muted line-clamp-2">{campaign.description}</p>
                     )}
-                  </div>
-                )}
-
-                {/* Hint card */}
-                {parsed?.hint && (
-                  <div style={{
-                    background: "#fff", border: "2px dashed #111",
-                    borderRadius: 14, padding: "14px 16px",
-                  }}>
-                    <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: "#888" }}>🔍 Clue</p>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111", lineHeight: 1.6 }}>{parsed.hint}</p>
-                  </div>
-                )}
-
-                {/* ── SUCCESS ──────────────────────────────────────────────── */}
-                {status === "done" && (() => {
-                  // Chain middle
-                  if (parsed?.chainNextId) return (
-                    <div style={{
-                      background: "#111", border: "2px solid #111",
-                      borderRadius: 18, boxShadow: "4px 4px 0 #BFFD00",
-                      padding: "28px 20px", textAlign: "center",
-                    }}>
-                      <div style={{ fontSize: 52, marginBottom: 12 }}>🔗</div>
-                      <p style={{ margin: "0 0 6px", fontWeight: 900, fontSize: 22, color: "#BFFD00" }}>Next stop unlocked!</p>
-                      <p style={{ margin: "0 0 20px", fontSize: 13, color: "#666" }}>
-                        {formatG$(drop.amount)} G$ claimed. Keep going — the chain continues!
-                      </p>
+                    {campaign.goodcollectivePool && (
                       <a
-                        href={`/drop/${parsed.chainNextId}`}
-                        style={{
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          width: "100%", padding: "15px",
-                          background: "#BFFD00", color: "#111",
-                          border: "2px solid #BFFD00", borderRadius: 14,
-                          fontWeight: 900, fontSize: 16, textDecoration: "none",
-                          boxShadow: "3px 3px 0 rgba(191,253,0,0.3)",
-                        }}
+                        href={`https://goodcollective.xyz/pool/${campaign.goodcollectivePool}`}
+                        target="_blank" rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="self-start mt-1 inline-flex items-center gap-1 rounded-full bg-brand-soft text-brand px-3 py-1.5 text-xs/none"
                       >
-                        Go to next stop →
+                        GoodCollective pool
                       </a>
-                      <button onClick={onSuccess} style={{
-                        marginTop: 12, width: "100%", padding: "10px",
-                        background: "transparent", border: "none",
-                        color: "#555", fontWeight: 700, fontSize: 13,
-                        cursor: "pointer", fontFamily: "inherit",
-                      }}>
-                        Back to map
-                      </button>
+                    )}
+                  </div>
+                  {claims > 0 && (
+                    <div className="shrink-0 text-center flex flex-col gap-y-1">
+                      <p className="font-anta text-xl/none text-heading">{claims}</p>
+                      <p className="text-xs/none text-nav-muted">claimed</p>
                     </div>
-                  );
+                  )}
+                </div>
+              )}
 
-                  // Chain last / regular success
-                  const isChainWin = parsed?.isChainLast;
-                  return (
-                    <>
-                      <Celebration active colors={isChainWin ? ["#FFD700", "#BFFD00", "#fff"] : undefined} />
-                      <div style={{
-                        background: "#111", border: "2px solid #111",
-                        borderRadius: 18,
-                        boxShadow: `4px 4px 0 ${isChainWin ? "#FFD700" : "#BFFD00"}`,
-                        padding: "28px 20px 22px", textAlign: "center",
-                      }}>
-                        <div className="success-pop" style={{ fontSize: 60, marginBottom: 8, lineHeight: 1 }}>
-                          {isChainWin ? "🏆" : "🎯"}
-                        </div>
-                        <p style={{ margin: "0 0 4px", fontWeight: 900, fontSize: 24, color: "#BFFD00", letterSpacing: "-0.02em" }}>
-                          {isChainWin ? "Hunt Complete!" : "You found it!"}
-                        </p>
-                        <div style={{ margin: "12px 0 20px" }}>
-                          <span style={{ fontSize: 48, fontWeight: 900, color: "#fff", letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>
-                            {countUpText}
-                          </span>
-                          <span style={{ fontSize: 28, fontWeight: 900, color: "#BFFD00", marginLeft: 6 }}>G$</span>
-                        </div>
-                        <p style={{ margin: "0 0 20px", fontSize: 13, color: "#888" }}>
-                          {isChainWin ? "You conquered the entire chain!" : "Transferred to your wallet."}
-                        </p>
+              {/* ── Clue ───────────────────────────────────────────────────── */}
+              {parsed.hint && (
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="flex items-center gap-1.5 text-xs/none text-nav-muted">
+                    <Search className="w-3.5 h-3.5" strokeWidth={2} /> Clue
+                  </p>
+                  <p className="mt-2.5 text-base/[150%] text-heading">{parsed.hint}</p>
+                </div>
+              )}
 
-                        {/* Shareable win card + one-tap share */}
-                        <ShareableClaimCard
-                          amount={drop.amount}
-                          rarity={getDropRarity(drop.amount)}
-                          place={parsed?.hint || null}
-                          handle={myUsername ? `@${myUsername}` : address ? shortAddr(address) : "a hunter"}
-                          dropId={drop.id.toString()}
+              {/* ── Success ────────────────────────────────────────────────── */}
+              {status === "done" && (
+                <ClaimSuccessCard
+                  drop={drop}
+                  parsed={parsed}
+                  address={address}
+                  myUsername={myUsername}
+                  needsName={needsName}
+                  countUpText={countUpText}
+                  isVerified={isVerified}
+                  onSuccess={onSuccess}
+                />
+              )}
+
+              {/* ── Active state ───────────────────────────────────────────── */}
+              {status !== "done" && isActive && (
+                <>
+                  {/* Proximity — hidden for own drops */}
+                  {!isSelfDrop && isClose ? (
+                    <Notice
+                      tone="brand"
+                      icon={<MapPin className="w-5 h-5" strokeWidth={1.75} />}
+                      title="You're in range"
+                      body={`${Math.round(distance!)}m away, close enough to claim.`}
+                    />
+                  ) : !isSelfDrop ? (
+                    <div className="rounded-2xl border border-line p-4">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm/none text-nav-muted">Distance</span>
+                        <span className="font-anta text-2xl/none text-heading">
+                          {distance !== null ? `${Math.round(distance)}m` : "—"}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-2 rounded-full bg-surface overflow-hidden">
+                        <motion.div
+                          animate={{ width: `${proximityPct}%` }}
+                          transition={{ duration: 0.5 }}
+                          className={`h-full rounded-full ${proximityPct > 65 ? "bg-brand" : "bg-nav-muted/40"}`}
                         />
-
-                        {/* Post-win nudge — peak moment to claim a name, since the
-                            share card & leaderboard are about to show it. */}
-                        {needsName && (
-                          <button
-                            onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
-                            style={{
-                              marginTop: 12, width: "100%",
-                              display: "flex", alignItems: "center", gap: 12, textAlign: "left",
-                              padding: "13px 16px", borderRadius: 12, cursor: "pointer",
-                              background: "rgba(191,253,0,0.12)",
-                              border: "1.5px solid rgba(191,253,0,0.5)",
-                              fontFamily: "inherit",
-                            }}
-                          >
-                            <span style={{ fontSize: 22, flexShrink: 0 }}>🏷️</span>
-                            <span style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ display: "block", fontWeight: 800, fontSize: 14, color: "#BFFD00" }}>
-                                Claim your hunter name
-                              </span>
-                              <span style={{ display: "block", fontSize: 11.5, color: "#9a9db0", marginTop: 2 }}>
-                                You shared as {address ? shortAddr(address) : "a hunter"} — set a name so people know it&apos;s you.
-                              </span>
-                            </span>
-                            <span style={{ fontSize: 18, color: "#BFFD00", flexShrink: 0 }}>→</span>
-                          </button>
-                        )}
-
-                        <div style={{ marginTop: 12 }}>{ubiPrompt}</div>
-
-                        <button onClick={onSuccess} style={{
-                          marginTop: 10, width: "100%", padding: "10px",
-                          background: "transparent", border: "none",
-                          color: "#888", fontWeight: 700, fontSize: 13,
-                          cursor: "pointer", fontFamily: "inherit",
-                        }}>
-                          Done — back to map
-                        </button>
                       </div>
-                    </>
-                  );
-                })()}
+                      <p className="mt-3 text-xs/none text-nav-muted text-center">
+                        Must be within {CLAIM_RADIUS_M}m to claim
+                      </p>
+                    </div>
+                  ) : null}
 
-                {/* ── ACTIVE STATE ─────────────────────────────────────────── */}
-                {status !== "done" && isActive && (
-                  <>
-                    {/* Proximity — hidden for own drops */}
-                    {!isSelfDrop && isClose ? (
-                      <div style={{
-                        background: "#BFFD00", border: "2px solid #111",
-                        borderRadius: 14, padding: "14px 16px",
-                        display: "flex", alignItems: "center", gap: 12,
-                        boxShadow: "2px 2px 0 #111",
-                      }}>
-                        <span style={{ fontSize: 28, flexShrink: 0 }}>📍</span>
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 900, fontSize: 15, color: "#111" }}>You're in range!</p>
-                          <p style={{ margin: 0, fontSize: 12, color: "#333" }}>
-                            {Math.round(distance!)}m — close enough to claim
-                          </p>
-                        </div>
-                      </div>
-                    ) : !isSelfDrop ? (
-                      <div style={{
-                        background: "#fff", border: "2px solid #111",
-                        borderRadius: 14, padding: "14px 16px",
-                        boxShadow: "2px 2px 0 #111",
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                            Distance
-                          </span>
-                          <span style={{ fontSize: 28, fontWeight: 900, color: "#111", letterSpacing: "-0.02em" }}>
-                            {distance !== null ? `${Math.round(distance)}m` : "—"}
-                          </span>
-                        </div>
-                        <div style={{ height: 10, background: "#eee", borderRadius: 100, overflow: "hidden", border: "1.5px solid #ddd" }}>
-                          <motion.div
-                            animate={{ width: `${proximityPct}%` }}
-                            transition={{ duration: 0.5 }}
-                            style={{
-                              height: "100%", borderRadius: 100,
-                              background: proximityPct > 65 ? "#FF6400" : "#ccc",
-                              transition: "background 0.5s",
-                            }}
-                          />
-                        </div>
-                        <p style={{ margin: "8px 0 0", fontSize: 11, color: "#aaa", textAlign: "center" }}>
-                          Must be within {CLAIM_RADIUS_M}m to claim
-                        </p>
-                      </div>
-                    ) : null}
+                  {/* Merchant-reward heads-up — set expectations before the
+                      hunter arrives, so the on-arrival task isn't a surprise.
+                      Once in range, the TaskUnlock panel takes over. */}
+                  {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && (
+                    <Notice
+                      icon={<Gift className="w-5 h-5" strokeWidth={1.75} />}
+                      title="Merchant reward"
+                      body="When you arrive, do a quick task and get the merchant to approve it. Then this unlocks."
+                    />
+                  )}
 
-                    {/* Merchant-reward heads-up — set expectations before the
-                        hunter arrives, so the on-arrival task isn't a surprise.
-                        Once in range, the TaskUnlock panel takes over. */}
-                    {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && (
-                      <div style={{
-                        background: "#fff", border: "2px solid #111",
-                        borderRadius: 14, padding: "12px 14px",
-                        display: "flex", alignItems: "center", gap: 12,
-                        boxShadow: "2px 2px 0 #BFFD00",
-                      }}>
-                        <span style={{ fontSize: 24, flexShrink: 0 }}>🎁</span>
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 900, fontSize: 13.5, color: "#111" }}>Merchant reward</p>
-                          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#666", lineHeight: 1.5 }}>
-                            When you arrive, do a quick task and get the merchant to approve it — then this unlocks.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Walk there */}
-                    {!isSelfDrop && !isClose && (
+                  {/* Walk there / Hunt */}
+                  {!isSelfDrop && !isClose && (
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <button
+                        type="button"
                         onClick={() => openGoogleMapsWalking(dropLat, dropLng)}
-                        style={{
-                          width: "100%", padding: "12px",
-                          background: "#fff", border: "2px solid #111",
-                          borderRadius: 12, fontWeight: 700, fontSize: 13,
-                          cursor: "pointer", fontFamily: "inherit",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                          boxShadow: "2px 2px 0 #111",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f5f4f0"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "#fff"; }}
+                        className="w-full sm:flex-1 h-12 rounded-full border border-line bg-white text-base/none text-heading
+                          flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface"
                       >
-                        🧭 Walk there
+                        <Navigation className="w-[18px] h-[18px]" strokeWidth={2} />
+                        Walk there
                       </button>
-                    )}
+                      {onHunt && (
+                        <button
+                          type="button"
+                          onClick={() => { onClose(); onHunt(drop); }}
+                          className="w-full sm:flex-1 h-12 rounded-full bg-nav-active text-white text-base/none
+                            flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-opacity hover:opacity-90"
+                        >
+                          <Compass className="w-[18px] h-[18px]" strokeWidth={2} />
+                          Hunt this drop
+                        </button>
+                      )}
+                    </div>
+                  )}
 
-                    {/* Hunt mode */}
-                    {onHunt && !isSelfDrop && !isClose && (
-                      <button
-                        onClick={() => { onClose(); onHunt(drop); }}
-                        style={{
-                          width: "100%", padding: "12px",
-                          background: "#111", color: "#BFFD00",
-                          border: "2px solid #111", borderRadius: 12,
-                          fontWeight: 800, fontSize: 13,
-                          cursor: "pointer", fontFamily: "inherit",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                          boxShadow: "2px 2px 0 #BFFD00",
-                        }}
-                      >
-                        🎯 Hunt this drop
-                      </button>
-                    )}
+                  {/* ── Riddle ── */}
+                  {parsed.hasRiddle && !isSelfDrop && (
+                    <div className="rounded-2xl border border-line p-4">
+                      <p className="flex items-center gap-1.5 text-xs/none text-brand">
+                        <Puzzle className="w-3.5 h-3.5" strokeWidth={2} /> Riddle-locked
+                      </p>
 
-
-                    {/* ── RIDDLE ── */}
-                    {parsed?.hasRiddle && !isSelfDrop && (
-                      <div style={{
-                        background: "#111", border: "2px solid #111",
-                        borderRadius: 14, padding: "16px",
-                        boxShadow: "3px 3px 0 #BFFD00",
-                      }}>
-                        <p style={{
-                          margin: "0 0 10px", fontSize: 10, fontWeight: 800,
-                          textTransform: "uppercase", letterSpacing: "0.1em", color: "#BFFD00",
-                        }}>
-                          🧩 Riddle-locked
+                      {riddleLoading && !riddle ? (
+                        <p className="mt-3 flex items-center gap-2 text-sm/none text-nav-muted">
+                          <Loader2 className="w-4 h-4 animate-spin" /> Loading the riddle…
                         </p>
+                      ) : riddle ? (
+                        <>
+                          <p className="mt-3 text-base/[150%] text-heading">{riddle.question}</p>
 
-                        {riddleLoading && !riddle ? (
-                          <p style={{ margin: 0, fontSize: 13, color: "#888" }}>Loading the riddle…</p>
-                        ) : riddle ? (
-                          <>
-                            <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700, color: "#fff", lineHeight: 1.5 }}>
-                              {riddle.question}
-                            </p>
-
-                            {riddle.lockedByOther ? (
-                              <div style={{
-                                background: "rgba(255,59,59,0.12)", border: "1.5px solid #FF3B3B",
-                                borderRadius: 10, padding: "10px 12px",
-                              }}>
-                                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#FF3B3B" }}>
-                                  Someone solved it first
-                                </p>
-                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                                  They have a few minutes to claim. If they don&apos;t, it reopens — check back.
-                                </p>
-                              </div>
-                            ) : riddle.lockedByMe ? (
-                              <div style={{
-                                background: "rgba(191,253,0,0.12)", border: "1.5px solid #BFFD00",
-                                borderRadius: 10, padding: "10px 12px",
-                              }}>
-                                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#BFFD00" }}>
-                                  🥇 You solved it — it&apos;s yours to claim
-                                </p>
-                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888" }}>
-                                  Nobody else can take it for the next few minutes.
-                                </p>
-                              </div>
-                            ) : (
-                              <>
+                          {riddle.lockedByOther ? (
+                            <div className="mt-4 rounded-2xl bg-[#FFF1F1] px-4 py-3 flex flex-col gap-y-1">
+                              <p className="text-sm/none text-danger">Someone solved it first</p>
+                              <p className="text-xs/[140%] text-nav-muted">
+                                They have a few minutes to claim. If they don&apos;t, it reopens. Check back.
+                              </p>
+                            </div>
+                          ) : riddle.lockedByMe ? (
+                            <div className="mt-4 rounded-2xl bg-brand-soft px-4 py-3 flex flex-col gap-y-1">
+                              <p className="text-sm/none text-brand">You solved it. It&apos;s yours to claim</p>
+                              <p className="text-xs/[140%] text-nav-muted">
+                                Nobody else can take it for the next few minutes.
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <label className="block mt-4">
+                                <span className="sr-only">Your answer</span>
                                 <input
                                   type="text"
                                   value={answer}
@@ -785,219 +682,155 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                                   placeholder="Your answer…"
                                   maxLength={60}
                                   autoComplete="off"
-                                  style={{
-                                    width: "100%", padding: "13px 14px",
-                                    background: "rgba(255,255,255,0.06)",
-                                    border: "2px solid #333", borderRadius: 12,
-                                    color: "#fff", fontSize: 15, fontWeight: 700,
-                                    fontFamily: "inherit", outline: "none", boxSizing: "border-box",
-                                  }}
-                                  onFocus={(e) => { e.currentTarget.style.borderColor = "#BFFD00"; }}
-                                  onBlur={(e)  => { e.currentTarget.style.borderColor = "#333"; }}
+                                  disabled={busy}
+                                  className="w-full h-12 rounded-full bg-surface px-5 text-base/none text-heading placeholder:text-nav-muted
+                                    border border-transparent outline-none motion-safe:transition-colors focus:border-brand disabled:opacity-60"
                                 />
-                                <p style={{ margin: "8px 0 0", fontSize: 11, color: "#666", lineHeight: 1.5 }}>
-                                  Spelling counts, but capitals and punctuation don&apos;t.
-                                  First correct answer gets 10 minutes of exclusive access.
-                                </p>
-                              </>
-                            )}
-                          </>
-                        ) : (
-                          <p style={{ margin: 0, fontSize: 13, color: "#FF3B3B", fontWeight: 600 }}>
-                            The dropper hasn&apos;t finished setting up this riddle yet — it can&apos;t be claimed until they do. Check back soon.
-                          </p>
-                        )}
-                      </div>
-                    )}
+                              </label>
+                              <p className="mt-3 text-xs/[150%] text-nav-muted">
+                                Spelling counts, but capitals and punctuation don&apos;t.
+                                First correct answer gets 10 minutes of exclusive access.
+                              </p>
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-3 text-sm/[140%] text-danger">
+                          The dropper hasn&apos;t finished setting up this riddle yet. It can&apos;t be claimed until they do. Check back soon.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                    {/* Error */}
-                    {status === "error" && errMsg && (
-                      <div style={{
-                        background: "#FFE5E5", border: "2px solid #FF3B3B",
-                        borderRadius: 12, padding: "12px 14px",
-                        fontSize: 13, color: "#FF3B3B", fontWeight: 600,
-                      }}>
-                        {errMsg}
-                      </div>
-                    )}
+                  {/* Error */}
+                  {(status === "error" || status === "gone") && errMsg && (
+                    <p role="alert" className="rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm/[140%] text-danger">
+                      {errMsg}
+                    </p>
+                  )}
 
-                    {/* ── CLAIM BUTTON (task drops swap in the unlock panel) ── */}
-                    {showTaskUnlock ? (
-                      <TaskUnlock
-                        drop={drop!}
-                        userLocation={userLocation}
-                        address={address as string}
-                        onApproved={() => setTaskUnlocked(true)}
-                      />
-                    ) : (
+                  {/* ── Claim button (task drops swap in the unlock panel) ── */}
+                  {showTaskUnlock ? (
+                    <TaskUnlock
+                      drop={drop}
+                      userLocation={userLocation}
+                      address={address as string}
+                      onApproved={() => setTaskUnlocked(true)}
+                    />
+                  ) : (
                     <button
+                      type="button"
                       onClick={
                         terminal ? onClose
                         : status === "error" ? () => setStatus("idle")
                         : identityCheckFailed ? () => refreshIdentity()
                         : handleClaim
                       }
-                      disabled={status === "claiming" || status === "gassing" || (status !== "error" && !btnActive)}
-                      style={{
-                        width: "100%", padding: "20px",
-                        background: btnActive ? "#BFFD00" : "#eee",
-                        color: btnActive ? "#111" : "#aaa",
-                        border: "2.5px solid",
-                        borderColor: btnActive ? "#111" : "#ddd",
-                        borderRadius: 16,
-                        boxShadow: btnActive ? "4px 4px 0 #111" : "none",
-                        fontWeight: 900, fontSize: 18,
-                        cursor: btnActive ? "pointer" : "not-allowed",
-                        fontFamily: "inherit",
-                        letterSpacing: "-0.01em",
-                        animation: canClaim ? "pulse 2s ease-in-out infinite" : "none",
-                        transition: "background 0.15s, box-shadow 0.15s, transform 0.1s",
-                      }}
-                      onMouseEnter={(e) => { if (canClaim) { e.currentTarget.style.boxShadow = "2px 2px 0 #111"; e.currentTarget.style.transform = "translate(2px,2px)"; } }}
-                      onMouseLeave={(e) => { if (canClaim) { e.currentTarget.style.boxShadow = "4px 4px 0 #111"; e.currentTarget.style.transform = "translate(0,0)"; } }}
+                      disabled={busy || (status !== "error" && !btnActive)}
+                      aria-live="polite"
+                      className={`w-full h-14 rounded-full text-base/none flex items-center justify-center gap-2 cursor-pointer
+                        motion-safe:transition-colors disabled:cursor-not-allowed
+                        ${terminal
+                          ? "bg-nav-active text-white hover:opacity-90"
+                          : "bg-brand text-white hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:hover:bg-[#A4A4A4]"}`}
+                      style={canClaim ? { boxShadow: "0 8px 24px rgba(39,39,226,0.3)" } : undefined}
                     >
                       {claimLabel()}
                     </button>
-                    )}
+                  )}
 
-                    <SafetyNote />
+                  <SafetyNote />
 
-                    {/* Verification — three states, three messages. A user who
-                        already did the face scan must never be told to "verify".
-                        Hidden while the check is still loading so verified hunters
-                        don't see a false verify card during the on-chain read. */}
-                    {isConnected && !isVerified && !isBlacklisted && !identityLoading && (
-                      <div style={{
-                        background: isLapsed ? "#FFE5E5" : "#fff8e6",
-                        border: `2px solid ${isLapsed ? "#FF3B3B" : "#111"}`,
-                        borderRadius: 12, padding: "12px 14px",
-                        display: "flex", alignItems: "center", gap: 12,
-                      }}>
-                        <span style={{ fontSize: 22, flexShrink: 0 }}>{isLapsed ? "🔄" : "🪪"}</span>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                            {isLapsed ? "Re-verify to claim" : "Verify to claim"}
-                          </p>
-                          <p style={{ margin: "2px 0 0", fontSize: 11, color: isLapsed ? "#C81E1E" : "#888", lineHeight: 1.5 }}>
-                            {isLapsed
-                              ? (identity.isProbation
-                                  ? "You're face-verified — GoodDollar just needs a re-check. New verifications only stay active for 3 days; re-verify once and it lasts 6 months."
-                                  : "Your GoodDollar verification has expired. Re-verify to start claiming again.")
-                              : "One-time GoodDollar face check confirms you're a real human. Takes a minute."}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
-                          style={{
-                            background: "#111", color: "#BFFD00",
-                            border: "none", borderRadius: 8,
-                            padding: "8px 12px", fontWeight: 900, fontSize: 11,
-                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}
-                        >
-                          {isLapsed ? "Re-verify →" : "Verify →"}
-                        </button>
-                      </div>
-                    )}
+                  {/* Verification — three states, three messages. A user who
+                      already did the face scan must never be told to "verify".
+                      Hidden while the check is still loading so verified hunters
+                      don't see a false verify card during the on-chain read. */}
+                  {isConnected && !isVerified && !isBlacklisted && !identityLoading && (
+                    <Notice
+                      tone={isLapsed ? "danger" : "neutral"}
+                      icon={isLapsed ? <RefreshCw className="w-5 h-5" strokeWidth={1.75} /> : <IdCard className="w-5 h-5" strokeWidth={1.75} />}
+                      title={isLapsed ? "Re-verify to claim" : "Verify to claim"}
+                      body={
+                        isLapsed
+                          ? (identity.isProbation
+                              ? "You're face-verified. GoodDollar just needs a re-check: new verifications stay active for 3 days; re-verify once and it lasts 6 months."
+                              : "Your GoodDollar verification has expired. Re-verify to start claiming again.")
+                          : "One-time GoodDollar face check confirms you're a real human. Takes a minute."
+                      }
+                      action={verifyButton(isLapsed ? "Re-verify" : "Verify")}
+                    />
+                  )}
 
-                    {/* Verified, but the clock is running out — on the 3-day rung
-                        this is the last chance to keep the account alive. */}
-                    {isConnected && isVerified && expiringSoon && (
-                      <div style={{
-                        background: "#FFF4E0", border: "2px solid #FFB020",
-                        borderRadius: 12, padding: "12px 14px",
-                        display: "flex", alignItems: "center", gap: 12,
-                      }}>
-                        <span style={{ fontSize: 22, flexShrink: 0 }}>⏳</span>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ margin: 0, fontWeight: 800, fontSize: 13, color: "#111" }}>
-                            {identity.daysLeft === 0
-                              ? "Verification expires today"
-                              : `Verification expires in ${identity.daysLeft} day${identity.daysLeft === 1 ? "" : "s"}`}
-                          </p>
-                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#8a6500", lineHeight: 1.5 }}>
-                            {identity.isProbation
-                              ? "Re-verify once now to lock in 6 months of claiming."
-                              : "Re-verify to keep claiming without interruption."}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => window.dispatchEvent(new CustomEvent("gd:openVerify"))}
-                          style={{
-                            background: "#111", color: "#FFB020",
-                            border: "none", borderRadius: 8,
-                            padding: "8px 12px", fontWeight: 900, fontSize: 11,
-                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}
-                        >
-                          Re-verify →
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
+                  {/* Verified, but the clock is running out — on the 3-day rung
+                      this is the last chance to keep the account alive. */}
+                  {isConnected && isVerified && expiringSoon && (
+                    <Notice
+                      tone="streak"
+                      icon={<Hourglass className="w-5 h-5" strokeWidth={1.75} />}
+                      title={
+                        identity.daysLeft === 0
+                          ? "Verification expires today"
+                          : `Verification expires in ${identity.daysLeft} day${identity.daysLeft === 1 ? "" : "s"}`
+                      }
+                      body={
+                        identity.isProbation
+                          ? "Re-verify once now to lock in 6 months of claiming."
+                          : "Re-verify to keep claiming without interruption."
+                      }
+                      action={verifyButton("Re-verify")}
+                    />
+                  )}
+                </>
+              )}
 
-                {/* Flash urgency notice */}
-                {isActive && flash && status !== "done" && (
-                  <div style={{
-                    background: "#FF640010", border: "1.5px solid #FF640050",
-                    borderRadius: 10, padding: "10px 14px",
-                    display: "flex", alignItems: "center", gap: 10,
-                  }}>
-                    <span style={{ fontSize: 18 }}>⚡</span>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#FF6400" }}>
-                        Flash Drop — {timeLeft(drop.expiry)} left!
-                      </p>
-                      <p style={{ margin: 0, fontSize: 11, color: "#aaa" }}>
-                        Expires very soon — hurry!
-                      </p>
-                    </div>
-                  </div>
-                )}
+              {/* Flash urgency notice */}
+              {isActive && flash && status !== "done" && (
+                <Notice
+                  tone="streak"
+                  icon={<Zap className="w-5 h-5" strokeWidth={1.75} />}
+                  title={`Flash drop, ${timeLeft(drop.expiry)} left`}
+                  body="Expires very soon. Hurry."
+                />
+              )}
 
-                {/* Inactive state */}
-                {!isActive && status !== "done" && (
-                  <div style={{
-                    background: "#fff", border: "2px solid #ddd",
-                    borderRadius: 14, padding: "24px 20px", textAlign: "center",
-                  }}>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>
-                      {drop.status === DROP_STATUS.Claimed ? "🎯" : "⌛"}
-                    </div>
-                    <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 16, color: "#111" }}>
-                      {drop.status === DROP_STATUS.Claimed ? "Already claimed" : "Drop has expired"}
-                    </p>
-                    <p style={{ margin: 0, fontSize: 13, color: "#888" }}>
-                      {drop.status === DROP_STATUS.Claimed ? "Someone beat you to it!" : "This drop is no longer active."}
-                    </p>
-                  </div>
-                )}
+              {/* Inactive state */}
+              {!isActive && status !== "done" && (
+                <div className="rounded-2xl border border-line p-6 text-center flex flex-col items-center gap-y-3">
+                  <span className="w-14 h-14 rounded-full bg-surface text-heading flex items-center justify-center">
+                    {drop.status === DROP_STATUS.Claimed
+                      ? <Target className="w-6 h-6" strokeWidth={1.75} />
+                      : <Hourglass className="w-6 h-6" strokeWidth={1.75} />}
+                  </span>
+                  <p className="text-base/none text-heading">
+                    {drop.status === DROP_STATUS.Claimed ? "Already claimed" : "Drop has expired"}
+                  </p>
+                  <p className="text-sm/[140%] text-nav-muted">
+                    {drop.status === DROP_STATUS.Claimed ? "Someone beat you to it." : "This drop is no longer active."}
+                  </p>
+                </div>
+              )}
 
-                {/* Comments */}
-                <DropComments dropId={String(drop.id)} dropper={drop.dropper} />
+              {/* Comments */}
+              <DropComments dropId={String(drop.id)} dropper={drop.dropper} />
 
-                {/* Report — hunters flag scam / not-there / offensive drops.
-                    Hidden on your own drop (nothing to report about yourself). */}
-                {!isSelfDrop && (
-                  <div style={{ marginTop: 14, textAlign: "center" }}>
-                    <button
-                      onClick={() => setReporting(true)}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        background: "none", border: "none", cursor: "pointer",
-                        color: "#9a9da8", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
-                      }}
-                    >
-                      <span aria-hidden>⚐</span> Report this drop
-                    </button>
-                  </div>
-                )}
-              </div>
-            </>
-          );
-        })()}
-      </motion.div>
+              {/* Report — hunters flag scam / not-there / offensive drops.
+                  Hidden on your own drop (nothing to report about yourself). */}
+              {!isSelfDrop && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setReporting(true)}
+                    className="h-10 px-4 rounded-full inline-flex items-center gap-2 text-sm/none text-nav-muted cursor-pointer
+                      motion-safe:transition-colors hover:bg-surface hover:text-heading"
+                  >
+                    <Flag className="w-4 h-4" strokeWidth={2} /> Report this drop
+                  </button>
+                </div>
+              )}
+            </div>
+          </Sheet>
+        );
+      })()}
 
       <ReportDropSheet
         dropId={drop && reporting ? drop.id.toString() : null}

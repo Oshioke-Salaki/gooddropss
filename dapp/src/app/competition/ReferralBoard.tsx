@@ -1,15 +1,16 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useProfiles } from "@/hooks/useProfile";
 import {
-  Users, UserPlus, Coins, ChevronDown, ChevronUp, ArrowUpRight, RefreshCw,
-  HelpCircle, Lock, Check, Wallet,
+  Users, UserPlus, Coins, Lock, Check, Wallet, Trophy, AlertCircle,
 } from "lucide-react";
-import clsx from "clsx";
+import { ordinal } from "@/app/leaderboard/components/RankBadge";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import {
-  fmtG, nameOrShort, rankBg, useNow, usePoll,
-  Countdown, HowStep, StatCard, InviteLink, CrossLink, useOtherStanding, type Phase,
+  fmtG, useNow, usePoll,
+  Countdown, HowStep, HowToPlay, StatCard, Chip, InviteLink, SignInCard, CrossLink, useOtherStanding,
+  BoardHeader, BoardEmpty, BoardPodium, BoardRow, BoardRowSkeleton, PersonPill, LockedTag, YouBar,
+  type Phase, type BoardEntry,
 } from "./shared";
 
 interface InviteeRef { root: string; username: string | null; at: number; covered: boolean }
@@ -31,13 +32,25 @@ interface Data {
   you: (Participant & { rank: number | null }) | null;
 }
 
+interface Props {
+  address?: string;
+  myLink: string;
+  onSwitch: () => void;
+  onSignIn?: () => void;
+  /** Reports the competition phase up to the page header. */
+  onPhase?: (p: Phase) => void;
+}
+
+const PAGE = 25;
+
 // The REFERRAL competition: a flat rate per qualifying referral, unlocked at a
 // threshold, paid first-come-first-served until the pot is exhausted.
-export function ReferralBoard({ address, myLink, onSwitch }: { address?: string; myLink: string; onSwitch: () => void }) {
+export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
+  const [visible, setVisible] = useState(PAGE);
 
   const load = useCallback((force = false) => {
     const p = new URLSearchParams();
@@ -59,6 +72,7 @@ export function ReferralBoard({ address, myLink, onSwitch }: { address?: string;
   const now = useNow();
   const cfg = data?.config;
   const phase: Phase = data?.phase ?? "upcoming";
+  useEffect(() => { if (data) onPhase?.(data.phase); }, [data, onPhase]);
   usePoll(load, !cfg || now < cfg.endsAt + 300);
 
   const target = cfg ? (now < cfg.startsAt ? cfg.startsAt : cfg.endsAt) : 0;
@@ -72,187 +86,228 @@ export function ReferralBoard({ address, myLink, onSwitch }: { address?: string;
   const slotsLeft = stats ? Math.max(0, stats.slots - stats.slotsUsed) : 0;
   const potGone = !!stats && slotsLeft === 0 && stats.slots > 0;
 
+  // One batched profile request for every row's avatar, instead of one per row.
+  const addresses = useMemo(() => participants.map((p) => p.root), [participants]);
+  useProfiles(addresses);
+
+  const entries: BoardEntry[] = useMemo(() => participants.map((p) => ({
+    root: p.root,
+    username: p.username,
+    rank: p.rank,
+    sub: `${p.count} referral${p.count === 1 ? "" : "s"}${p.unlocked && p.covered < p.count ? ` · ${p.covered} paid by the pot` : ""}`,
+    value: fmtG(p.earnedWei),
+    unit: "G$",
+    tags: !p.unlocked ? <span className="hidden sm:inline-flex"><LockedTag n={Math.max(0, threshold - p.count)} /></span> : undefined,
+  })), [participants, threshold]);
+
+  const byRoot = useMemo(() => new Map(participants.map((p) => [p.root, p])), [participants]);
+  const loading = !data;
+  const showPodium = entries.length >= 3;
+  const podium = showPodium ? entries.slice(0, 3) : [];
+  const rest = showPodium ? entries.slice(3) : entries;
+  const shown = rest.slice(0, visible);
+
+  const details = (p: Participant) => (
+    <div>
+      <p className="text-sm/none text-nav-muted mb-3">
+        Referred · {p.invitees.length}{p.unlocked ? ` · ${p.covered} × ${perRefG.toLocaleString()} G$` : " · locked"}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {p.invitees.map((iv) => (
+          <PersonPill
+            key={iv.root}
+            root={iv.root}
+            username={iv.username}
+            active={iv.covered}
+            title={iv.covered ? `Paid ${perRefG.toLocaleString()} G$` : "Not covered by the pot"}
+            mark={iv.covered ? <Check className="w-3.5 h-3.5" strokeWidth={2} /> : undefined}
+          />
+        ))}
+        {p.invitees.length === 0 && <span className="text-sm/none text-nav-muted">No referrals yet.</span>}
+      </div>
+    </div>
+  );
+
+  const row = (e: BoardEntry, className?: string) => (
+    <BoardRow
+      key={`${className ?? ""}${e.root}`}
+      className={className}
+      e={e}
+      isMe={!!you && you.root === e.root}
+      open={expanded === e.root}
+      onToggle={() => setExpanded(expanded === e.root ? null : e.root)}
+      details={details(byRoot.get(e.root)!)}
+    />
+  );
+
   return (
     <>
-      {/* Hero */}
-      <div className="bg-ink text-cream border-2 border-ink rounded-2xl p-5 shadow-brutal mb-4 text-center">
-        <div className="inline-flex items-center gap-1.5 bg-lime text-ink font-black text-xs px-3 py-1 rounded-full mb-3">
-          <UserPlus size={13} /> REFERRAL COMPETITION
-        </div>
-        <p className="font-black text-4xl leading-none">{fmtG(potWei)} <span className="text-lime">G$</span></p>
-        <p className="text-sm text-cream/70 mt-2 leading-relaxed">
-          Earn <span className="text-lime font-bold">{perRefG.toLocaleString()} G$</span> for every friend you bring who
-          verifies and plays. Unlock your earnings at <span className="text-lime font-bold">{threshold} referrals</span> —
-          then it&apos;s paid first come, first served until the pot runs out.
-        </p>
-        <Countdown phase={phase} target={target} now={now} />
-      </div>
-
-      {/* Live stats */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-          <StatCard icon={<UserPlus size={18} />} value={stats.referrals.toLocaleString()} label="Referrals" />
-          <StatCard icon={<Users size={18} />} value={stats.qualifiedReferrers.toLocaleString()} label="Unlocked" />
-          <StatCard icon={<Coins size={18} />} value={fmtG(stats.paidOutWei)} label="G$ earned" />
-          <StatCard icon={<Wallet size={18} />} value={slotsLeft.toLocaleString()} label="Slots left" />
-        </div>
-      )}
-
-      {/* Pot exhausted banner */}
-      {potGone && (
-        <div className="border-2 border-ink rounded-2xl p-3 mb-4 bg-lime text-sm font-bold text-center shadow-brutal-sm">
-          The {fmtG(potWei)} G$ referral pot has been fully claimed. Referrals after this point no longer earn.
-        </div>
-      )}
-
-      {/* How it works */}
-      {cfg && (
-        <div className="bg-card border-2 border-ink rounded-2xl shadow-brutal-sm mb-4 overflow-hidden">
-          <button onClick={() => setHowOpen((v) => !v)}
-            className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-cream transition-colors">
-            <HelpCircle size={18} className="shrink-0" />
-            <span className="font-black text-base flex-1">How it works</span>
-            {howOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-          {howOpen && (
-            <div className="px-4 pb-4 pt-0 border-t-2 border-ink/10">
-              <ol className="space-y-2.5 mt-3">
-                <HowStep n={1}>Share your invite link. Your friend joins through it, verifies with GoodDollar (one face scan), and does a task — claims or creates a drop.</HowStep>
-                <HowStep n={2}>That counts as <span className="font-bold text-ink">1 referral</span>, worth <span className="font-bold text-ink">{perRefG.toLocaleString()} G$</span>.</HowStep>
-                <HowStep n={3}>Reach <span className="font-bold text-ink">{threshold} referrals</span> to <span className="font-bold text-ink">unlock</span> your earnings. Below {threshold} you earn nothing, so push to {threshold} first.</HowStep>
-                <HowStep n={4}>The pot pays <span className="font-bold text-ink">first come, first served</span> — earlier referrals are covered first, and there are <span className="font-bold text-ink">{stats?.slots.toLocaleString() ?? "—"}</span> paid slots in total. Get in early.</HowStep>
-              </ol>
-              <p className="mt-3 text-xs text-muted leading-relaxed">
-                Each person can only ever be referred once, by whoever invited them first. Earnings are paid to your wallet when the competition ends.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Your invite link + position */}
-      {address ? (
-        <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5">
-          <p className="text-[11px] font-black uppercase tracking-wider text-muted mb-2">Your invite link</p>
-          <InviteLink myLink={myLink} />
-          {you && (
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <span className="font-bold">{you.rank ? `You're #${you.rank}` : "Not on the board yet"}</span>
-              <span className="text-muted">{you.count} referral{you.count === 1 ? "" : "s"}</span>
-              {you.unlocked ? (
-                <span className="inline-flex items-center gap-1 text-xs font-black text-ink bg-lime border border-ink rounded-full px-2 py-0.5">
-                  <Check size={12} /> earned {fmtG(you.earnedWei)} G$
-                </span>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6 lg:gap-12 items-start">
+        {/* ── Left: overview + you ─────────────────────────────────────────── */}
+        <div className="flex flex-col gap-6 min-w-0">
+          <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 flex flex-col gap-y-6">
+            <div className="flex flex-col gap-y-3 min-w-0">
+              <span className="inline-flex items-center gap-2 self-start rounded-full bg-brand-soft text-brand px-3.5 py-2.5 text-sm/none">
+                <UserPlus className="w-[18px] h-[18px]" strokeWidth={2} /> Referral competition
+              </span>
+              {loading ? (
+                <Skeleton className="h-8 w-40 mt-1" />
               ) : (
-                <span className="inline-flex items-center gap-1 text-xs font-black text-ink bg-cream border border-ink rounded-full px-2 py-0.5">
-                  <Lock size={12} /> {Math.max(0, threshold - you.count)} more to unlock
-                </span>
+                <p className="text-[28px]/none lg:text-[32px]/none text-heading">
+                  {fmtG(potWei)} <span className="text-nav-muted">G$</span>
+                </p>
+              )}
+              {loading ? <Skeleton className="h-[14px] w-48" /> : (
+                <p className="text-sm/none text-nav-muted">Prize pool · {perRefG.toLocaleString()} G$ per referral</p>
               )}
             </div>
+
+            {loading ? (
+              <div className="flex flex-col gap-y-2.5"><Skeleton className="h-[14px] w-full" /><Skeleton className="h-[14px] w-5/6" /><Skeleton className="h-[14px] w-2/3" /></div>
+            ) : (
+              <p className="text-sm/[150%] text-nav-muted">
+                Earn <span className="text-heading">{perRefG.toLocaleString()} G$</span> for every friend you bring who
+                verifies and plays. Unlock your earnings at <span className="text-heading">{threshold} referrals</span>,
+                then it&apos;s paid first come, first served until the pot runs out.
+              </p>
+            )}
+
+            {loading ? (
+              <div className="flex gap-2 lg:gap-3">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="flex-1 h-[68px] rounded-2xl" />)}</div>
+            ) : (
+              <Countdown phase={phase} target={target} now={now} />
+            )}
+
+            {/* Pot exhausted */}
+            {potGone && (
+              <div className="flex items-start gap-3 rounded-2xl bg-streak-bg p-4">
+                <AlertCircle className="w-5 h-5 text-streak shrink-0 mt-0.5" strokeWidth={2} />
+                <p className="text-sm/[150%] text-heading">
+                  The {fmtG(potWei)} G$ referral pot has been fully claimed. Referrals after this point no longer earn.
+                </p>
+              </div>
+            )}
+
+            {/* Live stats */}
+            <div className="grid grid-cols-2 gap-3">
+              {stats ? (
+                <>
+                  <StatCard icon={<UserPlus className="w-5 h-5" strokeWidth={1.75} />} value={stats.referrals.toLocaleString()} label="Referrals" />
+                  <StatCard icon={<Users className="w-5 h-5" strokeWidth={1.75} />} value={stats.qualifiedReferrers.toLocaleString()} label="Unlocked" />
+                  <StatCard icon={<Coins className="w-5 h-5" strokeWidth={1.75} />} value={fmtG(stats.paidOutWei)} label="G$ earned" />
+                  <StatCard icon={<Wallet className="w-5 h-5" strokeWidth={1.75} />} value={slotsLeft.toLocaleString()} label="Slots left" />
+                </>
+              ) : (
+                [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[72px] rounded-2xl" />)
+              )}
+            </div>
+
+            {/* How it works */}
+            {cfg && (
+              <HowToPlay title="How it works" open={howOpen} onToggle={() => setHowOpen((v) => !v)}>
+                <ol className="flex flex-col gap-y-4">
+                  <HowStep n={1}>Share your invite link. Your friend joins through it, verifies with GoodDollar (one face scan), and does a task — claims or creates a drop.</HowStep>
+                  <HowStep n={2}>That counts as <b>1 referral</b>, worth <b>{perRefG.toLocaleString()} G$</b>.</HowStep>
+                  <HowStep n={3}>Reach <b>{threshold} referrals</b> to <b>unlock</b> your earnings. Below {threshold} you earn nothing, so push to {threshold} first.</HowStep>
+                  <HowStep n={4}>The pot pays <b>first come, first served</b> — earlier referrals are covered first, and there are <b>{stats?.slots.toLocaleString() ?? "—"}</b> paid slots in total. Get in early.</HowStep>
+                </ol>
+                <p className="text-sm/[150%] text-nav-muted">
+                  Each person can only ever be referred once, by whoever invited them first. Earnings are paid to your
+                  wallet when the competition ends.
+                </p>
+              </HowToPlay>
+            )}
+          </section>
+
+          {/* Your invite link + position */}
+          {address ? (
+            <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 flex flex-col gap-y-5">
+              <h2 className="text-xl/none text-heading">Your invite link</h2>
+              <InviteLink myLink={myLink} />
+              {loading ? (
+                <Skeleton className="h-10 w-48" />
+              ) : you ? (
+                <div className="flex flex-wrap gap-2">
+                  <Chip tone={you.rank ? "brand" : "surface"} icon={<Trophy strokeWidth={2} />}>
+                    {you.rank ? `You're ${ordinal(you.rank)}` : "Not on the board yet"}
+                  </Chip>
+                  <Chip>{you.count} referral{you.count === 1 ? "" : "s"}</Chip>
+                  {you.unlocked ? (
+                    <Chip tone="brand" icon={<Check strokeWidth={2} />}>Earned {fmtG(you.earnedWei)} G$</Chip>
+                  ) : (
+                    <Chip tone="surface" icon={<Lock strokeWidth={2} />}>{Math.max(0, threshold - you.count)} more to unlock</Chip>
+                  )}
+                </div>
+              ) : null}
+              <CrossLink
+                label="Points competition"
+                icon={<Trophy className="w-5 h-5" strokeWidth={1.75} />}
+                standing={other}
+                detail={other?.rank ? `${other.score} points there` : "Drop, claim and refer for a share of the pot"}
+                onSwitch={onSwitch}
+              />
+            </section>
+          ) : (
+            <SignInCard body="Sign in to get your invite link and start referring." onSignIn={onSignIn} />
           )}
         </div>
-      ) : (
-        <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm mb-5 text-sm text-muted">
-          Sign in to get your invite link and start referring.
-        </div>
-      )}
 
-      {/* Standing in the points competition */}
-      {address && (
-        <CrossLink
-          label="Points competition"
-          standing={other}
-          detail={other?.rank ? `${other.score} points there` : "Drop, claim and refer for a share of the pot — see the board"}
-          onSwitch={onSwitch}
-        />
-      )}
-
-      {/* Leaderboard */}
-      <div className="flex items-center gap-2 mb-3">
-        <UserPlus size={18} />
-        <p className="font-black text-lg">Leaderboard</p>
-        <button onClick={refresh} disabled={refreshing} aria-label="Refresh leaderboard" title="Refresh"
-          className="ml-auto w-9 h-9 rounded-full border-2 border-ink bg-card shadow-brutal-sm flex items-center justify-center hover:bg-lime active:translate-y-px transition-colors disabled:opacity-60">
-          <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-        </button>
-      </div>
-
-      {!data ? (
-        <div className="space-y-2">{[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-16 bg-border rounded-2xl animate-pulse" />)}</div>
-      ) : participants.length === 0 ? (
-        <div className="text-center py-14 space-y-2">
-          <Users size={40} className="mx-auto text-muted" strokeWidth={1.5} />
-          <p className="font-bold">No referrals yet</p>
-          <p className="text-sm text-muted">{phase === "live" ? "Share your invite link to get on the board." : "The competition hasn't started."}</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {participants.map((p) => {
-            const isMe = !!you && you.root === p.root;
-            const top3 = p.rank <= 3;
-            const open = expanded === p.root;
-            return (
-              <div key={p.root} className={clsx("border-2 border-ink rounded-2xl min-w-0", isMe ? "bg-lime shadow-brutal" : "bg-card shadow-brutal-sm")}>
-                <div className="flex items-center gap-3 px-3 py-3">
-                  <div className={clsx("w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-black shrink-0", rankBg(p.rank))}>{p.rank}</div>
-                  <ProfileAvatar address={p.root} size={34} ringColor={top3 ? "#111" : "#d6d5cf"} />
-                  <Link href={`/hunter/${p.root}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-sm truncate max-w-36">{nameOrShort(p.username, p.root)}</span>
-                      {!p.unlocked && (
-                        <span title={`Needs ${threshold} referrals to unlock`}
-                          className="inline-flex items-center gap-0.5 shrink-0 border border-ink rounded-full px-1.5 py-px text-[10px] font-black bg-cream">
-                          <Lock size={10} /> {Math.max(0, threshold - p.count)} to unlock
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs opacity-70 font-medium truncate">
-                      {p.count} referral{p.count === 1 ? "" : "s"}
-                      {p.unlocked && p.covered < p.count ? ` · ${p.covered} paid by the pot` : ""}
-                    </div>
-                  </Link>
-                  <div className="text-right shrink-0">
-                    <div className="font-black text-lg leading-none tabular-nums">{fmtG(p.earnedWei)}</div>
-                    <div className="text-[11px] opacity-70 font-semibold uppercase tracking-wide">G$</div>
-                  </div>
-                  <button onClick={() => setExpanded(open ? null : p.root)} aria-label={open ? "Hide" : "Show referrals"}
-                    className="w-8 h-8 rounded-lg border-2 border-ink flex items-center justify-center shrink-0 bg-cream">
-                    {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        {/* ── Right: the board ─────────────────────────────────────────────── */}
+        <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden min-w-0">
+          <BoardHeader
+            title="Leaderboard"
+            count={participants.length}
+            countLabel="referrers"
+            refreshing={refreshing}
+            onRefresh={refresh}
+            loading={loading}
+          />
+          {loading ? (
+            <>
+              <BoardPodium entries={[]} loading />
+              <div className="border-t border-line lg:border-t-0">
+                {Array.from({ length: 6 }, (_, i) => <BoardRowSkeleton key={i} />)}
+              </div>
+            </>
+          ) : entries.length === 0 ? (
+            <BoardEmpty
+              title="No referrals yet"
+              body={phase === "live" ? "Share your invite link to get on the board." : "The competition hasn't started."}
+            />
+          ) : (
+            <>
+              {showPodium && <BoardPodium entries={podium} loading={false} />}
+              <div className="border-t border-line lg:border-t-0">
+                {podium.map((e) => row(e, "lg:hidden"))}
+                {podium.map((e) => row(e, "hidden lg:block"))}
+                {shown.map((e) => row(e))}
+              </div>
+              {rest.length > visible && (
+                <div className="p-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setVisible((v) => v + PAGE)}
+                    className="rounded-full bg-surface hover:bg-nav-controls px-6 py-3 text-sm/none text-heading cursor-pointer motion-safe:transition-colors"
+                  >
+                    Show {Math.min(PAGE, rest.length - visible)} more
                   </button>
                 </div>
-                {open && (
-                  <div className="px-3 pb-3 pt-0">
-                    <p className="text-[11px] font-black uppercase tracking-wider text-muted mb-1.5">
-                      Referred ({p.invitees.length}){p.unlocked ? ` · ${p.covered} × ${perRefG.toLocaleString()} G$` : " · locked"}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {p.invitees.map((iv) => (
-                        <Link key={iv.root} href={`/hunter/${iv.root}`}
-                          className={clsx("inline-flex items-center gap-1 border-2 border-ink rounded-full pl-2 pr-2.5 py-1 text-xs font-bold transition-colors",
-                            iv.covered ? "bg-lime hover:bg-lime/80" : "bg-cream hover:bg-lime")}
-                          title={iv.covered ? `Paid ${perRefG.toLocaleString()} G$` : "Not covered by the pot"}>
-                          <ProfileAvatar address={iv.root} size={16} ringColor="#111" />
-                          {nameOrShort(iv.username, iv.root)}
-                          {iv.covered && <Check size={11} />}
-                          <ArrowUpRight size={11} className="opacity-60" />
-                        </Link>
-                      ))}
-                      {p.invitees.length === 0 && <span className="text-xs text-muted">—</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+              )}
+            </>
+          )}
+        </section>
+      </div>
 
-      <p className="mt-6 text-xs text-muted leading-relaxed">
-        Every friend you bring who verifies with GoodDollar and does a task earns you {perRefG.toLocaleString()} G$,
-        unlocked once you reach {threshold} referrals. The pot covers {stats?.slots.toLocaleString() ?? "—"} referrals in
-        total, awarded in the order they happened, so earlier referrals are safest. Earnings are paid to your wallet when
-        the competition ends.
-      </p>
+      {/* Your standing, pinned — only once the board is real and you're on it. */}
+      {you?.rank ? (
+        <YouBar
+          rank={you.rank}
+          root={you.root}
+          sub={`${you.count} referral${you.count === 1 ? "" : "s"}`}
+          value={fmtG(you.earnedWei)}
+          unit="G$"
+        />
+      ) : null}
     </>
   );
 }

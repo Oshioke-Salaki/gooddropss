@@ -10,7 +10,7 @@ interface Props {
   count?: number;
 }
 
-const DEFAULT_COLORS = ["#BFFD00", "#FF6400", "#00CFFF", "#FFD700", "#FF3B6B", "#111111"];
+const DEFAULT_COLORS = ["#2727E2", "#FF9825", "#00CFFF", "#FFD700", "#E9E9FC", "#121607"];
 
 /**
  * Full-screen confetti burst + haptic buzz. Renders nothing until `active`.
@@ -42,7 +42,7 @@ export function Celebration({ active, colors = DEFAULT_COLORS, count = 44 }: Pro
   if (!active) return null;
 
   return (
-    <div aria-hidden style={{ position: "fixed", inset: 0, zIndex: 3000, pointerEvents: "none", overflow: "hidden" }}>
+    <div aria-hidden className="fixed inset-0 z-[3000] pointer-events-none overflow-hidden">
       {pieces.map((p, i) => (
         <span
           key={i}

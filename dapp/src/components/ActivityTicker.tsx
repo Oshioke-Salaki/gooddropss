@@ -14,8 +14,11 @@ function timeAgo(ts: number): string {
   return `${Math.floor(diff / 86_400)}d ago`;
 }
 
+/**
+ * Live-activity toasts over the map: the latest drops and claims, newest on
+ * top, each auto-dismissing. Tapping one dismisses it early.
+ */
 export function ActivityTicker() {
-  const [items, setItems] = useState<ActivityItem[]>([]);
   const [visible, setVisible] = useState<ActivityItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const seenRef = useRef<Set<string>>(new Set());
@@ -77,96 +80,55 @@ export function ActivityTicker() {
   if (!visible.length) return null;
 
   return (
+    // Clipped container: the entrance animates vertically and the box never
+    // extends past the viewport edge, so nothing here can widen the page.
     <div
+      aria-live="polite"
+      className="fixed z-[997] right-3 lg:right-[60px] w-[min(280px,calc(100vw-24px))] overflow-hidden
+        flex flex-col items-end gap-2 pointer-events-none font-sans"
       style={{
-        position: "fixed",
-        top: "152px",
-        right: "12px",
-        zIndex: 997,
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        maxWidth: "230px",
-        pointerEvents: "none",
+        // Below the nav and, on phones, below the full-bleed search band.
+        top: "calc(var(--spacing-nav) + var(--gd-banner-h, 0px) + 80px)",
+        transition: "top 0.2s ease",
       }}
     >
       <AnimatePresence>
-        {visible.map((item) => (
-          <motion.div
-            key={item.id}
-            initial={{ opacity: 0, x: 40, scale: 0.92 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 40, scale: 0.92 }}
-            transition={{ type: "spring", damping: 26, stiffness: 360 }}
-            style={{
-              background: "rgba(14,15,22,0.92)",
-              backdropFilter: "blur(8px)",
-              border: "1px solid #2a2a3e",
-              borderRadius: 12,
-              padding: "8px 12px",
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              pointerEvents: "auto",
-              cursor: "pointer",
-              maxWidth: 260,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
-            }}
-            onClick={() => dismiss(item.id)}
-          >
-            <div
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: "50%",
-                background:
-                  item.type === "drop"
-                    ? "rgba(191,253,0,0.12)"
-                    : "rgba(0,207,255,0.12)",
-                border: `1px solid ${item.type === "drop" ? "#BFFD0044" : "#00CFFF44"}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
+        {visible.map((item) => {
+          const isDrop = item.type === "drop";
+          return (
+            <motion.button
+              key={item.id}
+              type="button"
+              initial={{ opacity: 0, y: -8, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              transition={{ type: "spring", damping: 26, stiffness: 360 }}
+              onClick={() => dismiss(item.id)}
+              title="Dismiss"
+              className="pointer-events-auto max-w-full flex items-center gap-2.5 rounded-full bg-white p-1.5 pr-4
+                shadow-[0px_0px_12px_0px_#0000000A] cursor-pointer text-left
+                motion-safe:transition-shadow hover:shadow-[0px_2px_12px_0px_#00000014]"
             >
-              {item.type === "drop" ? (
-                <Coins size={14} color="#BFFD00" />
-              ) : (
-                <Target size={14} color="#00CFFF" />
-              )}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#ddd",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
+              <span
+                className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center ${
+                  isDrop ? "bg-streak-bg text-streak" : "bg-brand-soft text-brand"
+                }`}
               >
-                <UserHandle address={item.address} />{" "}
-                <span
-                  style={{
-                    color: item.type === "drop" ? "#BFFD00" : "#00CFFF",
-                    fontWeight: 900,
-                  }}
-                >
-                  {item.type === "drop" ? "dropped" : "claimed"}
-                </span>{" "}
-                {formatG$(item.amount)} G$
-              </p>
-              <p
-                style={{ margin: 0, fontSize: 10, color: "#444", marginTop: 1 }}
-              >
-                {timeAgo(item.timestamp)}
-              </p>
-            </div>
-          </motion.div>
-        ))}
+                {isDrop
+                  ? <Coins className="w-4 h-4" strokeWidth={2} />
+                  : <Target className="w-4 h-4" strokeWidth={2} />}
+              </span>
+              <span className="min-w-0 flex flex-col gap-y-1">
+                <span className="text-xs/none text-heading truncate">
+                  <UserHandle address={item.address} />
+                  <span className="text-nav-muted">{isDrop ? " dropped " : " claimed "}</span>
+                  {formatG$(item.amount)} G$
+                </span>
+                <span className="text-[11px]/none text-nav-muted">{timeAgo(item.timestamp)}</span>
+              </span>
+            </motion.button>
+          );
+        })}
       </AnimatePresence>
     </div>
   );

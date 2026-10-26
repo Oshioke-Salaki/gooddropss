@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useReducer } from "react";
 import { useAccount } from "wagmi";
 
 export interface Profile {
@@ -53,6 +53,78 @@ export function refreshProfile(address: string) {
       new CustomEvent(PROFILE_UPDATED, { detail: { address: address.toLowerCase() } }),
     );
   }
+}
+
+/**
+ * Resolve many addresses in ONE request, sharing the cache `useProfile` uses.
+ *
+ * Each pending address is registered in the same `inflight` map, so the
+ * `useProfile` calls inside every row and avatar await this batch instead of
+ * firing their own request — a leaderboard of 200 wallets costs one round-trip,
+ * not 200.
+ *
+ * The claim happens during RENDER, not in an effect. React runs child effects
+ * before the parent's, so an effect here would land after every row had already
+ * started its own fetch — exactly the storm this exists to prevent. `useMemo` is
+ * safe for it: registering is idempotent (guarded by the cache/inflight maps),
+ * so a discarded or double-invoked render costs nothing.
+ *
+ * Returns a snapshot keyed by lowercased address (`undefined` = still loading).
+ */
+export function useProfiles(addresses: string[]): Record<string, Profile | null | undefined> {
+  const [tick, bump] = useReducer((n: number) => n + 1, 0);
+
+  // Sorted join: a stable identity for the set, so a re-render that produces an
+  // equal-but-new array doesn't re-trigger the fetch.
+  const key = useMemo(
+    () => [...new Set(addresses.map((a) => a.toLowerCase()))].sort().join(","),
+    [addresses],
+  );
+
+  const pending = useMemo(() => {
+    if (!key || typeof window === "undefined") return null;
+    const missing = key.split(",").filter((a) => !cache.has(a) && !inflight.has(a));
+    if (missing.length === 0) return null;
+
+    const batch = fetch("/api/profile/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ addresses: missing }),
+    })
+      .then((r) => (r.ok ? r.json() : { profiles: {} }))
+      .then((d) => (d?.profiles ?? {}) as Record<string, Profile | null>)
+      .catch(() => ({}) as Record<string, Profile | null>);
+
+    for (const addr of missing) {
+      inflight.set(
+        addr,
+        batch.then((profs) => {
+          const v = profs[addr] ?? null;
+          cache.set(addr, v);
+          inflight.delete(addr);
+          return v;
+        }),
+      );
+    }
+    return batch;
+  }, [key]);
+
+  useEffect(() => {
+    if (!pending) return;
+    let active = true;
+    pending.then(() => { if (active) bump(); });
+    return () => { active = false; };
+  }, [pending]);
+
+  return useMemo(() => {
+    const out: Record<string, Profile | null | undefined> = {};
+    if (!key) return out;
+    for (const a of key.split(",")) out[a] = cache.get(a);
+    return out;
+    // `tick` is the dep that matters: the cache isn't reactive, so the batch
+    // landing has to force this snapshot to recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, tick]);
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────

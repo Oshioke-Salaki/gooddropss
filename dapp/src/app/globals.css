@@ -16,12 +16,48 @@
   --color-border: #e8e6e0;
   --color-danger: #ff3b3b;
 
-  --font-sans: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  /* DM Sans is the app font (2026 refresh). */
+  --font-sans: var(--font-dm-sans), "DM Sans", sans-serif;
+  /* Numeric display face — leaderboard rank badges (`font-anta`). */
+  --font-anta: var(--font-anta-src), "Anta", sans-serif;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
+
+  /* ── Nav (2026 refresh) ───────────────────────────────────────────────────
+     Everything about the top bar is driven from here — change a value and the
+     whole nav follows. Used as bg-nav, text-nav-muted, bg-nav-active, etc. */
+  --color-nav: #F8F8F8;              /* bar background */
+  --color-nav-muted: #6B6E63;        /* inactive link text */
+  --color-nav-active: #1B1B1B;       /* active link text */
+  --color-nav-active-bg: #ECECEC;    /* active link pill */
+  --color-nav-controls: #ECECEC;     /* right-hand user-controls pill */
+  --color-nav-pill: #FFFFFF;         /* inner avatar + balance pill */
+
+  /* Brand blue — primary actions (Sign in, Drop G$, …) in the 2026 refresh. */
+  --color-brand: #2727E2;
+  --color-brand-soft: #E9E9FC;       /* tinted brand chip (e.g. "Max") */
+
+  /* ── Surfaces & text (2026 refresh) ─────────────────────────────────────── */
+  --color-heading: #121607;          /* card/row headings */
+  --color-line: #F0F0F0;             /* hairline row borders */
+  --color-surface: #F5F5F5;          /* icon circles, close/arrow buttons */
+  --color-streak: #FF9825;           /* streak accent */
+  --color-streak-bg: #FFF5E9;        /* streak chip background */
+  --color-streak-ring: #FF98251A;    /* streak icon circle */
+
+  /* Total nav height: 16px padding × 2 + 40px content, the same at every
+     breakpoint. Pages clear it with `pt-nav` and the map overlays hang off
+     `top-nav`, so this is the one value to edit if the bar's height changes. */
+  --spacing-nav: 72px;
 }
+
+
+/* Horizontal rails (the mobile nav links) scroll without a visible scrollbar. */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 
 /* ── Layout insets ──────────────────────────────────────────────────────────
    The bottom of the map is shared by the bottom nav, the cold-start sheet, the
@@ -269,4 +305,81 @@
 ::-webkit-scrollbar-thumb {
   background: #888888;
   border-radius: 2px;
+}
+
+/* ── Modal entrance (2026 refresh) ───────────────────────────────────────────
+   Used by the auth sheet. Held here (not inline) so every modal can share one
+   motion language. Both respect prefers-reduced-motion. */
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes modal-rise {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.modal-fade-in { animation: modal-fade-in 0.18s ease-out both; }
+
+/* Desktop only. Below lg the same card is a bottom sheet driven by useSheetDrag,
+   and a keyframed transform with fill-mode:both would outrank its drag offset. */
+@media (min-width: 1024px) {
+  .modal-rise { animation: modal-rise 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+
+/* Exit counterparts. A drawer that fades in and then vanishes reads as a bug —
+   the way out should mirror the way in. */
+@keyframes modal-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes drawer-out-lg {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(24px); }
+}
+.modal-fade-out { animation: modal-fade-out 0.22s ease-in both; }
+@media (min-width: 1024px) {
+  .drawer-out-lg { animation: drawer-out-lg 0.24s cubic-bezier(0.4, 0, 1, 1) both; }
+}
+
+/* Wallet + Send G$ panels. Drops in from the edge it's anchored to: below the nav
+   on mobile, the top-right corner on desktop. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.panel-in { animation: panel-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Desktop-only variant, for panels that are draggable bottom sheets below lg —
+   there, useSheetDrag owns the transform. (`lg:panel-in` can't exist: these are
+   hand-written classes, so Tailwind has no variant to generate.) */
+@media (min-width: 1024px) {
+  .panel-in-lg { animation: panel-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-fade-in,
+  .modal-rise,
+  .panel-in,
+  .panel-in-lg { animation: none; }
+}
+
+
+/* ── Profile drawer ──────────────────────────────────────────────────────────
+   Below lg the drawer is a bottom sheet driven by useSheetDrag, so these are
+   scoped to desktop — a keyframed transform there would outrank the drag offset. */
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes viewer-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateX(0) scale(1); }
+}
+@media (min-width: 1024px) {
+  .drawer-in-lg { animation: drawer-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .viewer-in-lg { animation: viewer-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in-lg,
+  .viewer-in-lg { animation: none; }
 }

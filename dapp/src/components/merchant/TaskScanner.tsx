@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
-import { Camera, X, Gift } from "lucide-react";
+import { Check, Loader2, QrCode, AlertCircle } from "lucide-react";
 import { approveMessage } from "@/lib/taskCreateMsg";
+import { Sheet } from "@/components/ui/Sheet";
 
 const NONCE_RE = /^[0-9a-f]{32}$/;
 
@@ -86,48 +87,109 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const close = () => { stopCamera(); onClose(); };
+
   return (
-    <div className="border-2 border-ink rounded-2xl p-4 bg-card shadow-brutal-sm space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="flex items-center gap-1.5 font-black text-sm"><Camera size={16} /> Scan &amp; approve</p>
-        <button onClick={() => { stopCamera(); onClose(); }} className="w-7 h-7 rounded-full border-2 border-ink flex items-center justify-center"><X size={14} /></button>
-      </div>
-
-      {result && (
-        <div className={`rounded-xl border-2 border-ink px-3 py-2.5 text-sm font-bold ${result.ok ? "bg-lime text-ink" : "bg-danger/10 text-danger"}`}>
-          {result.msg}
-        </div>
-      )}
-
-      {/* Camera view */}
-      <div className="relative rounded-xl overflow-hidden border-2 border-ink bg-ink/5" style={{ aspectRatio: "1 / 1" }}>
-        <video ref={videoRef} playsInline muted className="w-full h-full object-cover" style={{ display: camActive ? "block" : "none" }} />
-        {!camActive && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-            <Gift size={40} className="text-muted" strokeWidth={1.5} />
-            <p className="text-xs text-muted">Point the camera at the hunter&apos;s code, or type it below.</p>
+    <Sheet title="Scan & approve" onClose={close} dismissible={!busy} width={440}>
+      <div className="flex flex-col gap-y-5 pt-6">
+        {result && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`flex items-start gap-3 rounded-2xl px-4 py-3 text-sm/[140%] ${
+              result.ok ? "bg-brand-soft text-brand" : "bg-[#FFF0F0] text-danger"
+            }`}
+          >
+            {result.ok
+              ? <Check className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={2} />
+              : <AlertCircle className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={2} />}
+            <span>{result.msg}</span>
           </div>
         )}
-        {camActive && <div className="absolute inset-6 border-2 border-lime rounded-lg pointer-events-none" />}
-      </div>
 
-      {supported ? (
-        camActive
-          ? <button onClick={stopCamera} className="btn-brutal w-full py-2.5 rounded-xl font-black text-sm bg-ink text-cream">Stop camera</button>
-          : <button onClick={startCamera} disabled={busy} className="btn-brutal w-full py-2.5 rounded-xl font-black text-sm bg-lime text-ink">Start camera</button>
-      ) : (
-        <p className="text-[11px] text-muted text-center">Camera scanning isn&apos;t supported on this browser — type the code instead.</p>
-      )}
+        {/* Camera view */}
+        <div className="relative rounded-3xl overflow-hidden bg-surface aspect-square">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+            style={{ display: camActive ? "block" : "none" }}
+          />
+          {!camActive && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <span className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-heading">
+                <QrCode className="w-6 h-6" strokeWidth={1.75} />
+              </span>
+              <p className="text-sm/[140%] text-nav-muted">
+                Point the camera at the hunter&apos;s code, or type it below.
+              </p>
+            </div>
+          )}
+          {camActive && (
+            <div aria-hidden className="absolute inset-8 rounded-2xl border-2 border-white/90 pointer-events-none" />
+          )}
+        </div>
 
-      {/* Manual fallback */}
-      <div className="flex gap-2">
-        <input value={manual} onChange={(e) => setManual(e.target.value.trim().toLowerCase())} placeholder="Enter code manually"
-          className="flex-1 border-2 border-ink rounded-xl px-3 py-2.5 text-sm font-mono outline-none" />
-        <button onClick={() => approve(manual)} disabled={busy || !NONCE_RE.test(manual)}
-          className="btn-brutal px-4 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-50">
-          {busy ? "…" : "Approve"}
-        </button>
+        {supported ? (
+          camActive ? (
+            <button
+              type="button"
+              onClick={stopCamera}
+              className="w-full h-12 rounded-full border border-line bg-white text-sm/none text-heading cursor-pointer
+                motion-safe:transition-colors hover:bg-surface"
+            >
+              Stop camera
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startCamera}
+              disabled={busy}
+              className="w-full h-12 rounded-full bg-brand text-white text-base/none cursor-pointer
+                motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed"
+            >
+              Start camera
+            </button>
+          )
+        ) : (
+          <p className="text-sm/[140%] text-nav-muted text-center">
+            Camera scanning isn&apos;t supported in this browser — type the code instead.
+          </p>
+        )}
+
+        {/* Manual fallback */}
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => { e.preventDefault(); approve(manual); }}
+        >
+          <label className="flex-1 min-w-0">
+            <span className="sr-only">Reward code</span>
+            <input
+              value={manual}
+              onChange={(e) => setManual(e.target.value.trim().toLowerCase())}
+              placeholder="Enter code manually"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              disabled={busy}
+              className="w-full h-12 rounded-full bg-surface px-5 text-sm/none text-heading font-mono
+                placeholder:text-nav-muted placeholder:font-sans border border-transparent outline-none
+                motion-safe:transition-colors focus:border-brand disabled:opacity-60"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={busy || !NONCE_RE.test(manual)}
+            className="shrink-0 h-12 px-5 rounded-full bg-nav-active text-white text-sm/none cursor-pointer
+              flex items-center gap-2 motion-safe:transition-opacity hover:opacity-90
+              disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:opacity-100"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {busy ? "Signing…" : "Approve"}
+          </button>
+        </form>
       </div>
-    </div>
+    </Sheet>
   );
 }

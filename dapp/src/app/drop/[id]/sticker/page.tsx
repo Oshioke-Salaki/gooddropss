@@ -1,13 +1,19 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { Printer, Link2, Search, QrCode } from "lucide-react";
 import { fetchDropByDropId } from "@/lib/subgraph";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
-import { formatG$, gpsToDeg, getDropRarity, RARITY, parseDropHint } from "@/lib/utils";
+import { formatG$, getDropRarity, RARITY, parseDropHint } from "@/lib/utils";
+import { Logo } from "@/components/Logo";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import type { Drop } from "@/types";
-import { use } from "react";
 
+/**
+ * Printable sticker for a drop. The sticker itself is plain white with a hairline
+ * border so it prints cleanly on any printer; the action bar above it is screen-only.
+ */
 export default function StickerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [drop, setDrop] = useState<Drop | null | undefined>(undefined);
@@ -42,15 +48,22 @@ export default function StickerPage({ params }: { params: Promise<{ id: string }
   const pageUrl = `https://gooddrops.xyz/drop/${id}`;
 
   if (drop === undefined) return (
-    <div style={styles.loading}>
-      <div style={{ fontSize: 48 }}>📍</div>
-      <p style={{ fontWeight: 700, color: "#888", marginTop: 12 }}>Loading…</p>
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-[520px] bg-white rounded-3xl p-6 flex flex-wrap justify-center gap-6">
+        <Skeleton className="w-[176px] h-[176px] rounded-2xl" />
+        <div className="flex-1 min-w-[200px] flex flex-col gap-3">
+          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-10 w-40" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </div>
     </div>
   );
 
   if (!drop) return (
-    <div style={styles.loading}>
-      <p style={{ fontWeight: 700 }}>Drop not found</p>
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <p className="text-base/none text-heading">Drop not found</p>
     </div>
   );
 
@@ -60,70 +73,67 @@ export default function StickerPage({ params }: { params: Promise<{ id: string }
   const isChain = chainNextId !== null || isChainLast;
 
   return (
-    <>
-      {/* Print button — hidden when printing */}
-      <div style={styles.printBar}>
-        <p style={{ margin: 0, fontSize: 13, color: "#666" }}>
-          Print this sticker and attach it anywhere — hunters scan to claim!
+    <div className="min-h-screen bg-surface font-sans">
+      {/* Action bar — screen only */}
+      <div className="no-print bg-white border-b border-line px-4 lg:px-15 py-4 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm/[140%] text-nav-muted">
+          Print this sticker and attach it anywhere — hunters scan to claim.
         </p>
-        <button onClick={() => window.print()} style={styles.printBtn}>
-          🖨️ Print Sticker
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="h-11 px-5 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer
+            motion-safe:transition-colors hover:bg-brand/90"
+        >
+          <Printer className="w-4 h-4" strokeWidth={2} />
+          Print sticker
         </button>
       </div>
 
       {/* ── Sticker ──────────────────────────────────────────────────────── */}
-      <div style={styles.page}>
-        <div style={styles.sticker}>
-          {/* Left: QR */}
-          <div style={styles.qrSide}>
-            <QRCodeSVG
-              value={pageUrl}
-              size={160}
-              level="H"
-              includeMargin={false}
-              style={{ display: "block" }}
-            />
+      <div className="print-page flex flex-col items-center justify-center px-4 py-8 min-h-[calc(100vh-73px)]">
+        <div
+          className="sticker w-full max-w-[520px] bg-white rounded-3xl border border-line p-6
+            flex flex-wrap justify-center items-stretch gap-6
+            shadow-[0px_0px_12px_0px_#0000000A] print:shadow-none"
+        >
+          {/* QR */}
+          <div className="shrink-0 rounded-2xl border border-line p-2 bg-white flex items-center justify-center">
+            <QRCodeSVG value={pageUrl} size={160} level="H" includeMargin={false} style={{ display: "block" }} />
           </div>
 
-          {/* Right: Info */}
-          <div style={styles.infoSide}>
-            {/* Logo */}
-            <div style={styles.logo}>
-              <span style={styles.logoText}>good</span>
-              <span style={styles.logoBadge}>drops.</span>
-            </div>
+          {/* Info — wraps under the QR on narrow phones so the page never scrolls sideways */}
+          <div className="flex-[1_1_200px] min-w-0 flex flex-col justify-center gap-3">
+            <Logo size="sm" />
 
-            {/* Headline */}
-            <p style={styles.headline}>
-              {isChain ? "🔗 Hunt Chain" : "💰 Hidden G$ inside!"}
+            <p className="flex items-center gap-2 text-lg/none text-heading">
+              {isChain ? <Link2 className="w-5 h-5 text-brand" strokeWidth={2} /> : <QrCode className="w-5 h-5 text-brand" strokeWidth={2} />}
+              {isChain ? "Hunt Chain" : "Hidden G$ inside"}
             </p>
 
-            {/* Amount */}
-            <div style={styles.amountRow}>
-              <span style={{ ...styles.amountNum, color: r.color === "#BFFD00" ? "#111" : r.color }}>
-                {formatG$(drop.amount)}
-              </span>
-              <span style={styles.amountUnit}>G$</span>
-              <span style={{ ...styles.rarityBadge, background: r.color, color: r.textColor }}>
+            <div className="flex items-baseline gap-x-2 flex-wrap">
+              <span className="font-anta text-[40px]/none text-brand">{formatG$(drop.amount)}</span>
+              <span className="text-lg/none text-heading">G$</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 h-6 text-[11px]/none text-heading ml-1">
+                <span className="w-2 h-2 rounded-full" style={{ background: r.color }} />
                 {r.label}
               </span>
             </div>
 
-            {/* Clue */}
             {hint && (
-              <div style={styles.clueBox}>
-                <p style={styles.clueLabel}>🔍 Clue</p>
-                <p style={styles.clueText}>&ldquo;{hint}&rdquo;</p>
+              <div className="border-l-2 border-brand pl-3">
+                <p className="flex items-center gap-1.5 text-[11px]/none text-nav-muted uppercase tracking-wider">
+                  <Search className="w-3 h-3" strokeWidth={2} /> Clue
+                </p>
+                <p className="text-sm/[140%] text-heading italic mt-1.5 break-words">&ldquo;{hint}&rdquo;</p>
               </div>
             )}
 
-            {/* CTA */}
-            <p style={styles.cta}>Scan to claim at gooddrops.xyz</p>
+            <p className="text-xs/none text-nav-muted">Scan to claim at gooddrops.xyz</p>
           </div>
         </div>
 
-        {/* Instruction below sticker */}
-        <p style={styles.instruction} className="no-print">
+        <p className="no-print mt-5 max-w-[480px] text-center text-sm/[160%] text-nav-muted">
           Cut along the border and attach anywhere — storefronts, lamp posts, benches.
           Verified GoodDollar users will find and claim it.
         </p>
@@ -133,137 +143,10 @@ export default function StickerPage({ params }: { params: Promise<{ id: string }
         @media print {
           .no-print { display: none !important; }
           body { margin: 0; padding: 0; background: white; }
-          [data-print-bar] { display: none !important; }
+          .print-page { min-height: 0; padding: 0; }
+          .sticker { border-color: #121607; }
         }
-        * { box-sizing: border-box; }
       `}</style>
-    </>
+    </div>
   );
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const styles: Record<string, React.CSSProperties> = {
-  loading: {
-    minHeight: "100vh",
-    display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center",
-    background: "#f5f4f0",
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
-  printBar: {
-    background: "#111", color: "#fff",
-    padding: "12px 24px",
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    gap: 12, flexWrap: "wrap",
-    fontFamily: "'Space Grotesk', sans-serif",
-  } as React.CSSProperties & { "[data-print-bar]"?: unknown },
-  printBtn: {
-    background: "#BFFD00", color: "#111",
-    border: "none", borderRadius: 8,
-    padding: "8px 20px",
-    fontWeight: 800, fontSize: 14,
-    cursor: "pointer", fontFamily: "inherit",
-  },
-  page: {
-    minHeight: "calc(100vh - 52px)",
-    background: "#f5f4f0",
-    display: "flex", flexDirection: "column",
-    alignItems: "center", justifyContent: "center",
-    padding: "32px 16px",
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
-  sticker: {
-    background: "#fff",
-    border: "3px solid #111",
-    borderRadius: 20,
-    boxShadow: "6px 6px 0 #111",
-    padding: 24,
-    display: "flex",
-    alignItems: "stretch",
-    gap: 24,
-    maxWidth: 520,
-    width: "100%",
-  },
-  qrSide: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 8,
-    background: "#fff",
-    border: "2px solid #111",
-    borderRadius: 12,
-    flexShrink: 0,
-  },
-  infoSide: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    justifyContent: "center",
-  },
-  logo: {
-    display: "flex", alignItems: "center", gap: 4,
-  },
-  logoText: {
-    fontWeight: 900, fontSize: 16, color: "#111",
-  },
-  logoBadge: {
-    background: "#111", color: "#BFFD00",
-    fontWeight: 900, fontSize: 14,
-    padding: "1px 6px",
-  },
-  headline: {
-    margin: 0,
-    fontWeight: 900, fontSize: 22,
-    color: "#111", lineHeight: 1.2,
-  },
-  amountRow: {
-    display: "flex", alignItems: "baseline", gap: 6,
-  },
-  amountNum: {
-    fontWeight: 900, fontSize: 42, lineHeight: 1,
-  },
-  amountUnit: {
-    fontWeight: 900, fontSize: 22, color: "#111",
-  },
-  rarityBadge: {
-    borderRadius: 100,
-    padding: "3px 10px",
-    fontSize: 10,
-    fontWeight: 900,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase" as const,
-    border: "1.5px solid rgba(0,0,0,0.2)",
-  },
-  clueBox: {
-    borderLeft: "3px solid #BFFD00",
-    paddingLeft: 10,
-  },
-  clueLabel: {
-    margin: "0 0 3px",
-    fontSize: 10, fontWeight: 800,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.08em",
-    color: "#888",
-  },
-  clueText: {
-    margin: 0,
-    fontSize: 13, fontWeight: 600,
-    color: "#333", lineHeight: 1.4,
-    fontStyle: "italic",
-  },
-  cta: {
-    margin: 0,
-    fontSize: 12, fontWeight: 700,
-    color: "#888",
-  },
-  instruction: {
-    marginTop: 20,
-    maxWidth: 480,
-    textAlign: "center" as const,
-    fontSize: 13, color: "#888",
-    lineHeight: 1.6,
-    fontFamily: "'Space Grotesk', sans-serif",
-  },
-};

@@ -40,8 +40,8 @@ export function HunterFindsMap({ points }: { points: FindPoint[] }) {
       for (const p of points) {
         const el = document.createElement("div");
         el.style.cssText =
-          `width:15px;height:15px;border-radius:50%;background:${p.color};` +
-          `border:2px solid #111;box-shadow:0 0 8px ${p.color};`;
+          `width:14px;height:14px;border-radius:50%;background:${p.color};` +
+          `border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.25),0 0 8px ${p.color};`;
         el.title = `${p.amount} G$`;
         new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map);
         bounds.extend([p.lng, p.lat]);
@@ -62,9 +62,14 @@ export function HunterFindsMap({ points }: { points: FindPoint[] }) {
   if (points.length === 0) return null;
 
   return (
-    <div className="relative rounded-2xl border-2 border-ink overflow-hidden shadow-brutal" style={{ height: 240 }}>
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-      <div className="absolute top-2 right-2 bg-ink text-lime text-[10px] font-black px-2 py-1 rounded-full pointer-events-none">
+    // The parent card supplies the rounded border; this stays chrome-free so
+    // it can sit inside any container.
+    <div className="relative h-[220px] overflow-hidden">
+      <div ref={containerRef} className="w-full h-full" />
+      <div
+        className="absolute top-3 right-3 bg-white text-heading text-sm/none px-3 py-2 rounded-full pointer-events-none"
+        style={{ boxShadow: "0px 0px 12px 0px #0000000A" }}
+      >
         {points.length} {points.length === 1 ? "find" : "finds"}
       </div>
     </div>

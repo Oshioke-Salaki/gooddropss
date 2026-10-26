@@ -1,300 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract } from "wagmi";
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { Nav, BottomNav } from "@/components/Nav";
+import { Nav } from "@/components/Nav";
 import { useDrops } from "@/hooks/useDrops";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
-import {
-  formatG$,
-  timeLeft,
-  gpsToDeg,
-  formatDegrees,
-  openGoogleMapsWalking,
-  parseDropHint,
-} from "@/lib/utils";
-import { UserHandle } from "@/components/UserHandle";
+import { formatG$ } from "@/lib/utils";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { DROP_STATUS, type Drop } from "@/types";
-import { QRCodeSVG } from "qrcode.react";
-import { QrCode, Copy, Check, Share2, X, Printer, RefreshCw, Undo2 } from "lucide-react";
-import clsx from "clsx";
-
-const STATUS_LABEL: Record<number, string> = {
-  [DROP_STATUS.Active]: "Active",
-  [DROP_STATUS.Claimed]: "Claimed",
-  [DROP_STATUS.Reclaimed]: "Reclaimed",
-};
-
-function DropCard({
-  drop,
-  onReclaim,
-  onReactivate,
-  isReclaiming,
-  isReactivating,
-  onShare,
-}: {
-  drop: Drop;
-  onReclaim: (id: bigint) => void;
-  onReactivate: (id: bigint) => void;
-  isReclaiming: boolean;
-  isReactivating: boolean;
-  onShare: (drop: Drop) => void;
-}) {
-  const isExpiredActive =
-    drop.status === DROP_STATUS.Active &&
-    drop.expiry < Math.floor(Date.now() / 1000);
-  const isActive =
-    drop.status === DROP_STATUS.Active && !isExpiredActive;
-  const busy = isReclaiming || isReactivating;
-  const { isPrivate, hint: cleanHint, chainNextId, isChainLast } = parseDropHint(drop.hint);
-  const isChain = chainNextId !== null || isChainLast;
-
-  return (
-    <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm space-y-3">
-      <div className="flex items-start justify-between">
-        <div>
-          <span className="text-2xl font-black">{formatG$(drop.amount)}</span>
-          <span className="text-lime font-black text-lg ml-1">G$</span>
-          {isPrivate && !isChain && (
-            <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full border border-ink bg-cream text-muted">
-              📫 Private
-            </span>
-          )}
-          {isChain && (
-            <span className="ml-2 text-xs font-bold px-2 py-0.5 rounded-full border border-ink bg-ink text-lime">
-              🔗 Chain
-            </span>
-          )}
-        </div>
-        <span
-          className={clsx(
-            "text-xs font-bold px-2.5 py-1 rounded-full border-2",
-            isActive && "bg-lime border-ink text-ink",
-            isExpiredActive && "bg-danger/10 border-danger text-danger",
-            drop.status === DROP_STATUS.Claimed &&
-              "bg-border border-muted text-muted",
-            drop.status === DROP_STATUS.Reclaimed &&
-              "bg-border border-muted text-muted"
-          )}
-        >
-          {isExpiredActive ? "Expired" : STATUS_LABEL[drop.status]}
-        </span>
-      </div>
-
-      {cleanHint && (
-        <p className="text-sm text-muted italic border-l-2 border-lime pl-3 leading-relaxed">
-          &quot;{cleanHint}&quot;
-        </p>
-      )}
-
-      <div className="text-xs text-muted space-y-1">
-        {/* Private drops store (0,0) on-chain — showing maps would go to the ocean */}
-        {isPrivate ? (
-          <div className="flex items-center gap-1.5">📍 Location hidden</div>
-        ) : (
-          <button
-            onClick={() => openGoogleMapsWalking(gpsToDeg(drop.lat), gpsToDeg(drop.lng))}
-            className="flex items-center gap-1.5 hover:text-ink transition-colors"
-          >
-            📍 {formatDegrees(drop.lat)} N, {formatDegrees(drop.lng)} E
-            <span className="underline font-semibold">Open in Maps ↗</span>
-          </button>
-        )}
-        {isActive && <div>⏰ {timeLeft(drop.expiry)}</div>}
-        {drop.status === DROP_STATUS.Claimed && drop.claimer && (
-          <div>✓ Claimed by <UserHandle address={drop.claimer} /></div>
-        )}
-        {isExpiredActive && <div>Reactivate it, or reclaim your G$</div>}
-      </div>
-
-      {isExpiredActive && (
-        <div className="flex gap-2">
-          <button
-            onClick={() => !busy && onReactivate(drop.id)}
-            disabled={busy}
-            className={clsx(
-              "btn-brutal flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5",
-              busy ? "bg-border text-muted cursor-not-allowed shadow-none" : "bg-ink text-lime"
-            )}
-            style={busy ? { boxShadow: "none", transform: "none" } : {}}
-          >
-            {isReactivating ? "Reactivating…" : <><RefreshCw size={14} /> Reactivate</>}
-          </button>
-          <button
-            onClick={() => !busy && onReclaim(drop.id)}
-            disabled={busy}
-            className={clsx(
-              "btn-brutal flex-1 py-2.5 rounded-xl text-sm font-bold transition-all",
-              busy ? "bg-border text-muted cursor-not-allowed shadow-none" : "bg-lime text-ink"
-            )}
-            style={busy ? { boxShadow: "none", transform: "none" } : {}}
-          >
-            {isReclaiming ? "Reclaiming…" : `Reclaim ${formatG$(drop.amount)} G$`}
-          </button>
-        </div>
-      )}
-
-      {/* Share / QR + Print sticker buttons */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => onShare(drop)}
-          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-lime hover:text-ink hover:border-ink transition-colors"
-        >
-          <QrCode size={13} />
-          Share / QR
-        </button>
-        <a
-          href={`/drop/${drop.id}/sticker`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-ink hover:text-lime hover:border-ink transition-colors"
-          style={{ textDecoration: "none" }}
-        >
-          <Printer size={13} />
-          Print Sticker
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop) => void }) {
-  const { hint: cleanHint, isChainLast } = parseDropHint(drop.hint);
-  return (
-    <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm space-y-3">
-      <div className="flex items-start justify-between">
-        <div>
-          <span className="text-2xl font-black">{formatG$(drop.amount)}</span>
-          <span className="text-lime font-black text-lg ml-1">G$</span>
-        </div>
-        <span className="text-xs font-bold px-2.5 py-1 rounded-full border-2 bg-lime border-ink text-ink">
-          {isChainLast ? "🏆 Hunt Complete" : "Claimed 🎯"}
-        </span>
-      </div>
-
-      {cleanHint && (
-        <p className="text-sm text-muted italic border-l-2 border-lime pl-3 leading-relaxed">
-          &quot;{cleanHint}&quot;
-        </p>
-      )}
-
-      <div className="text-xs text-muted space-y-1">
-        <button
-          onClick={() => openGoogleMapsWalking(gpsToDeg(drop.lat), gpsToDeg(drop.lng))}
-          className="flex items-center gap-1.5 hover:text-ink transition-colors"
-        >
-          📍 {formatDegrees(drop.lat)} N, {formatDegrees(drop.lng)} E
-          <span className="underline font-semibold">Open in Maps ↗</span>
-        </button>
-        {drop.claimedAt > 0 && (
-          <div>
-            ⏱ Claimed {new Date(drop.claimedAt * 1000).toLocaleDateString()}
-          </div>
-        )}
-        <div>Dropped by <UserHandle address={drop.dropper} /></div>
-      </div>
-
-      <button
-        onClick={() => onShare(drop)}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold border border-ink text-muted hover:bg-lime hover:text-ink hover:border-ink transition-colors"
-      >
-        <QrCode size={13} />
-        Share / QR
-      </button>
-    </div>
-  );
-}
-
-// ── QR share modal ────────────────────────────────────────────────────────────
-
-function QRShareModal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
-  const { isPrivate } = parseDropHint(drop.hint);
-  const base = `${typeof window !== "undefined" ? window.location.origin : "https://gooddrops.xyz"}/drop/${drop.id}`;
-  // For private drops, recover the invite token from localStorage so the QR/link includes ?k=TOKEN
-  const privateToken = isPrivate && typeof window !== "undefined"
-    ? (localStorage.getItem(`gd:privdrop:${drop.id}`) ?? null)
-    : null;
-  const url = isPrivate && privateToken ? `${base}?k=${privateToken}` : base;
-
-  function copy() {
-    navigator.clipboard?.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center"
-      onClick={onClose}
-    >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-ink/50 backdrop-blur-sm" />
-
-      {/* Sheet */}
-      <div
-        className="relative w-full sm:max-w-sm bg-cream border-t-2 sm:border-2 border-ink rounded-t-3xl sm:rounded-3xl p-6 space-y-5 z-10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Handle / close */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-black text-lg leading-tight">
-              {isPrivate ? "📫 Invitation link" : "🔗 Drop link"}
-            </p>
-            <p className="text-xs text-muted font-medium mt-0.5">
-              {formatG$(drop.amount)} G$ · #{String(drop.id)}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full border-2 border-ink text-ink hover:bg-ink hover:text-lime transition-colors"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* QR code */}
-        <div className="flex justify-center">
-          <div className="bg-white border-2 border-ink rounded-2xl p-4 shadow-brutal">
-            <QRCodeSVG value={url} size={180} level="M" includeMargin={false} />
-          </div>
-        </div>
-
-        {/* URL + copy */}
-        <div className="flex items-center gap-2 bg-card border-2 border-ink rounded-xl px-3 py-2 min-w-0">
-          <span className="text-xs font-mono text-muted truncate flex-1 min-w-0">{url}</span>
-          <button
-            onClick={copy}
-            className="shrink-0 flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-md border-2 border-ink bg-cream hover:bg-lime transition-colors"
-          >
-            {copied ? <Check size={12} /> : <Copy size={12} />}
-            {copied ? "Copied" : "Copy"}
-          </button>
-        </div>
-
-        {/* Native share */}
-        {typeof navigator !== "undefined" && "share" in navigator && (
-          <button
-            onClick={() => navigator.share?.({ title: "GoodDrops", url })}
-            className="btn-brutal w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold bg-ink text-lime"
-          >
-            <Share2 size={15} />
-            Share link
-          </button>
-        )}
-
-        {isPrivate && (
-          <p className="text-xs text-muted text-center">
-            This drop is hidden from the map. Only people with this link can find it.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
+import { RefreshCw, Undo2, Clock, Target, Gift, Loader2, Map as MapIcon } from "lucide-react";
+import { DropCard, ClaimCard, QRShareModal, CARD, PILL } from "./cards";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -302,23 +19,34 @@ function QRShareModal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
 const REACTIVATE_SECONDS = 7 * 24 * 60 * 60; // 7 days
 const REACTIVATE_LABEL   = "7 days";
 
+type Tab = "created" | "claimed";
+const TABS: { id: Tab; label: string; Icon: typeof Gift }[] = [
+  { id: "created", label: "Created", Icon: Gift },
+  { id: "claimed", label: "Claimed", Icon: Target },
+];
+
 export default function MyDropsPage() {
   const { address } = useAccount();
-  const { authenticated } = useAuth();
-  // Privy is the source of truth for auth. Wagmi can reconnect a stale connector
-  // from localStorage and report isConnected=true with a leftover address even
-  // when the user has signed out — which wrongly surfaced someone else's drops.
+  const { authenticated, login, ready } = useAuth();
+  // Wagmi can reconnect a stale connector from localStorage and report
+  // isConnected=true with a leftover address even when the user has signed out —
+  // which wrongly surfaced someone else's drops. Gate on the auth state too.
   const isConnected = authenticated && !!address;
   const { drops, loading, fetchDrops } = useDrops();
   const { writeContractAsync } = useWriteContract();
-  const [tab, setTab] = useState<"created" | "claimed">("created");
+  const [tab, setTab] = useState<Tab>("created");
   const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
   const [reactivating, setReactivating] = useState<bigint | null>(null);
   const [bulkBusy, setBulkBusy]         = useState<"reclaim" | "reactivate" | null>(null);
   const [sharingDrop, setSharingDrop]   = useState<Drop | null>(null);
+  // useDrops starts with loading=false and no drops, so the first paint would
+  // show the empty state for a frame. Hold the skeleton until the first fetch settles.
+  const [fetched, setFetched] = useState(false);
 
   useEffect(() => {
-    fetchDrops();
+    let alive = true;
+    fetchDrops().finally(() => { if (alive) setFetched(true); });
+    return () => { alive = false; };
   }, [fetchDrops]);
 
   const myCreated = drops.filter(
@@ -337,6 +65,7 @@ export default function MyDropsPage() {
   );
   const expiredTotalWei = expiredDrops.reduce((s, d) => s + d.amount, 0n);
   const anyBusy = reclaiming !== null || reactivating !== null || bulkBusy !== null;
+  const showSkeleton = loading || !fetched;
 
   async function handleReclaim(dropId: bigint) {
     setReclaiming(dropId);
@@ -418,154 +147,212 @@ export default function MyDropsPage() {
     }
   }
 
+  const tabIndex = TABS.findIndex((t) => t.id === tab);
+
   return (
-    <div className="min-h-screen bg-cream pb-20">
+    <div className="min-h-screen bg-surface font-sans">
       <Nav />
-
-      <div className="max-w-screen-md mx-auto px-4 pt-20 pb-8">
-        <h1 className="text-3xl font-black tracking-tight mb-1">My Drops</h1>
-        <p className="text-muted text-sm mb-6">Your hidden drops and finds</p>
-
-        {!isConnected && (
-          <div className="border-2 border-ink rounded-2xl p-8 text-center space-y-3">
-            <div className="text-5xl">💳</div>
-            <p className="font-bold text-lg">Sign in to continue</p>
-            <p className="text-sm text-muted">
-              Connect to see your drops and claims.
-            </p>
-          </div>
-        )}
-
-        {isConnected && (
-          <>
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <div className="bg-lime border-2 border-ink rounded-2xl p-4 shadow-brutal-sm">
-                <div className="text-3xl font-black">{myCreated.length}</div>
-                <div className="text-sm font-semibold mt-1">Drops created</div>
-              </div>
-              <div className="bg-card border-2 border-ink rounded-2xl p-4 shadow-brutal-sm">
-                <div className="text-3xl font-black">{myClaimed.length}</div>
-                <div className="text-sm font-semibold mt-1">Drops claimed</div>
-              </div>
+      <div className="pt-nav">
+        <div className="px-4 lg:px-15 pt-10 pb-20">
+          {/* ── Page header ─────────────────────────────────────────────── */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-6 mb-6">
+            <div className="min-w-0 flex flex-col gap-y-3">
+              <h1 className="text-[32px]/none lg:text-4xl/none text-heading">My drops</h1>
+              <p className="text-sm/[140%] text-nav-muted">Everything you&apos;ve hidden, and everything you&apos;ve found.</p>
             </div>
-
-            {/* Bulk actions for expired drops */}
-            {tab === "created" && expiredDrops.length > 0 && (
-              <div className="bg-ink text-cream border-2 border-ink rounded-2xl p-4 mb-5 shadow-brutal-lime">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">⏳</span>
-                  <p className="font-black text-base">
-                    {expiredDrops.length} expired drop{expiredDrops.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                <p className="text-xs text-cream/70 mb-3">
-                  Holding <b className="text-lime">{formatG$(expiredTotalWei)} G$</b> — reactivate them for another {REACTIVATE_LABEL}, or reclaim your G$. One transaction handles them all.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleReactivateAll}
-                    disabled={anyBusy}
-                    className={clsx(
-                      "flex-1 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-1.5 border-2",
-                      anyBusy ? "bg-border/20 text-muted border-border/30 cursor-not-allowed" : "bg-lime text-ink border-lime hover:opacity-90"
-                    )}
-                  >
-                    {bulkBusy === "reactivate" ? "Reactivating…" : <><RefreshCw size={15} /> Reactivate all</>}
-                  </button>
-                  <button
-                    onClick={handleReclaimAll}
-                    disabled={anyBusy}
-                    className={clsx(
-                      "flex-1 py-2.5 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-1.5 border-2",
-                      anyBusy ? "bg-border/20 text-muted border-border/30 cursor-not-allowed" : "bg-cream text-ink border-cream hover:opacity-90"
-                    )}
-                  >
-                    {bulkBusy === "reclaim" ? "Reclaiming…" : <><Undo2 size={15} /> Reclaim all</>}
-                  </button>
-                </div>
+            {isConnected && (
+              <div className="flex gap-2 lg:gap-4">
+                <StatPill value={myCreated.length} label="Created" loading={showSkeleton} />
+                <StatPill value={myClaimed.length} label="Claimed" loading={showSkeleton} />
               </div>
             )}
+          </div>
 
-            {/* Tabs */}
-            <div className="flex border-2 border-ink rounded-xl overflow-hidden mb-5">
-              {(["created", "claimed"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={clsx(
-                    "flex-1 py-3 text-sm font-bold capitalize transition-colors",
-                    tab === t
-                      ? "bg-ink text-lime"
-                      : "bg-cream text-muted hover:bg-border"
-                  )}
-                >
-                  {t === "created"
-                    ? `Created (${myCreated.length})`
-                    : `Claimed (${myClaimed.length})`}
-                </button>
-              ))}
+          {!ready ? (
+            <div className="flex flex-col gap-y-6 max-w-[760px]">
+              {[1, 2].map((i) => <Skeleton key={i} className="h-48 rounded-3xl bg-white" />)}
             </div>
-
-            {/* Content */}
-            {loading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
+          ) : !isConnected ? (
+            <div className={`${CARD} p-6 flex flex-col items-center text-center gap-y-4 mx-auto w-full max-w-[400px]`}>
+              <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
+                <Gift className="w-6 h-6" strokeWidth={1.75} />
+              </span>
+              <p className="text-xl/none text-heading">Sign in to see your drops</p>
+              <p className="text-sm/[140%] text-nav-muted">Your hidden drops, your finds and your expired G$ live here.</p>
+              <button
+                type="button"
+                onClick={() => login()}
+                className="mt-2 h-12 px-6 rounded-full bg-brand text-white text-base/none cursor-pointer
+                  motion-safe:transition-colors hover:bg-brand/90"
+              >
+                Sign in
+              </button>
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-[1fr_380px] gap-6 lg:gap-12 items-start">
+              <div className="flex flex-col gap-y-6 min-w-0">
+                {/* ── Tabs ─────────────────────────────────────────────── */}
+                <div
+                  role="tablist"
+                  aria-label="My drops"
+                  className="relative bg-white rounded-full p-1 flex items-center w-full lg:w-fit shrink-0"
+                >
                   <div
-                    key={i}
-                    className="h-32 bg-border rounded-2xl animate-pulse"
+                    aria-hidden
+                    className="absolute top-1 left-1 h-10 w-[calc(50%-4px)] lg:w-35 rounded-full bg-brand
+                      motion-safe:transition-transform motion-safe:duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                    style={{ transform: `translateX(${tabIndex * 100}%)` }}
                   />
-                ))}
-              </div>
-            ) : tab === "created" ? (
-              myCreated.length === 0 ? (
-                <div className="text-center py-12 space-y-3">
-                  <div className="text-5xl">📦</div>
-                  <p className="font-bold">No drops yet</p>
-                  <p className="text-sm text-muted">
-                    Go hide some G$ for the world to find!
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {myCreated.map((d) => (
-                    <DropCard
-                      key={String(d.id)}
-                      drop={d}
-                      onReclaim={handleReclaim}
-                      onReactivate={handleReactivate}
-                      isReclaiming={reclaiming === d.id || bulkBusy === "reclaim"}
-                      isReactivating={reactivating === d.id || bulkBusy === "reactivate"}
-                      onShare={setSharingDrop}
-                    />
+                  {TABS.map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={tab === id}
+                      onClick={() => setTab(id)}
+                      className={`relative z-10 h-10 flex-1 lg:flex-none lg:w-35 flex items-center justify-center gap-x-3 rounded-full text-sm/none cursor-pointer
+                        motion-safe:transition-colors ${tab === id ? "text-white" : "text-nav-muted hover:text-heading"}`}
+                    >
+                      <Icon size={18} strokeWidth={1.75} className="shrink-0" />
+                      {label}
+                    </button>
                   ))}
                 </div>
-              )
-            ) : myClaimed.length === 0 ? (
-              <div className="text-center py-12 space-y-3">
-                <div className="text-5xl">🗺️</div>
-                <p className="font-bold">No claims yet</p>
-                <p className="text-sm text-muted">
-                  Find drops on the map and hunt them down!
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {myClaimed.map((d) => (
-                  <ClaimCard key={String(d.id)} drop={d} onShare={setSharingDrop} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
 
-      <BottomNav />
+                {/* ── Content ──────────────────────────────────────────── */}
+                {showSkeleton ? (
+                  <div className="flex flex-col gap-y-6">
+                    {[1, 2, 3].map((i) => <Skeleton key={i} className="h-48 rounded-3xl bg-white" />)}
+                  </div>
+                ) : tab === "created" ? (
+                  myCreated.length === 0 ? (
+                    <EmptyState
+                      icon={<Gift className="w-6 h-6" strokeWidth={1.75} />}
+                      title="No drops yet"
+                      body="Hide some G$ for the world to find — it only takes a minute."
+                      cta="Drop G$"
+                    />
+                  ) : (
+                    <div className="flex flex-col gap-y-6">
+                      {myCreated.map((d) => (
+                        <DropCard
+                          key={String(d.id)}
+                          drop={d}
+                          onReclaim={handleReclaim}
+                          onReactivate={handleReactivate}
+                          isReclaiming={reclaiming === d.id || bulkBusy === "reclaim"}
+                          isReactivating={reactivating === d.id || bulkBusy === "reactivate"}
+                          onShare={setSharingDrop}
+                        />
+                      ))}
+                    </div>
+                  )
+                ) : myClaimed.length === 0 ? (
+                  <EmptyState
+                    icon={<MapIcon className="w-6 h-6" strokeWidth={1.75} />}
+                    title="No finds yet"
+                    body="Open the map, walk to a drop and claim it — the G$ is yours."
+                    cta="Open the map"
+                  />
+                ) : (
+                  <div className="flex flex-col gap-y-6">
+                    {myClaimed.map((d) => (
+                      <ClaimCard key={String(d.id)} drop={d} onShare={setSharingDrop} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Side column: expired G$ ───────────────────────────── */}
+              <aside className="flex flex-col gap-y-6 min-w-0 lg:sticky lg:top-[calc(var(--spacing-nav)+40px)]">
+                {!showSkeleton && expiredDrops.length > 0 && (
+                  <section className={`${CARD} p-6 flex flex-col gap-y-5`}>
+                    <div className="flex items-center gap-4">
+                      <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-streak-bg text-streak flex items-center justify-center">
+                        <Clock className="w-5 h-5" strokeWidth={1.75} />
+                      </span>
+                      <div className="min-w-0 flex flex-col gap-y-2">
+                        <p className="text-lg/none text-heading">
+                          {expiredDrops.length} expired drop{expiredDrops.length !== 1 ? "s" : ""}
+                        </p>
+                        <p className="text-sm/none text-nav-muted">Holding {formatG$(expiredTotalWei)} G$</p>
+                      </div>
+                    </div>
+                    <p className="text-sm/[140%] text-nav-muted">
+                      Reactivate them for another {REACTIVATE_LABEL}, or reclaim your G$. One transaction handles them all.
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={handleReactivateAll}
+                        disabled={anyBusy}
+                        className="h-12 rounded-full bg-brand text-white text-sm/none cursor-pointer flex items-center justify-center gap-2
+                          motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
+                      >
+                        {bulkBusy === "reactivate" ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" strokeWidth={1.75} />}
+                        {bulkBusy === "reactivate" ? "Reactivating…" : "Reactivate all"}
+                      </button>
+                      <button type="button" onClick={handleReclaimAll} disabled={anyBusy} className={`${PILL} h-12`}>
+                        {bulkBusy === "reclaim" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" strokeWidth={1.75} />}
+                        {bulkBusy === "reclaim" ? "Reclaiming…" : "Reclaim all"}
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                <Link
+                  href="/"
+                  className={`${CARD} group p-2 pr-5 flex items-center gap-4 cursor-pointer motion-safe:transition-colors hover:bg-surface`}
+                >
+                  <span className="w-14 h-14 shrink-0 rounded-full bg-brand text-white flex items-center justify-center">
+                    <MapIcon className="w-6 h-6" strokeWidth={1.75} />
+                  </span>
+                  <span className="flex-1 min-w-0 flex flex-col gap-y-2">
+                    <span className="text-base/none text-heading">Back to the map</span>
+                    <span className="text-sm/none text-nav-muted truncate">Drop G$ or hunt what&apos;s nearby.</span>
+                  </span>
+                </Link>
+              </aside>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* QR share modal */}
       {sharingDrop && (
         <QRShareModal drop={sharingDrop} onClose={() => setSharingDrop(null)} />
       )}
+    </div>
+  );
+}
+
+/** "12 · Created" pill in the header. */
+function StatPill({ value, label, loading }: { value: number; label: string; loading: boolean }) {
+  return (
+    <div className="bg-white rounded-full py-4 px-5 lg:px-6 flex items-center justify-center gap-x-2 lg:gap-x-3 flex-1 lg:flex-none min-w-0">
+      {loading ? (
+        <Skeleton className="h-4 lg:h-6 w-6 shrink-0" />
+      ) : (
+        <span className="text-heading text-base/none lg:text-2xl/none shrink-0">{value.toLocaleString("en-US")}</span>
+      )}
+      <span className="text-sm/none lg:text-base/none text-nav-muted truncate">{label}</span>
+    </div>
+  );
+}
+
+function EmptyState({ icon, title, body, cta }: { icon: React.ReactNode; title: string; body: string; cta: string }) {
+  return (
+    <div className={`${CARD} p-6 py-10 flex flex-col items-center text-center gap-y-4`}>
+      <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">{icon}</span>
+      <p className="text-xl/none text-heading">{title}</p>
+      <p className="text-sm/[140%] text-nav-muted max-w-[320px]">{body}</p>
+      <Link
+        href="/"
+        className="mt-2 h-12 px-6 rounded-full bg-brand text-white text-base/none inline-flex items-center
+          cursor-pointer motion-safe:transition-colors hover:bg-brand/90"
+      >
+        {cta}
+      </Link>
     </div>
   );
 }

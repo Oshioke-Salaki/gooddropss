@@ -2,7 +2,7 @@
 // wallet (no uploads, no storage). If the user has picked a PRESET (a curated
 // gradient + glyph vibe), that renders instead — still no hosting/moderation.
 // Optional rank RING + status BADGE let status visibly "level up".
-import { getAvatarPreset } from "@/lib/avatarPresets";
+import { getAvatarPreset, getAvatarImage } from "@/lib/avatarPresets";
 
 interface Props {
   address: string;
@@ -30,6 +30,44 @@ export function Avatar({ address, username, size = 44, ringColor = "#111", badge
   const initial = (username?.trim()?.[0] ?? a.slice(0, 1) ?? "?").toUpperCase();
   const ring = Math.max(2, Math.round(size * 0.06));
 
+  // Illustrated avatar (2026 set): the face on its colour disc. Sized by the
+  // same `size`, so every surface that renders an Avatar gets it for free.
+  const img = getAvatarImage(preset);
+  if (img) {
+    return (
+      <div
+        className={className}
+        style={{
+          position: "relative", width: size, height: size, flexShrink: 0, borderRadius: "50%",
+          background: img.bg, border: `${ring}px solid ${ringColor}`, boxSizing: "border-box", ...style,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={img.src}
+          alt=""
+          width={size}
+          height={size}
+          draggable={false}
+          onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+          style={{
+            position: "absolute", inset: -ring, width: size, height: size, borderRadius: "50%",
+            display: "block", objectFit: "cover", userSelect: "none",
+          }}
+        />
+        {badge && (
+          <div style={{
+            position: "absolute", bottom: -Math.round(size * 0.04), right: -Math.round(size * 0.04),
+            fontSize: Math.round(size * 0.36), lineHeight: 1,
+            filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.4))", pointerEvents: "none",
+          }}>
+            {badge}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const p = getAvatarPreset(preset);
   const background = p
     ? `linear-gradient(135deg, ${p.from}, ${p.to})`
@@ -45,7 +83,7 @@ export function Avatar({ address, username, size = 44, ringColor = "#111", badge
           display: "flex", alignItems: "center", justifyContent: "center",
           color: "#fff", fontWeight: 900,
           fontSize: p ? Math.round(size * 0.5) : Math.round(size * 0.42),
-          fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1, userSelect: "none",
+          fontFamily: "var(--font-sans)", lineHeight: 1, userSelect: "none",
           boxShadow: "inset 0 2px 6px rgba(255,255,255,0.28), inset 0 -3px 8px rgba(0,0,0,0.28)",
           boxSizing: "border-box",
           textShadow: p?.dark ? "0 0 10px rgba(255,255,255,0.35)" : undefined,

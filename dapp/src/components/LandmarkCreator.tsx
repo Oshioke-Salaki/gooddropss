@@ -1,15 +1,77 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSignMessage } from "wagmi";
-import { X, Loader2, MapPin, Check } from "lucide-react";
+import {
+  X, Loader2, MapPin, Check, GraduationCap, School, ShoppingCart, Church,
+  TrafficCone, Building2, Trees, TrainFront, type LucideIcon,
+} from "lucide-react";
 import {
   LANDMARK_CATEGORIES, LANDMARK_NAME_MIN, LANDMARK_NAME_MAX, LANDMARK_NOTE_MAX,
   LANDMARK_DEDUPE_M, cleanLandmarkName,
 } from "@/lib/landmarks";
 import { createLandmark } from "@/lib/landmarkClient";
 import { haversineDistance } from "@/lib/utils";
+import { Sheet } from "@/components/ui/Sheet";
 import type { Landmark, LandmarkCategory } from "@/types";
+
+// One icon per category, replacing the emoji the data layer still carries.
+// Shared with LandmarkManageSheet so the two forms can't drift.
+const CATEGORY_ICON: Record<LandmarkCategory, LucideIcon> = {
+  landmark:  MapPin,
+  campus:    GraduationCap,
+  school:    School,
+  market:    ShoppingCart,
+  worship:   Church,
+  junction:  TrafficCone,
+  estate:    Building2,
+  park:      Trees,
+  transport: TrainFront,
+};
+
+export function CategoryIcon({ category, className = "w-4 h-4" }: { category: LandmarkCategory; className?: string }) {
+  const Icon = CATEGORY_ICON[category] ?? MapPin;
+  return <Icon className={className} strokeWidth={2} />;
+}
+
+/** Horizontal, scrollable category picker. Full-bleed inside a Sheet. */
+export function CategoryChips({
+  value, onChange, disabled,
+}: { value: LandmarkCategory; onChange: (c: LandmarkCategory) => void; disabled?: boolean }) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Category"
+      className="no-scrollbar flex gap-2 overflow-x-auto -mx-6 px-6 py-0.5"
+    >
+      {LANDMARK_CATEGORIES.map((c) => {
+        const on = value === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            disabled={disabled}
+            onClick={() => onChange(c.id)}
+            className={`shrink-0 flex items-center gap-2 h-10 pl-3.5 pr-4 rounded-full text-sm/none cursor-pointer
+              motion-safe:transition-colors disabled:cursor-not-allowed ${
+              on ? "bg-nav-active text-white" : "border border-line bg-white text-heading hover:bg-surface"
+            }`}
+          >
+            <CategoryIcon category={c.id} className="w-4 h-4" />
+            {c.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Shared input look for the name / note fields. */
+export const FIELD =
+  "w-full rounded-full bg-surface px-5 text-heading placeholder:text-nav-muted border border-transparent " +
+  "outline-none motion-safe:transition-colors focus:border-brand disabled:opacity-60";
 
 interface Props {
   placing: boolean;                       // "tap the map" mode is active
@@ -31,9 +93,17 @@ export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", on
   const [error, setError]       = useState("");
   const [done, setDone]         = useState(false);
 
-  // Reset the form each time a fresh point is picked.
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  // Reset the form each time a fresh point is picked. Focus the name on desktop
+  // only — on a phone that would throw the keyboard up before the sheet lands —
+  // and after the sheet has taken focus, so it isn't stolen straight back.
   useEffect(() => {
-    if (picked) { setName(""); setNote(""); setCategory("landmark"); setError(""); setDone(false); }
+    if (!picked) return;
+    setName(""); setNote(""); setCategory("landmark"); setError(""); setDone(false);
+    if (!window.matchMedia("(min-width: 1024px)").matches) return;
+    const t = setTimeout(() => nameRef.current?.focus(), 300);
+    return () => clearTimeout(t);
   }, [picked]);
 
   const cleanName = cleanLandmarkName(name);
@@ -68,184 +138,136 @@ export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", on
     }
   }
 
+  const hint = error
+    ? { text: error, tone: "bad" as const }
+    : nearbyDupe
+      ? { text: `“${nearbyDupe.name}” is already tagged right here — sure this is different?`, tone: "warn" as const }
+      : null;
+
   return (
     <>
-      {/* Instruction banner while tapping the map */}
+      {/* Instruction banner while positioning the map */}
       <AnimatePresence>
         {placing && !picked && (
           <motion.div
             initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
+            role="status"
+            className="fixed left-1/2 -translate-x-1/2 z-[1100] max-w-[calc(100vw-24px)] font-sans
+              flex items-center gap-2.5 rounded-full bg-white shadow-[0px_0px_12px_0px_#0000000A] p-1.5 pl-4"
             style={{
-              position: "fixed", top: "calc(70px + var(--gd-banner-h, 0px))", left: "50%",
-              transform: "translateX(-50%)", zIndex: 1100,
-              display: "flex", alignItems: "center", gap: 10,
-              background: "#111", color: "#fff",
-              border: "2px solid #BFFD00", borderRadius: 100,
-              padding: "8px 10px 8px 14px", maxWidth: "calc(100vw - 24px)",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.4)", fontFamily: "'Space Grotesk', sans-serif",
+              top: "calc(var(--spacing-nav) + var(--gd-banner-h, 0px) + 12px)",
+              transition: "top 0.2s ease",
             }}
           >
-            <MapPin size={15} color="#BFFD00" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              Move the map so 📍 is on the spot
-            </span>
+            <MapPin className="w-4 h-4 shrink-0 text-brand" strokeWidth={2} />
+            <span className="text-sm/none text-heading truncate">Move the map so the pin is on the spot</span>
             <button
-              onClick={onCancel} aria-label="Cancel"
-              style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 999, border: "none", background: "#333", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+              type="button"
+              onClick={onCancel}
+              aria-label="Cancel"
+              className="w-8 h-8 shrink-0 rounded-full bg-surface text-nav-muted flex items-center justify-center
+                cursor-pointer motion-safe:transition-colors hover:bg-nav-controls hover:text-heading"
             >
-              <X size={14} />
+              <X className="w-4 h-4" strokeWidth={2} />
             </button>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Form sheet after a point is picked */}
-      <AnimatePresence>
-        {picked && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }} onClick={onCancel}
-              style={{ position: "fixed", inset: 0, zIndex: 3000, background: "rgba(17,17,17,0.55)", backdropFilter: "blur(3px)" }}
-            />
-            <motion.div
-              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 34, stiffness: 430 }}
-              role="dialog" aria-modal="true" aria-label="Name this place"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 3001,
-                width: "100%", maxWidth: 480, margin: "0 auto",
-                background: "#f5f4f0", borderRadius: "24px 24px 0 0",
-                border: "2px solid #111", borderBottom: "none",
-                boxShadow: "0 -8px 40px rgba(0,0,0,0.35)",
-                padding: "18px 18px calc(20px + env(safe-area-inset-bottom))",
-                maxHeight: "92dvh", overflowY: "auto",
-                fontFamily: "'Space Grotesk', sans-serif",
-              }}
-            >
-              <div style={{ width: 40, height: 4, borderRadius: 999, background: "#d6d5cf", margin: "0 auto 14px" }} />
+      {picked && (
+        <Sheet
+          title={isSuggest ? "Suggest a place" : "Name this place"}
+          onClose={onCancel}
+          dismissible={!saving && !done}
+          zIndex={3000}
+        >
+          {done ? (
+            <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
+              <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+                <Check className="w-7 h-7" strokeWidth={2} />
+              </span>
+              <p className="text-xl/none text-heading">
+                {isSuggest ? `“${cleanName}” suggested` : `“${cleanName}” added`}
+              </p>
+              <p className="text-sm/[140%] text-nav-muted">
+                {isSuggest ? "Thanks. An admin will review it soon." : "It's now on the map for everyone."}
+              </p>
+            </div>
+          ) : (
+            <form className="flex flex-col" onSubmit={(e) => { e.preventDefault(); save(); }}>
+              <button
+                type="button"
+                onClick={onRepick}
+                disabled={saving}
+                className="mt-3 self-start flex items-center gap-1.5 text-sm/none text-nav-muted cursor-pointer
+                  motion-safe:transition-colors hover:text-heading disabled:cursor-not-allowed"
+              >
+                <MapPin className="w-3.5 h-3.5" strokeWidth={2} />
+                {picked.lat.toFixed(5)}, {picked.lng.toFixed(5)}
+                <span className="text-brand">· change</span>
+              </button>
 
-              {done ? (
-                <div style={{ textAlign: "center", padding: "16px 8px" }}>
-                  <div style={{ fontSize: 44, marginBottom: 6 }}>{isSuggest ? "🙌" : "📍"}</div>
-                  <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111" }}>
-                    {isSuggest ? `“${cleanName}” suggested` : `“${cleanName}” added`}
-                  </p>
-                  <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#6b6e7a" }}>
-                    {isSuggest ? "Thanks! An admin will review it soon." : "It’s now on the map for everyone."}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ margin: 0, fontWeight: 900, fontSize: 19, color: "#111", letterSpacing: "-0.02em" }}>
-                        {isSuggest ? "Suggest a place" : "Name this place"}
-                      </p>
-                      <button
-                        onClick={onRepick}
-                        style={{ marginTop: 3, padding: 0, border: "none", background: "none", cursor: "pointer", color: "#6b6e7a", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}
-                      >
-                        <MapPin size={12} /> {picked.lat.toFixed(5)}, {picked.lng.toFixed(5)} · change
-                      </button>
-                    </div>
-                    <button onClick={onCancel} aria-label="Close" style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 10, border: "2px solid #111", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <X size={16} color="#111" />
-                    </button>
-                  </div>
+              <label className="block mt-6">
+                <span className="sr-only">Place name</span>
+                <input
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setError(""); }}
+                  placeholder="e.g. Colab Campus"
+                  maxLength={LANDMARK_NAME_MAX + 8}
+                  ref={nameRef}
+                  disabled={saving}
+                  className={`${FIELD} h-14 text-base/none`}
+                />
+              </label>
 
-                  {/* Name */}
-                  <input
-                    value={name}
-                    onChange={(e) => { setName(e.target.value); setError(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" && nameOk) save(); }}
-                    placeholder="e.g. Colab Campus"
-                    maxLength={LANDMARK_NAME_MAX + 8}
-                    autoFocus
-                    style={{
-                      marginTop: 14, width: "100%", height: 52, boxSizing: "border-box",
-                      background: "#fff", border: "2px solid #111", borderRadius: 14,
-                      padding: "0 14px", fontSize: 17, fontWeight: 800, color: "#111",
-                      fontFamily: "inherit", outline: "none",
-                      boxShadow: nameOk ? "3px 3px 0 #BFFD00" : "3px 3px 0 #111",
-                    }}
-                  />
+              <div className="mt-3">
+                <CategoryChips value={category} onChange={setCategory} disabled={saving} />
+              </div>
 
-                  {/* Category chips */}
-                  <div style={{ display: "flex", gap: 8, overflowX: "auto", marginTop: 12, paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-                    {LANDMARK_CATEGORIES.map((c) => {
-                      const active = category === c.id;
-                      return (
-                        <button
-                          key={c.id}
-                          onClick={() => setCategory(c.id)}
-                          style={{
-                            flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-                            padding: "8px 12px", borderRadius: 100, cursor: "pointer",
-                            border: "2px solid #111", fontFamily: "inherit",
-                            fontWeight: 800, fontSize: 12.5,
-                            background: active ? "#111" : "#fff",
-                            color: active ? "#fff" : "#111",
-                            boxShadow: active ? "none" : "2px 2px 0 #111",
-                          }}
-                        >
-                          <span>{c.icon}</span>{c.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+              <label className="block mt-3">
+                <span className="sr-only">Note</span>
+                <input
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Optional note (e.g. main gate)"
+                  maxLength={LANDMARK_NOTE_MAX}
+                  disabled={saving}
+                  className={`${FIELD} h-12 text-sm/none`}
+                />
+              </label>
 
-                  {/* Optional note */}
-                  <input
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Optional note (e.g. main gate)"
-                    maxLength={LANDMARK_NOTE_MAX}
-                    style={{
-                      marginTop: 12, width: "100%", height: 44, boxSizing: "border-box",
-                      background: "#fff", border: "2px solid #e0ded6", borderRadius: 12,
-                      padding: "0 12px", fontSize: 14, fontWeight: 600, color: "#333",
-                      fontFamily: "inherit", outline: "none",
-                    }}
-                  />
+              {/* Fixed-height slot so the button never jumps as hints come and go. */}
+              <p
+                role="status"
+                aria-live="polite"
+                className={`min-h-4 mt-3 px-5 text-sm/[130%] ${
+                  hint?.tone === "bad" ? "text-danger" : "text-streak"
+                }`}
+              >
+                {hint?.text ?? ""}
+              </p>
 
-                  {nearbyDupe && (
-                    <p style={{ margin: "10px 0 0", fontSize: 12, color: "#b8860b", fontWeight: 700 }}>
-                      ⚠️ “{nearbyDupe.name}” is already tagged right here — sure this is different?
-                    </p>
-                  )}
-                  {error && <p style={{ margin: "10px 0 0", fontSize: 12.5, color: "#dc2626", fontWeight: 700 }}>{error}</p>}
-
-                  <button
-                    onClick={save}
-                    disabled={!nameOk || saving}
-                    style={{
-                      marginTop: 14, width: "100%", height: 52,
-                      background: nameOk ? "#BFFD00" : "#e8e7e2",
-                      color: nameOk ? "#111" : "#a8a8a2",
-                      border: "2.5px solid", borderColor: nameOk ? "#111" : "#d6d5cf",
-                      borderRadius: 15, fontWeight: 900, fontSize: 16, fontFamily: "inherit",
-                      cursor: nameOk && !saving ? "pointer" : "not-allowed",
-                      boxShadow: nameOk ? "4px 4px 0 #111" : "none",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    }}
-                  >
-                    {saving
-                      ? <><Loader2 size={17} style={{ animation: "spin 1s linear infinite" }} /> Signing…</>
-                      : <><Check size={17} /> {isSuggest ? "Suggest place" : "Add place"}</>}
-                  </button>
-                  <p style={{ margin: "9px 0 0", fontSize: 11, color: "#9a9da8", textAlign: "center" }}>
-                    {isSuggest
-                      ? "You sign to confirm — free, no gas. An admin reviews before it appears."
-                      : "You sign to confirm — free, no gas."}
-                  </p>
-                </>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+              <button
+                type="submit"
+                disabled={!nameOk || saving}
+                className="mt-3 w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2
+                  cursor-pointer motion-safe:transition-colors hover:bg-brand/90
+                  disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
+              >
+                {saving
+                  ? <><Loader2 className="w-5 h-5 animate-spin" /> Signing…</>
+                  : (isSuggest ? "Suggest place" : "Add place")}
+              </button>
+              <p className="mt-4 text-xs/[140%] text-nav-muted text-center">
+                {isSuggest
+                  ? "You sign to confirm — free, no gas. An admin reviews before it appears."
+                  : "You sign to confirm — free, no gas."}
+              </p>
+            </form>
+          )}
+        </Sheet>
+      )}
     </>
   );
 }

@@ -5,6 +5,8 @@ import {
   Store, Gift, MapPin, Camera, Printer, Share2, Link as LinkIcon, Check,
   UtensilsCrossed, ShoppingBag, Wrench, Bus, type LucideIcon,
 } from "lucide-react";
+import { Logo } from "@/components/Logo";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import type { Spot } from "@/types";
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
@@ -42,52 +44,83 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
   }
 
   if (spot === undefined) return (
-    <div style={styles.loading}><Store size={48} color="#888" /><p style={{ fontWeight: 700, color: "#888", marginTop: 12 }}>Loading…</p></div>
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px] bg-white rounded-3xl p-7 flex flex-col items-center gap-4">
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="w-[262px] h-[262px] rounded-2xl" />
+        <Skeleton className="h-4 w-40" />
+      </div>
+    </div>
   );
   if (!spot) return (
-    <div style={styles.loading}><p style={{ fontWeight: 700 }}>Shop not found</p></div>
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <p className="text-base/none text-heading">Shop not found</p>
+    </div>
   );
 
+  const CategoryIcon = CATEGORY_ICON[spot.category] ?? Store;
+  const BAR_BTN =
+    "h-11 px-4 rounded-full text-sm/none flex items-center gap-2 cursor-pointer motion-safe:transition-colors";
+
   return (
-    <>
-      {/* Action bar — hidden when printing */}
-      <div style={styles.printBar} className="no-print">
-        <p style={{ margin: 0, fontSize: 13, color: "#ccc" }}>Print it for your counter, or share the link.</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={share} style={styles.barBtn}><Share2 size={15} /> Share</button>
-          <button onClick={copy} style={styles.barBtnAlt}>{copied ? <><Check size={15} /> Copied</> : <><LinkIcon size={15} /> Copy link</>}</button>
-          <button onClick={() => window.print()} style={styles.barBtn}><Printer size={15} /> Print</button>
+    <div className="min-h-screen bg-surface font-sans">
+      {/* Action bar — screen only */}
+      <div className="no-print bg-white border-b border-line px-4 lg:px-15 py-4 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm/[140%] text-nav-muted">Print it for your counter, or share the link.</p>
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={share} className={`${BAR_BTN} border border-line bg-white text-heading hover:bg-surface`}>
+            <Share2 className="w-4 h-4" strokeWidth={2} /> Share
+          </button>
+          <button type="button" onClick={copy} className={`${BAR_BTN} border border-line bg-white text-heading hover:bg-surface`}>
+            {copied ? <><Check className="w-4 h-4 text-brand" strokeWidth={2} /> Copied</> : <><LinkIcon className="w-4 h-4" strokeWidth={2} /> Copy link</>}
+          </button>
+          <button type="button" onClick={() => window.print()} className={`${BAR_BTN} bg-brand text-white hover:bg-brand/90`}>
+            <Printer className="w-4 h-4" strokeWidth={2} /> Print
+          </button>
         </div>
       </div>
 
       {/* ── Poster ─────────────────────────────────────────────────────────── */}
-      <div style={styles.page}>
-        <div style={styles.poster}>
-          <div style={styles.logo}>
-            <span style={styles.logoText}>good</span>
-            <span style={styles.logoBadge}>drops.</span>
-          </div>
+      <div className="print-page flex items-center justify-center px-4 py-8 min-h-[calc(100vh-73px)]">
+        <div
+          className="poster w-full max-w-[420px] bg-white rounded-3xl border border-line px-7 py-8
+            flex flex-col items-center text-center gap-3 shadow-[0px_0px_12px_0px_#0000000A] print:shadow-none"
+        >
+          <Logo size="md" />
 
-          <p style={styles.kicker}>
-            {(() => { const I = CATEGORY_ICON[spot.category] ?? Store; return <I size={16} />; })()} {spot.name}
+          <p className="flex items-center gap-2 text-sm/none text-nav-muted mt-1">
+            <CategoryIcon className="w-4 h-4" strokeWidth={2} /> {spot.name}
           </p>
-          <h1 style={styles.headline}>PAY WITH G$ HERE</h1>
+          <h1 className="text-[34px]/none text-brand tracking-tight">Pay with G$ here</h1>
 
-          <div style={styles.qrWrap}>
+          <div className="mt-2 rounded-2xl border border-line p-4 bg-white">
             <QRCodeSVG value={payUrl} size={230} level="H" includeMargin={false} style={{ display: "block" }} />
           </div>
 
-          <p style={styles.scan}><Camera size={16} /> Scan to pay in seconds</p>
+          <p className="flex items-center gap-2 text-base/none text-heading mt-1">
+            <Camera className="w-4 h-4" strokeWidth={2} /> Scan to pay in seconds
+          </p>
 
           {spot.discount && (
-            <div style={styles.offer}><Gift size={14} /> {spot.discount}</div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-brand-soft text-brand px-4 h-9 text-sm/none">
+              <Gift className="w-4 h-4" strokeWidth={2} /> {spot.discount}
+            </span>
           )}
-          {spot.placeName && <p style={styles.place}><MapPin size={13} /> {spot.placeName}</p>}
+          {spot.placeName && (
+            <p className="flex items-center gap-1.5 text-sm/none text-nav-muted">
+              <MapPin className="w-3.5 h-3.5" strokeWidth={2} /> {spot.placeName}
+            </p>
+          )}
 
-          <div style={styles.steps}>
-            <span>1 · Open camera</span><span>›</span><span>2 · Scan code</span><span>›</span><span>3 · Pay in G$</span>
+          <div className="flex flex-wrap justify-center gap-2 mt-2">
+            {["1 · Open camera", "2 · Scan code", "3 · Pay in G$"].map((s) => (
+              <span key={s} className="rounded-full bg-surface px-3 h-8 flex items-center text-xs/none text-heading">
+                {s}
+              </span>
+            ))}
           </div>
-          <p style={styles.foot}>gooddrops.xyz · real, spendable GoodDollar</p>
+          <p className="text-xs/none text-nav-muted mt-1">gooddrops.xyz · real, spendable GoodDollar</p>
         </div>
       </div>
 
@@ -95,29 +128,10 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
         @media print {
           .no-print { display: none !important; }
           body { margin: 0; padding: 0; background: white; }
+          .print-page { min-height: 0; padding: 0; }
+          .poster { border-color: #121607; }
         }
-        * { box-sizing: border-box; }
       `}</style>
-    </>
+    </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  loading: { minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f5f4f0", fontFamily: "'Space Grotesk', sans-serif" },
-  printBar: { background: "#111", color: "#fff", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", fontFamily: "'Space Grotesk', sans-serif" },
-  barBtn: { display: "inline-flex", alignItems: "center", gap: 6, background: "#BFFD00", color: "#111", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" },
-  barBtnAlt: { display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", color: "#111", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" },
-  page: { minHeight: "calc(100vh - 52px)", background: "#f5f4f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px", fontFamily: "'Space Grotesk', sans-serif" },
-  poster: { background: "#fff", border: "3px solid #111", borderRadius: 24, boxShadow: "8px 8px 0 #111", padding: "32px 28px", maxWidth: 420, width: "100%", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 },
-  logo: { display: "flex", alignItems: "center", gap: 4, marginBottom: 4 },
-  logoText: { fontWeight: 900, fontSize: 18, color: "#111" },
-  logoBadge: { background: "#111", color: "#BFFD00", fontWeight: 900, fontSize: 16, padding: "1px 7px" },
-  kicker: { display: "flex", alignItems: "center", gap: 6, margin: 0, fontSize: 15, fontWeight: 800, color: "#555" },
-  headline: { margin: "2px 0 6px", fontSize: 34, fontWeight: 900, color: "#111", letterSpacing: "-0.02em", lineHeight: 1.05 },
-  qrWrap: { background: "#fff", border: "3px solid #111", borderRadius: 16, padding: 14, boxShadow: "4px 4px 0 #BFFD00" },
-  scan: { display: "flex", alignItems: "center", gap: 6, margin: "6px 0 0", fontSize: 15, fontWeight: 800, color: "#111" },
-  offer: { display: "inline-flex", alignItems: "center", gap: 6, background: "#BFFD00", border: "2px solid #111", borderRadius: 100, padding: "5px 14px", fontSize: 14, fontWeight: 900, color: "#111" },
-  place: { display: "flex", alignItems: "center", gap: 5, margin: 0, fontSize: 13, fontWeight: 700, color: "#888" },
-  steps: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, fontSize: 12, fontWeight: 800, color: "#666", marginTop: 4 },
-  foot: { margin: "6px 0 0", fontSize: 11, fontWeight: 700, color: "#aaa" },
-};

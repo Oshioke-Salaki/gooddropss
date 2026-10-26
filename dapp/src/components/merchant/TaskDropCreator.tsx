@@ -10,7 +10,8 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { isValidTask, cleanTask, TASK_MAX_LEN } from "@/lib/taskShared";
 import type { Spot } from "@/types";
 import { taskCreateMessage } from "@/lib/taskCreateMsg";
-import { Gift, X, PartyPopper } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
+import { Sheet } from "@/components/ui/Sheet";
 
 const DURATIONS = [
   { label: "1 day", s: 86_400 },
@@ -19,6 +20,10 @@ const DURATIONS = [
 ];
 
 type Status = "idle" | "approving" | "creating" | "saving" | "done" | "error";
+
+const INPUT =
+  "w-full h-14 rounded-full bg-surface px-5 text-base/none text-heading placeholder:text-nav-muted " +
+  "border border-transparent outline-none motion-safe:transition-colors focus:border-brand disabled:opacity-60";
 
 // A merchant funds + creates a task-locked reward drop pinned at their spot.
 // Reuses the normal drop escrow; the [T:spotId] tag + task record are what make
@@ -49,7 +54,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   const busy = status === "approving" || status === "creating" || status === "saving";
 
   const problem =
-    !isValidTask(task) ? "Add a task (3–80 chars), e.g. \"Buy any coffee\"" :
+    !isValidTask(task) ? "Add a task (3–80 characters), e.g. \"Buy any coffee\"" :
     amountWei <= 0n ? "Enter a reward amount" :
     amountWei > maxDrop ? `Max reward is ${formatG$(maxDrop)} G$` :
     amountWei < minDrop ? `Min reward is ${formatG$(minDrop)} G$` :
@@ -124,69 +129,131 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
       if (i < 2) await new Promise((r) => setTimeout(r, 1500));
     }
     setPendingSave({ dropId, sig });
-    setErr(`${lastErr} Your reward is already funded — tap “Finish saving” to complete it (this won't charge you again).`);
+    setErr(`${lastErr} Your reward is already funded — tap "Finish saving" to complete it (this won't charge you again).`);
     setStatus("error");
   }
 
-  if (status === "done") {
-    return (
-      <div className="border-2 border-ink rounded-2xl p-5 bg-lime shadow-brutal text-center">
-        <div className="w-14 h-14 mx-auto rounded-full bg-ink text-lime flex items-center justify-center">
-          <PartyPopper size={26} />
-        </div>
-        <p className="font-black text-lg mt-2">Reward drop is live!</p>
-        <p className="text-sm text-ink/70 mt-1">{formatG$(amountWei)} G$ is funded and pinned at {spot.name}. Hunters do the task, you scan their code to approve.</p>
-        <button onClick={onClose} className="btn-brutal mt-4 w-full py-3 rounded-xl font-black bg-ink text-lime">Done</button>
-      </div>
-    );
-  }
+  // The hint doubles as guidance: the first thing to fix is always visible.
+  const hint = err || problem;
+  const ctaLabel =
+    status === "approving" ? "Approving G$…"
+    : status === "creating" ? "Creating drop…"
+    : status === "saving" ? "Saving task…"
+    : pendingSave ? "Finish saving task"
+    : `Fund ${amount || "?"} G$ reward`;
 
   return (
-    <div className="border-2 border-ink rounded-2xl p-4 bg-card shadow-brutal-sm space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="flex items-center gap-1.5 font-black text-sm"><Gift size={16} /> New reward drop · {spot.name}</p>
-        <button onClick={onClose} className="w-7 h-7 rounded-full border-2 border-ink flex items-center justify-center"><X size={14} /></button>
-      </div>
+    <Sheet title="New reward drop" onClose={onClose} dismissible={!busy} width={440}>
+      {status === "done" ? (
+        <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
+          <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+            <Check className="w-9 h-9" strokeWidth={2.25} />
+          </span>
+          <p className="text-xl/none text-heading">Reward drop is live</p>
+          <p className="text-sm/[140%] text-nav-muted">
+            {formatG$(amountWei)} G$ is funded and pinned at {spot.name}. Hunters do the task, you scan their code to approve.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+              motion-safe:transition-colors hover:bg-brand/90"
+          >
+            Done
+          </button>
+        </div>
+      ) : (
+        <form
+          className="flex flex-col gap-y-5 pt-6"
+          onSubmit={(e) => { e.preventDefault(); if (pendingSave) saveTask(pendingSave.dropId, pendingSave.sig); else handleCreate(); }}
+        >
+          <p className="text-sm/[140%] text-nav-muted -mt-1">
+            Pinned at <span className="text-heading">{spot.name}</span>. The G$ is held in escrow until you approve a hunter.
+          </p>
 
-      <label className="block">
-        <span className="text-[11px] font-black uppercase tracking-wide text-muted">The task (hunters must do this)</span>
-        <input value={task} onChange={(e) => setTask(e.target.value.slice(0, TASK_MAX_LEN))} placeholder="Buy any coffee"
-          className="mt-1 w-full border-2 border-ink rounded-xl px-3 py-2.5 text-sm font-semibold outline-none" />
-      </label>
+          <label className="block">
+            <span className="block text-sm/none text-nav-muted mb-3">The task (hunters must do this)</span>
+            <input
+              value={task}
+              onChange={(e) => setTask(e.target.value.slice(0, TASK_MAX_LEN))}
+              placeholder="Buy any coffee"
+              disabled={busy}
+              className={INPUT}
+            />
+          </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-[11px] font-black uppercase tracking-wide text-muted">Reward (G$)</span>
-          <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} min="0"
-            className="mt-1 w-full border-2 border-ink rounded-xl px-3 py-2.5 text-sm font-black outline-none" />
-        </label>
-        <label className="block">
-          <span className="text-[11px] font-black uppercase tracking-wide text-muted">Expires in</span>
-          <select value={duration} onChange={(e) => setDuration(Number(e.target.value))}
-            className="mt-1 w-full border-2 border-ink rounded-xl px-3 py-2.5 text-sm font-semibold outline-none bg-white">
-            {DURATIONS.map((d) => <option key={d.s} value={d.s}>{d.label}</option>)}
-          </select>
-        </label>
-      </div>
+          <label className="block">
+            <span className="block text-sm/none text-nav-muted mb-3">Reward</span>
+            <span className="relative block">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                min="0"
+                disabled={busy}
+                className={`${INPUT} pr-14`}
+              />
+              <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">G$</span>
+            </span>
+          </label>
 
-      <label className="block">
-        <span className="text-[11px] font-black uppercase tracking-wide text-muted">Map clue (optional)</span>
-        <input value={clue} onChange={(e) => setClue(e.target.value.slice(0, 150))} placeholder={`e.g. At ${spot.name} counter`}
-          className="mt-1 w-full border-2 border-ink rounded-xl px-3 py-2.5 text-sm font-semibold outline-none" />
-      </label>
+          <div>
+            <span className="block text-sm/none text-nav-muted mb-3">Expires in</span>
+            <div role="radiogroup" aria-label="Expires in" className="flex gap-2">
+              {DURATIONS.map((d) => {
+                const on = duration === d.s;
+                return (
+                  <button
+                    key={d.s}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    disabled={busy}
+                    onClick={() => setDuration(d.s)}
+                    className={`flex-1 h-11 rounded-full text-sm/none cursor-pointer motion-safe:transition-colors
+                      disabled:cursor-not-allowed
+                      ${on ? "bg-brand text-white" : "border border-line bg-white text-heading hover:bg-surface"}`}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      {(err || problem) && <p className="text-xs font-bold text-danger">{err || problem}</p>}
+          <label className="block">
+            <span className="block text-sm/none text-nav-muted mb-3">Map clue (optional)</span>
+            <input
+              value={clue}
+              onChange={(e) => setClue(e.target.value.slice(0, 150))}
+              placeholder={`e.g. At the ${spot.name} counter`}
+              disabled={busy}
+              className={INPUT}
+            />
+          </label>
 
-      <button
-        onClick={pendingSave ? () => saveTask(pendingSave.dropId, pendingSave.sig) : handleCreate}
-        disabled={busy || (!pendingSave && !!problem)}
-        className="btn-brutal w-full py-3 rounded-xl font-black text-sm bg-lime text-ink disabled:opacity-60 disabled:cursor-not-allowed">
-        {status === "approving" ? "Approving G$…"
-          : status === "creating" ? "Creating drop…"
-          : status === "saving" ? "Saving task…"
-          : pendingSave ? "Finish saving task"
-          : `Fund ${amount || "?"} G$ reward`}
-      </button>
-    </div>
+          <div>
+            <p
+              role="status"
+              aria-live="polite"
+              className={`min-h-4 mb-3 px-5 text-sm/[140%] ${err ? "text-danger" : "text-nav-muted"}`}
+            >
+              {hint ?? ""}
+            </p>
+            <button
+              type="submit"
+              disabled={busy || (!pendingSave && !!problem)}
+              className="w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+                flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
+                disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
+            >
+              {busy && <Loader2 className="w-5 h-5 animate-spin" />}
+              {ctaLabel}
+            </button>
+          </div>
+        </form>
+      )}
+    </Sheet>
   );
 }

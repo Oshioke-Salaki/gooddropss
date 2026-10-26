@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { Check, Gift, Loader2 } from "lucide-react";
 import { QR_TTL_S } from "@/lib/taskShared";
 import type { Drop, LatLng } from "@/types";
 
@@ -86,50 +87,68 @@ export function TaskUnlock({
   }
 
   return (
-    <div style={{ border: "2px solid #111", borderRadius: 16, padding: 16, background: "#fff", fontFamily: "inherit" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span style={{ fontSize: 20 }}>🎁</span>
-        <p style={{ margin: 0, fontWeight: 900, fontSize: 15 }}>Merchant reward</p>
+    <div className="rounded-2xl border border-line bg-white p-4 font-sans">
+      <div className="flex items-center gap-3">
+        <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-surface flex items-center justify-center text-heading">
+          <Gift className="w-5 h-5" strokeWidth={1.75} />
+        </span>
+        <div className="min-w-0 flex flex-col gap-y-1">
+          <p className="text-base/none text-heading">Merchant reward</p>
+          <p className="text-sm/[140%] text-nav-muted">
+            {task ? <>Do this to unlock: <span className="text-heading">{task}</span></> : "Complete the merchant's task to unlock this reward."}
+          </p>
+        </div>
       </div>
-      <p style={{ margin: "0 0 12px", fontSize: 13, color: "#555", lineHeight: 1.5 }}>
-        {task ? <>Do this to unlock: <b style={{ color: "#111" }}>{task}</b></> : "Complete the merchant's task to unlock this reward."}
-      </p>
 
       {step === "intro" && (
-        <button onClick={iDidIt}
-          style={{ width: "100%", padding: 14, background: "#BFFD00", color: "#111", border: "2px solid #111", borderRadius: 12, boxShadow: "2px 2px 0 #111", fontWeight: 900, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-          I did it — show my code
+        <button
+          type="button"
+          onClick={iDidIt}
+          className="mt-4 w-full h-12 rounded-full bg-brand text-white text-base/none cursor-pointer
+            motion-safe:transition-colors hover:bg-brand/90"
+        >
+          I did it, show my code
         </button>
       )}
 
-      {step === "minting" && <p style={{ margin: 0, fontWeight: 700, fontSize: 13, color: "#888" }}>Creating your code…</p>}
+      {step === "minting" && (
+        <p role="status" aria-live="polite" className="mt-4 flex items-center gap-2 text-sm/none text-nav-muted">
+          <Loader2 className="w-4 h-4 animate-spin" /> Creating your code…
+        </p>
+      )}
 
       {step === "showing" && (
-        <div style={{ textAlign: "center" }}>
-          <div style={{ display: "inline-block", background: "#fff", border: "2.5px solid #111", borderRadius: 14, padding: 14, boxShadow: "3px 3px 0 #111" }}>
+        <div className="mt-4 flex flex-col items-center text-center">
+          <div className="inline-block rounded-2xl border border-line bg-white p-3">
             <QRCodeSVG value={nonce} size={172} level="M" />
           </div>
-          <p style={{ margin: "12px 0 2px", fontWeight: 800, fontSize: 14 }}>Show this to the merchant to approve</p>
-          <p style={{ margin: 0, fontSize: 12, color: "#888" }}>
-            <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 99, background: "#4ade80", marginRight: 6 }} />
-            Waiting for approval…{secsLeft > 0 ? ` (auto-refreshes in ${secsLeft}s)` : " (refreshing…)"}
+          <p className="mt-4 text-base/none text-heading">Show this to the merchant to approve</p>
+          <p role="status" aria-live="polite" className="mt-2 flex items-center gap-2 text-sm/none text-nav-muted">
+            <span className="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse" aria-hidden />
+            Waiting for approval{secsLeft > 0 ? ` · refreshes in ${secsLeft}s` : " · refreshing…"}
           </p>
-          <p style={{ margin: "8px 0 0", fontSize: 11, color: "#bbb", fontFamily: "monospace" }}>{nonce.slice(0, 8)}…</p>
+          <p className="mt-2 text-xs/none text-nav-muted/60 font-mono">{nonce.slice(0, 8)}…</p>
         </div>
       )}
 
       {step === "approved" && (
-        <div style={{ textAlign: "center", padding: "8px 0" }}>
-          <div style={{ fontSize: 34 }}>✅</div>
-          <p style={{ margin: "6px 0 0", fontWeight: 900, fontSize: 16 }}>Approved — claiming your reward…</p>
+        <div className="mt-4 flex flex-col items-center text-center gap-y-3 py-2">
+          <span className="success-pop w-12 h-12 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+            <Check className="w-6 h-6" strokeWidth={2} />
+          </span>
+          <p className="text-base/none text-heading">Approved, claiming your reward…</p>
         </div>
       )}
 
       {step === "error" && (
         <>
-          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: "#FF3B3B" }}>{err}</p>
-          <button onClick={iDidIt}
-            style={{ width: "100%", padding: 12, background: "#111", color: "#BFFD00", border: "none", borderRadius: 12, fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+          <p role="alert" className="mt-4 text-sm/[140%] text-danger">{err}</p>
+          <button
+            type="button"
+            onClick={iDidIt}
+            className="mt-3 w-full h-12 rounded-full border border-line bg-white text-base/none text-heading
+              cursor-pointer motion-safe:transition-colors hover:bg-surface"
+          >
             Try again
           </button>
         </>

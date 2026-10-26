@@ -3,8 +3,12 @@ import { useEffect, useState } from "react";
 import { useAccount, useConnect } from "wagmi";
 import type { Connector } from "wagmi";
 import { celo } from "viem/chains";
-import { Mail, Wallet, X, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Link2, Loader2, Mail } from "lucide-react";
 import { isValoraBrowser } from "@/lib/valora";
+import { PARTNER, PARTNER_CONNECTOR_ID, lastLogin, rememberLogin } from "@/lib/partner";
+import { AuthSheet } from "@/components/auth/AuthSheet";
+import { OptionRow } from "@/components/auth/OptionRow";
+import { WalletSelectModal } from "@/components/auth/WalletSelectModal";
 
 // Login sheet. We collect the email ourselves and hand it straight to Magic, so
 // Magic only ever renders its OTP *code* screen — never its generic "Sign-in
@@ -43,35 +47,37 @@ function injectedWalletName(): string {
   return "your wallet";
 }
 
-function GoogleIcon({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden>
-      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.05 6.05 29.3 4 24 4 12.95 4 4 12.95 4 24s8.95 20 20 20 20-8.95 20-20c0-1.34-.14-2.65-.4-3.5z"/>
-      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.05 6.05 29.3 4 24 4 16.3 4 9.65 8.34 6.3 14.7z"/>
-      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
-      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.5l6.2 5.2C39.9 35.9 44 30.6 44 24c0-1.34-.14-2.65-.4-3.5z"/>
-    </svg>
-  );
-}
+// Each block sits in its own hairline-separated band, matching the wallet modal.
+const BAND = "p-6 border-b border-line";
+const FIELD =
+  // pl-13 = 52px, clearing the absolutely-positioned Mail icon (24px inset + 20px wide).
+  // No backdrop-filter here: the fill is opaque so it blurred nothing, and it made the
+  // input its own stacking context — which painted it over the icon sitting beside it.
+  "w-full py-6 pl-13 pr-6 rounded-full bg-surface text-base/none text-heading " +
+  "placeholder:text-nav-muted outline-none focus:ring-2 focus:ring-brand/30 " +
+  "motion-safe:transition-shadow disabled:opacity-50";
 
 export function AuthModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { connect, connectAsync, connectors, isPending, reset } = useConnect();
   const { isConnected } = useAccount();
 
-  const [view, setView] = useState<"main" | "wallets">("main");
+  const [view, setView] = useState<"main" | "wallets" | "partner">("main");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
+  const [partnerBusy, setPartnerBusy] = useState(false);
   const [email, setEmail] = useState("");
   const [err, setErr] = useState("");
 
   const magic = connectors.find((c) => c.id === "magic");
+  // Present only when NEXT_PUBLIC_PARTNER_MAGIC_KEY is set (see lib/partner.ts).
+  const partner = PARTNER ? connectors.find((c) => c.id === PARTNER_CONNECTOR_ID) : undefined;
   const emailOk = EMAIL_RE.test(email.trim());
-  const busy = isPending || googleBusy || emailBusy;
+  const busy = isPending || googleBusy || emailBusy || partnerBusy;
 
-  // Wallet connectors = everything except Magic. EIP-6963 discovery adds named
-  // wallets (id = rdns); prefer those and drop the generic `injected` fallback.
-  const nonMagic = connectors.filter((c) => c.id !== "magic");
+  // Wallet connectors = everything except the Magic ones. EIP-6963 discovery adds
+  // named wallets (id = rdns); prefer those and drop the generic `injected` fallback.
+  const nonMagic = connectors.filter((c) => c.id !== "magic" && c.id !== PARTNER_CONNECTOR_ID);
   const wc = nonMagic.find((c) => c.id === "walletConnect");
   // EIP-6963-discovered wallets carry rdns ids (io.metamask, …) — i.e. everything
   // that is neither our generic `injected` connector nor WalletConnect. These, plus
@@ -107,39 +113,17 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   useEffect(() => {
     if (!open) {
       setView("main"); setPendingId(null); setErr("");
-      setGoogleBusy(false); setEmailBusy(false); setEmail("");
+      setGoogleBusy(false); setEmailBusy(false); setPartnerBusy(false); setEmail("");
+      return;
     }
+    // A returning partner user lands on their own door, not a menu.
+    if (PARTNER && lastLogin() === "partner") setView("partner");
   }, [open]);
   useEffect(() => { if (!isPending) setPendingId(null); }, [isPending]);
   // Clear any stuck connect state each time the sheet opens. Without this, a wallet
   // attempt that didn't finish (e.g. the user came back from Valora without pairing)
   // leaves `isPending` true, which greys out the connect button on the next open.
   useEffect(() => { if (open) reset(); }, [open, reset]);
-
-  // Lift the sheet above the on-screen keyboard. On iOS / in-app wallet browsers
-  // (Valora/MiniPay), a `position: fixed` sheet stays anchored to the FULL page
-  // height — the keyboard doesn't shrink it — so the email field ends up behind the
-  // keyboard with a bare gap. We keep the dark overlay covering the whole screen and
-  // just pad its bottom by the keyboard's height (from visualViewport), which floats
-  // the sheet right above the keyboard. Held in state so typing can't clobber it.
-  const [kb, setKb] = useState(0);
-  useEffect(() => {
-    if (!open || typeof window === "undefined") return;
-    const vv = window.visualViewport;
-    const apply = () => { if (vv) setKb(Math.max(0, window.innerHeight - vv.height - vv.offsetTop)); };
-    apply();
-    vv?.addEventListener("resize", apply);
-    vv?.addEventListener("scroll", apply);
-    // Stop the page behind from scrolling — on iOS that scroll drags the fixed sheet.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      vv?.removeEventListener("resize", apply);
-      vv?.removeEventListener("scroll", apply);
-      document.body.style.overflow = prevOverflow;
-      setKb(0);
-    };
-  }, [open]);
 
   if (!open) return null;
 
@@ -171,6 +155,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     try {
       await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
       await connectAsync({ connector: magic, chainId: celo.id });
+      rememberLogin("gooddrops");
       onClose();
     } catch (e) {
       if (!isUserCancel(e)) {
@@ -202,6 +187,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     try {
       // Remember where they were so the callback can send them back.
       sessionStorage.setItem("gd:returnTo", window.location.pathname + window.location.search);
+      rememberLogin("gooddrops");
       await sdk.oauth2.loginWithRedirect({
         provider: "google",
         redirectURI: `${window.location.origin}/auth/callback`,
@@ -213,174 +199,199 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }
 
+  // Partner sign-in. Same shape as email sign-in, against the PARTNER connector's
+  // own Magic instance — a different publishable key, so the OTP, the session and
+  // the wallet all belong to the partner's app. The user gets the wallet they
+  // already have there, verified status included; nothing is created or linked.
+  async function loginWithPartner() {
+    if (!partner || !PARTNER || busy || !emailOk) return;
+    const sdk = (partner as unknown as { magic?: MagicSdk }).magic;
+    if (!sdk?.auth?.loginWithEmailOTP) {
+      setErr(`${PARTNER.name} sign-in is unavailable right now. Please use Google or email.`);
+      return;
+    }
+    setPartnerBusy(true);
+    setErr("");
+    try {
+      await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
+      await connectAsync({ connector: partner, chainId: celo.id });
+      rememberLogin("partner");
+      onClose();
+    } catch (e) {
+      if (!isUserCancel(e)) {
+        console.error("[auth] partner sign-in failed", e);
+        setErr("That didn't work. Check the code and try again.");
+      }
+    } finally {
+      setPartnerBusy(false);
+    }
+  }
+
+  // Valora's in-app browser injects no provider, so we pair over WalletConnect and
+  // deep-link into it — the label says so plainly rather than "Connect a wallet".
+  const walletLabel = isValoraBrowser() ? "Connect with Valora" : "Connect a wallet";
+
+  function openWallets() {
+    if (walletConnectors.length === 0) {
+      setErr("No wallet found in this browser. Open GoodDrops inside your wallet app (Valora, MiniPay, MetaMask), or just use Google or email above — it creates a wallet for you automatically.");
+      return;
+    }
+    if (walletConnectors.length === 1) pick(walletConnectors[0]);
+    else setView("wallets");
+  }
+
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, zIndex: 2000, boxSizing: "border-box",
-        paddingBottom: kb,
-        background: "rgba(17,17,17,0.55)", backdropFilter: "blur(4px)",
-        display: "flex", alignItems: "flex-end", justifyContent: "center",
-        fontFamily: "'Space Grotesk', sans-serif",
-        transition: "padding-bottom 0.12s ease-out",
-      }}
+    <AuthSheet
+      title={
+        view === "wallets" ? "Choose a wallet"
+        : view === "partner" && PARTNER ? `Continue with ${PARTNER.name}`
+        : "Sign in to GoodDrops"
+      }
+      onBack={view !== "main" ? () => { setView("main"); setErr(""); } : undefined}
+      onClose={onClose}
+      dismissible={!busy}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="rise"
-        style={{
-          width: "100%", maxWidth: 440,
-          background: "#fff", border: "2.5px solid #111",
-          borderRadius: "24px 24px 0 0",
-          boxShadow: "0 -6px 0 #111",
-          padding: "22px 22px calc(28px + env(safe-area-inset-bottom, 0px))",
-          margin: "0 auto",
-          // Never taller than the visible area, and scroll inside if the keyboard
-          // squeezes it — so the email field is always reachable above the keyboard.
-          maxHeight: "100%", overflowY: "auto", boxSizing: "border-box",
-        }}
-      >
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {view === "wallets" && (
-              <button onClick={() => setView("main")} aria-label="Back" style={roundBtn}>
-                <ChevronLeft size={17} />
-              </button>
-            )}
-            <p style={{ margin: 0, fontWeight: 900, fontSize: 20, letterSpacing: "-0.02em" }}>
-              {view === "main" ? "Sign in to GoodDrops" : "Choose a wallet"}
+      {view === "wallets" ? (
+        <WalletSelectModal
+          connectors={walletConnectors}
+          pendingId={pendingId}
+          busy={busy}
+          onPick={pick}
+        />
+      ) : view === "partner" && PARTNER && partner ? (
+        <>
+          <p className="text-sm/[150%] text-nav-muted px-6 mt-6">
+            Use the email you signed up to {PARTNER.name} with. You&rsquo;ll get the same
+            wallet here — already verified, G$ and all.
+          </p>
+
+          {err && (
+            <p className="mx-6 mt-4 rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm leading-relaxed text-[#C81E1E]">
+              {err}
             </p>
-          </div>
-          <button onClick={onClose} aria-label="Close" style={roundBtn}>
-            <X size={16} />
-          </button>
-        </div>
+          )}
 
-        {view === "main" ? (
-          <>
-            <p style={{ margin: "0 0 18px", fontSize: 13.5, color: "#5a5a5a", lineHeight: 1.5 }}>
-              Hide and hunt real G$ anywhere in the world.
-            </p>
-
-            {err && (
-              <p style={{
-                margin: "0 0 12px", padding: "10px 12px",
-                background: "#FFE5E5", border: "1.5px solid #FF3B3B",
-                borderRadius: 12, color: "#C81E1E", fontSize: 13, fontWeight: 600,
-              }}>
-                {err}
-              </p>
-            )}
-
-            {/* Google — primary path: no OTP email, so no spam-folder risk */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); loginWithPartner(); }}
+            className={`${BAND} space-y-2.5`}
+          >
+            <div className="relative">
+              <Mail className="absolute left-6 top-1/2 -translate-y-1/2 z-10 w-5 h-5 text-black pointer-events-none" />
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder={`Your ${PARTNER.name} email`}
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); if (err) setErr(""); }}
+                disabled={busy}
+                autoFocus
+                className={FIELD}
+              />
+            </div>
             <button
+              type="submit"
+              disabled={busy || !emailOk}
+              className={`w-full py-6 rounded-full text-white text-base/none flex items-center justify-center gap-2
+                motion-safe:transition-colors
+                ${emailOk && !busy ? "bg-nav-active cursor-pointer" : "bg-[#1B1B1B66] cursor-not-allowed"}`}
+            >
+              {partnerBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+              {partnerBusy ? "Check your email…" : `Continue with ${PARTNER.name}`}
+            </button>
+          </form>
+
+          <p className="px-6 text-xs text-nav-muted leading-relaxed">
+            We&rsquo;ll email you a one-time code from {PARTNER.name}. No new wallet is
+            created and nothing is linked — it&rsquo;s your existing account, used here.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm/none text-nav-muted px-6 mt-6">
+            Hide and hunt real G$ anywhere in the world.
+          </p>
+
+          {err && (
+            <p className="mx-6 mt-4 rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm leading-relaxed text-[#C81E1E]">
+              {err}
+            </p>
+          )}
+
+          {/* Google — primary path: no OTP email, so no spam-folder risk */}
+          <div className={BAND}>
+            <OptionRow
+              label="Continue with Google"
+              iconSrc="/google-logo.svg"
               onClick={loginWithGoogle}
               disabled={busy || !magic}
-              style={{
-                width: "100%", padding: "16px",
-                background: "#BFFD00", color: "#111",
-                border: "2.5px solid #111", borderRadius: 16,
-                boxShadow: "4px 4px 0 #111",
-                fontWeight: 900, fontSize: 16,
-                cursor: googleBusy ? "wait" : "pointer",
-                fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-              }}
+              busy={googleBusy}
+            />
+          </div>
+
+          {/* Email — collected here, so Magic only shows its code screen */}
+          <form
+            onSubmit={(e) => { e.preventDefault(); loginWithEmail(); }}
+            className={`${BAND} space-y-2.5`}
+          >
+            <div className="relative">
+              <Mail className="absolute left-6 top-1/2 -translate-y-1/2 z-10 w-5 h-5 text-black pointer-events-none" />
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="Your email address"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); if (err) setErr(""); }}
+                disabled={busy}
+                className={FIELD}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={busy || !emailOk || !magic}
+              className={`w-full py-6 rounded-full text-white text-base/none flex items-center justify-center gap-2
+                motion-safe:transition-colors
+                ${emailOk && !busy && magic ? "bg-nav-active cursor-pointer" : "bg-[#1B1B1B66] cursor-not-allowed"}`}
             >
-              {googleBusy ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon size={20} />}
-              Continue with Google
+              {emailBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+              {emailBusy ? "Check your email…" : "Continue with email"}
             </button>
+          </form>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0" }}>
-              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
-              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
+          {/* Partner door — only rendered once the partner's key is configured. */}
+          {PARTNER && partner && (
+            <div className={BAND}>
+              <OptionRow
+                label={`Continue with ${PARTNER.name}`}
+                iconSrc={PARTNER.logo || undefined}
+                iconFallback={<Link2 className="w-5 h-5 text-heading" />}
+                onClick={() => { setErr(""); setView("partner"); }}
+                disabled={busy}
+              />
             </div>
+          )}
 
-            {/* Email — collected here, so Magic only shows its code screen */}
-            <form
-              onSubmit={(e) => { e.preventDefault(); loginWithEmail(); }}
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
-            >
-              <div style={{ position: "relative" }}>
-                <Mail
-                  size={17}
-                  color="#aaa"
-                  style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }}
-                />
-                <input
-                  type="email"
-                  inputMode="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (err) setErr(""); }}
-                  disabled={busy}
-                  style={{
-                    width: "100%", padding: "14px 14px 14px 40px",
-                    background: "#fff", color: "#111",
-                    border: "2px solid #111", borderRadius: 14,
-                    fontWeight: 700, fontSize: 15, fontFamily: "inherit",
-                    outline: "none", boxSizing: "border-box",
-                  }}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={busy || !emailOk || !magic}
-                style={{
-                  width: "100%", padding: "14px",
-                  background: emailOk && !busy ? "#111" : "#e8e6e0",
-                  color: emailOk && !busy ? "#fff" : "#aaa",
-                  border: "2px solid", borderColor: emailOk && !busy ? "#111" : "#e8e6e0",
-                  borderRadius: 14, fontWeight: 800, fontSize: 15,
-                  cursor: emailOk && !busy ? "pointer" : "not-allowed",
-                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  transition: "background .15s, color .15s, border-color .15s",
-                }}
-              >
-                {emailBusy && <Loader2 size={16} className="animate-spin" />}
-                {emailBusy ? "Check your email…" : "Continue with email"}
-              </button>
-            </form>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0" }}>
-              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" }}>or</span>
-              <span style={{ flex: 1, height: 1.5, background: "#e8e6e0" }} />
-            </div>
-
+          <div className="p-6">
             {injectedOnly ? (
               /* Valora / MiniPay in-app wallet: one-tap native connect, plus a
                  WalletConnect fallback link. This branch ONLY runs when an injected
                  wallet is present with no named wallet discovered — non-Valora users
                  never reach it and see the unchanged button below. */
               <>
-                <button
+                <OptionRow
+                  label={`Connect ${injectedWalletName()}`}
+                  iconSrc="/wallet-logo.svg"
                   onClick={() => pick(injectedOnly)}
                   disabled={busy}
-                  style={{
-                    width: "100%", padding: "14px",
-                    background: "#fff", color: "#111",
-                    border: "2px solid #111", borderRadius: 14,
-                    fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
-                    fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    opacity: busy ? 0.6 : 1,
-                  }}
-                >
-                  <Wallet size={16} />
-                  Connect {injectedWalletName()}
-                </button>
+                  busy={pendingId === injectedOnly.id}
+                />
                 {wc && (
                   <button
+                    type="button"
                     onClick={() => pick(wc)}
                     disabled={busy}
-                    style={{
-                      width: "100%", padding: "8px", marginTop: 8,
-                      background: "transparent", color: "#888", border: "none",
-                      fontWeight: 700, fontSize: 12.5, cursor: busy ? "wait" : "pointer",
-                      fontFamily: "inherit", textDecoration: "underline",
-                    }}
+                    className="w-full mt-3 text-xs/none text-nav-muted underline underline-offset-4 cursor-pointer disabled:cursor-wait disabled:opacity-50 motion-safe:transition-colors hover:text-heading"
                   >
                     Use a different wallet (WalletConnect)
                   </button>
@@ -389,82 +400,23 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             ) : (
               /* Unchanged path: desktop extensions (chooser), plain browser
                  (WalletConnect), or nothing (guidance). */
-              <button
-                onClick={() => {
-                  if (walletConnectors.length === 0) {
-                    setErr("No wallet found in this browser. Open GoodDrops inside your wallet app (Valora, MiniPay, MetaMask), or just use Google or email above — it creates a wallet for you automatically.");
-                    return;
-                  }
-                  if (walletConnectors.length === 1) pick(walletConnectors[0]);
-                  else setView("wallets");
-                }}
+              <OptionRow
+                label={walletLabel}
+                iconSrc="/wallet-logo.svg"
+                onClick={openWallets}
                 disabled={busy}
-                style={{
-                  width: "100%", padding: "14px",
-                  background: "#fff", color: "#111",
-                  border: "2px solid #111", borderRadius: 14,
-                  fontWeight: 800, fontSize: 14, cursor: busy ? "wait" : "pointer",
-                  fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  opacity: busy ? 0.6 : 1,
-                }}
-              >
-                <Wallet size={16} />
-                {isValoraBrowser() ? "Connect with Valora" : "Connect a wallet"}
-                {walletConnectors.length > 1 && !isValoraBrowser() && <ChevronRight size={15} style={{ marginLeft: "auto" }} />}
-              </button>
+              />
             )}
+          </div>
 
-            <p style={{ margin: "16px 0 0", fontSize: 11, color: "#999", textAlign: "center", lineHeight: 1.5 }}>
-              Google or email creates a secure wallet for you automatically. No seed phrase needed.
-            </p>
-          </>
-        ) : (
-          <>
-            <p style={{ margin: "0 0 16px", fontSize: 13.5, color: "#5a5a5a", lineHeight: 1.5 }}>
-              Connect the wallet that holds your G$.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {walletConnectors.map((c) => (
-                <button
-                  key={c.uid}
-                  onClick={() => pick(c)}
-                  disabled={isPending}
-                  style={{
-                    width: "100%", padding: "13px 16px",
-                    background: "#fff", color: "#111",
-                    border: "2px solid #111", borderRadius: 14,
-                    fontWeight: 800, fontSize: 15, cursor: isPending ? "wait" : "pointer",
-                    fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12,
-                    boxShadow: "2px 2px 0 #111",
-                  }}
-                >
-                  {c.icon ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.icon} alt="" width={26} height={26} style={{ borderRadius: 6, flexShrink: 0 }} />
-                  ) : (
-                    <span style={{
-                      width: 26, height: 26, borderRadius: 6, background: "#111", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <Wallet size={15} color="#BFFD00" />
-                    </span>
-                  )}
-                  <span style={{ flex: 1, textAlign: "left" }}>{c.name}</span>
-                  {pendingId === c.id
-                    ? <Loader2 size={16} className="animate-spin" />
-                    : <ChevronRight size={16} color="#aaa" />}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+          <p className="px-6 text-xs text-nav-muted leading-relaxed">
+            Google or email creates a secure wallet for you automatically. No
+            seed phrase needed.
+          </p>
+        </>
+      )}
+    </AuthSheet>
   );
 }
 
-const roundBtn: React.CSSProperties = {
-  width: 32, height: 32, borderRadius: "50%", border: "none",
-  background: "#f5f4f0", cursor: "pointer", color: "#888",
-  display: "flex", alignItems: "center", justifyContent: "center",
-};
+export default AuthModal;

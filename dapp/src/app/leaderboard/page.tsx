@@ -1,287 +1,232 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useAccount } from "wagmi";
-import { Nav, BottomNav } from "@/components/Nav";
-import { useDrops } from "@/hooks/useDrops";
-import { formatG$ } from "@/lib/utils";
-import { resolveRoots } from "@/lib/roots";
-import { UserHandle } from "@/components/UserHandle";
-import { ProfileAvatar } from "@/components/ProfileAvatar";
-import { useProfile } from "@/hooks/useProfile";
-import { DROP_STATUS } from "@/types";
-import type { HunterStreak } from "@/types";
-import clsx from "clsx";
+import { Nav } from "@/components/Nav";
+import { useProfiles, useMyProfile } from "@/hooks/useProfile";
+import { useLeaderboard } from "./useLeaderboard";
+import { LeaderboardToggle } from "./components/LeaderboardToggle";
+import { TotalCard } from "./components/TotalCard";
+import { StatChip } from "./components/StatChip";
+import { LeaderboardSearch } from "./components/LeaderboardSearch";
+import { Podium } from "./components/Podium";
+import { RankRow, RankRowSkeleton } from "./components/RankRow";
+import { MeBar } from "./components/MeBar";
+import { fullG } from "./components/format";
+import { TAB_COPY, type Tab } from "./components/types";
 
-interface Rank {
-  address: string;
-  totalWei: bigint;
-  count: number;
-}
-
-const RANK_STYLES = [
-  "bg-lime border-ink text-ink shadow-brutal",
-  "bg-ink border-ink text-lime shadow-brutal",
-  "bg-border border-ink text-ink",
-];
-
-function RankRow({
-  rank,
-  entry,
-  label,
-  streak,
-  showNameNudge,
-}: {
-  rank: number;
-  entry: Rank;
-  label?: string;
-  streak?: HunterStreak | null;
-  showNameNudge?: boolean;
-}) {
-  const isTop3 = rank <= 3;
-  return (
-    <div
-      className={clsx(
-        "border-2 border-ink rounded-2xl px-3 py-3 min-w-0",
-        isTop3 ? RANK_STYLES[rank - 1] : "bg-card"
-      )}
-    >
-      <div className="flex items-center gap-3 min-w-0">
-        <div
-          className={clsx(
-            "w-8 h-8 rounded-full flex items-center justify-center text-sm font-black shrink-0",
-            rank === 1 && "bg-ink text-lime",
-            rank === 2 && "bg-lime text-ink",
-            rank >= 3 && !isTop3
-              ? "bg-border text-muted"
-              : rank === 3
-              ? "bg-cream text-ink border border-ink"
-              : ""
-          )}
-        >
-          {rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : rank}
-        </div>
-        <ProfileAvatar address={entry.address} size={34} ringColor={isTop3 ? "#111" : "#d6d5cf"} />
-        <Link href={`/hunter/${entry.address}`} className="flex-1 min-w-0 hover:opacity-80 transition-opacity">
-          <div className="font-bold text-sm truncate flex items-center gap-1.5">
-            <UserHandle address={entry.address} />
-            {streak && streak.current >= 2 && (
-              <span
-                title={`${streak.current}-day streak`}
-                className={clsx(
-                  "text-xs font-black px-1.5 py-0.5 rounded-full border leading-none shrink-0",
-                  streak.current >= 7
-                    ? "bg-orange-500 border-orange-700 text-white"
-                    : "bg-cream border-ink text-ink"
-                )}
-              >
-                🔥{streak.current}
-              </span>
-            )}
-          </div>
-          <div className="text-xs opacity-70 font-medium">{entry.count} {label}</div>
-        </Link>
-        <div className="text-right shrink-0">
-          <div className="font-black text-lg leading-none">{formatG$(entry.totalWei)}</div>
-          <div className="text-xs opacity-70 font-semibold">G$</div>
-        </div>
-      </div>
-
-      {showNameNudge && (
-        <button
-          onClick={() => window.dispatchEvent(new CustomEvent("gd:setName"))}
-          className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full bg-lime border-2 border-ink text-ink shadow-brutal-sm hover:opacity-90 transition-opacity"
-        >
-          👋 That&apos;s you — claim your name →
-        </button>
-      )}
-    </div>
-  );
-}
+const TAB_KEY = "gd:leaderboardTab";
+const PAGE = 25;
 
 export default function LeaderboardPage() {
-  const { drops, loading, fetchDrops } = useDrops();
   const { address: me } = useAccount();
-  const myProfile = useProfile(me);
-  // Show the "that's you — claim your name" nudge only once we've confirmed the
-  // connected user has no username yet.
-  const iNeedName = !!me && myProfile !== undefined && !myProfile?.username;
-  const [tab, setTab] = useState<"hunters" | "droppers">("hunters");
-  const [streaks, setStreaks] = useState<Record<string, HunterStreak>>({});
-  // Map each wallet → its identity root, so a person's linked wallets collapse
-  // into one leaderboard entry (no double-counting migrated users).
-  const [roots, setRoots] = useState<Map<string, string>>(new Map());
+  const { needsName } = useMyProfile();
+  const {
+    droppers,
+    hunters,
+    droppedWei,
+    claimedWei,
+    totalDrops,
+    totalClaims,
+    loading,
+  } = useLeaderboard();
 
+  const [tab, setTab] = useState<Tab>("droppers");
+  const [query, setQuery] = useState("");
+  const [visible, setVisible] = useState(PAGE);
+
+  // Remember the tab for the session, so bouncing to a profile and back doesn't
+  // dump you on the other board. Read after mount — sessionStorage on the first
+  // render would break hydration.
   useEffect(() => {
-    fetchDrops();
-  }, [fetchDrops]);
-
-  // Resolve identity roots for every participating wallet once drops are in.
+    const saved = sessionStorage.getItem(TAB_KEY);
+    if (saved === "droppers" || saved === "hunters") setTab(saved);
+  }, []);
   useEffect(() => {
-    if (drops.length === 0) return;
-    const addrs = new Set<string>();
-    for (const d of drops) {
-      addrs.add(d.dropper.toLowerCase());
-      if (d.claimer !== "0x0000000000000000000000000000000000000000") addrs.add(d.claimer.toLowerCase());
-    }
-    let cancelled = false;
-    resolveRoots([...addrs]).then((m) => { if (!cancelled) setRoots(m); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [drops]);
+    sessionStorage.setItem(TAB_KEY, tab);
+  }, [tab]);
 
-  const { hunters, droppers, totalG$, totalDrops } = useMemo(() => {
-    // Group/dedup by identity ROOT so a migrated person is one entry, but track a
-    // `displayAddr` = the wallet they actually use (the most-recently-active member
-    // of the group). For a migrated user that's their GoodDrops wallet, not the old
-    // Focus-Pet root — so the row shows their current address and its username.
-    type Agg = { wei: bigint; count: number; displayAddr: string; latest: number };
-    const hunterMap = new Map<string, Agg>();
-    const dropperMap = new Map<string, Agg>();
-    let totalG$ = 0n;
-    const keyOf = (addr: string) => roots.get(addr.toLowerCase()) ?? addr.toLowerCase();
+  const entries = tab === "droppers" ? droppers : hunters;
+  const copy = TAB_COPY[tab];
 
-    const bump = (map: Map<string, Agg>, key: string, wallet: string, amount: bigint, when: number) => {
-      const prev = map.get(key);
-      if (!prev) { map.set(key, { wei: amount, count: 1, displayAddr: wallet, latest: when }); return; }
-      const newer = when >= prev.latest;
-      map.set(key, {
-        wei: prev.wei + amount,
-        count: prev.count + 1,
-        displayAddr: newer ? wallet : prev.displayAddr,
-        latest: newer ? when : prev.latest,
-      });
-    };
+  // One batched request for every ranked wallet's username — needed to render the
+  // rows AND to search by name. Without it each row would fetch its own profile.
+  const addresses = useMemo(() => entries.map((e) => e.address), [entries]);
+  const profiles = useProfiles(addresses);
 
-    for (const drop of drops) {
-      bump(dropperMap, keyOf(drop.dropper), drop.dropper.toLowerCase(), drop.amount, drop.createdAt || 0);
+  // Rank is the position on the FULL board, so filtering never renumbers anyone.
+  const ranked = useMemo(
+    () => entries.map((entry, i) => ({ entry, rank: i + 1 })),
+    [entries],
+  );
 
-      if (
-        drop.status === DROP_STATUS.Claimed &&
-        drop.claimer !== "0x0000000000000000000000000000000000000000"
-      ) {
-        bump(hunterMap, keyOf(drop.claimer), drop.claimer.toLowerCase(), drop.amount, drop.claimedAt || drop.createdAt || 0);
-        totalG$ += drop.amount;
-      }
-    }
-
-    const toRanks = (map: Map<string, Agg>): Rank[] =>
-      Array.from(map.values())
-        .map(({ wei, count, displayAddr }) => ({
-          address: displayAddr,
-          totalWei: wei,
-          count,
-        }))
-        .sort((a, b) => (b.totalWei > a.totalWei ? 1 : -1));
-
-    return {
-      hunters: toRanks(hunterMap),
-      droppers: toRanks(dropperMap),
-      totalG$,
-      totalDrops: drops.length,
-    };
-  }, [drops, roots]);
-
-  // Fetch streaks for top 20 hunters once the list is computed
-  useEffect(() => {
-    const top = hunters.slice(0, 20);
-    if (top.length === 0) return;
-    Promise.allSettled(
-      top.map((h) =>
-        fetch(`/api/engagement?address=${h.address}`)
-          .then((r) => r.json())
-          .then((d) => ({ address: h.address.toLowerCase(), streak: d.streak as HunterStreak | null }))
-      )
-    ).then((results) => {
-      const map: Record<string, HunterStreak> = {};
-      for (const r of results) {
-        if (r.status === "fulfilled" && r.value.streak) {
-          map[r.value.address] = r.value.streak;
-        }
-      }
-      setStreaks(map);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return ranked;
+    return ranked.filter(({ entry }) => {
+      const username =
+        profiles[entry.address.toLowerCase()]?.username?.toLowerCase();
+      return (
+        entry.address.toLowerCase().includes(q) ||
+        (username?.includes(q) ?? false)
+      );
     });
-  }, [hunters]);
+  }, [ranked, query, profiles]);
+
+  // A new tab or query means a new list — start it from the top again.
+  useEffect(() => {
+    setVisible(PAGE);
+  }, [tab, query]);
+
+  // The podium only makes sense whole, and only on the unfiltered board: while
+  // searching, "1st / 2nd / 3rd" medals beside arbitrary matches would be a lie.
+  const showPodium = !query.trim() && filtered.length >= 3;
+  const podium = showPodium ? filtered.slice(0, 3) : [];
+  const rest = showPodium ? filtered.slice(3) : filtered;
+  const shown = rest.slice(0, visible);
+
+  const myRow = useMemo(
+    () =>
+      me
+        ? ranked.find(
+            ({ entry }) => entry.address.toLowerCase() === me.toLowerCase(),
+          )
+        : undefined,
+    [ranked, me],
+  );
 
   return (
-    <div className="min-h-screen bg-cream pb-24">
+    <div className="min-h-screen bg-surface font-sans">
       <Nav />
 
-      <div className="max-w-screen-md mx-auto px-4 pt-20 pb-8">
-        <h1 className="text-3xl font-black tracking-tight mb-1">Rankings 🏆</h1>
-        <p className="text-muted text-sm mb-6">
-          Real-time leaderboard
-        </p>
+      <div className="pt-nav">
+        <div className="px-4 lg:px-15 pt-10 pb-32">
+          {/* Controls */}
+          <div className="flex flex-col-reverse lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
+            <LeaderboardToggle tab={tab} onChange={setTab} />
+            <TotalCard
+              value={fullG(tab === "droppers" ? droppedWei : claimedWei)}
+              label={copy.totalLabel}
+              loading={loading}
+            />
+          </div>
 
-        {/* Global stats */}
-        <div className="grid grid-cols-3 gap-2 mb-6 min-w-0">
-          <div className="bg-card border-2 border-ink rounded-2xl p-3 text-center shadow-brutal-sm">
-            <div className="text-xl font-black">{totalDrops}</div>
-            <div className="text-xs text-muted font-semibold mt-0.5">Total Drops</div>
-          </div>
-          <div className="bg-lime border-2 border-ink rounded-2xl p-3 text-center shadow-brutal">
-            <div className="text-xl font-black">{formatG$(totalG$)}</div>
-            <div className="text-xs font-bold mt-0.5">G$ Claimed</div>
-          </div>
-          <div className="bg-card border-2 border-ink rounded-2xl p-3 text-center shadow-brutal-sm">
-            <div className="text-xl font-black">{hunters.length}</div>
-            <div className="text-xs text-muted font-semibold mt-0.5">Hunters</div>
-          </div>
-        </div>
+          {/* Board */}
+          <div className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden">
+            <div className="p-6 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
+              <div className="flex items-center justify-center lg:justify-start gap-x-2 lg:gap-x-4 w-full lg:w-auto lg:overflow-x-auto no-scrollbar">
+                <StatChip
+                  value={entries.length}
+                  label={copy.activeLabel}
+                  shortLabel={copy.activeLabelShort}
+                  loading={loading}
+                />
+                <StatChip
+                  value={tab === "droppers" ? totalDrops : totalClaims}
+                  label={copy.totalCountLabel}
+                  shortLabel={copy.totalCountLabelShort}
+                  loading={loading}
+                />
+              </div>
+              <LeaderboardSearch
+                value={query}
+                onChange={setQuery}
+                placeholder={copy.searchPlaceholder}
+              />
+            </div>
 
-        {/* Tabs */}
-        <div className="flex border-2 border-ink rounded-xl overflow-hidden mb-5">
-          {(["hunters", "droppers"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                "flex-1 py-3 text-sm font-bold capitalize transition-colors",
-                tab === t
-                  ? "bg-ink text-lime"
-                  : "bg-cream text-muted hover:bg-border"
-              )}
-            >
-              {t === "hunters" ? "🎯 Hunters" : "💰 Droppers"}
-            </button>
-          ))}
-        </div>
-
-        {/* List */}
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-16 bg-border rounded-2xl animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {(tab === "hunters" ? hunters : droppers).length === 0 ? (
-              <div className="text-center py-16 space-y-3">
-                <div className="text-5xl">{tab === "hunters" ? "🎯" : "💰"}</div>
-                <p className="font-bold">No data yet</p>
-                <p className="text-sm text-muted">
-                  {tab === "hunters"
-                    ? "Be the first to claim a drop!"
-                    : "Be the first to create a drop!"}
+            {loading ? (
+              <>
+                <Podium entries={[]} unit={copy.unit} loading />
+                {Array.from({ length: 6 }, (_, i) => (
+                  <RankRowSkeleton key={i} />
+                ))}
+              </>
+            ) : filtered.length === 0 ? (
+              <div className="border-t border-line px-6 py-20 text-center">
+                <p className="text-lg/none text-heading mb-3">
+                  {query.trim() ? "No matches" : copy.emptyTitle}
+                </p>
+                <p className="text-sm/none text-nav-muted">
+                  {query.trim()
+                    ? `Nothing here matches "${query.trim()}".`
+                    : copy.emptyBody}
                 </p>
               </div>
             ) : (
-              (tab === "hunters" ? hunters : droppers).map((entry, i) => (
-                <RankRow
-                  key={entry.address}
-                  rank={i + 1}
-                  entry={entry}
-                  label={tab === "hunters" ? "claims" : "drops"}
-                  streak={tab === "hunters" ? (streaks[entry.address.toLowerCase()] ?? null) : null}
-                  showNameNudge={iNeedName && entry.address.toLowerCase() === me?.toLowerCase()}
-                />
-              ))
+              <>
+                {/* Desktop only: the three-across podium. Below lg it collapses
+                    into ordinary rows whose rank chip is the medal itself, which
+                    is why the top three are re-included in `shownMobile`. */}
+                {showPodium && (
+                  <div className="hidden lg:block">
+                    <Podium
+                      entries={podium.map((p) => p.entry)}
+                      unit={copy.unit}
+                      loading={false}
+                    />
+                  </div>
+                )}
+
+                <div
+                  className={
+                    showPodium
+                      ? "lg:border-t-0 border-t border-line"
+                      : "border-t border-line"
+                  }
+                >
+                  {showPodium &&
+                    podium.map(({ entry, rank }) => (
+                      <RankRow
+                        key={entry.address}
+                        className="lg:hidden"
+                        rank={rank}
+                        entry={entry}
+                        unit={copy.unit}
+                        isMe={
+                          !!me &&
+                          entry.address.toLowerCase() === me.toLowerCase()
+                        }
+                      />
+                    ))}
+                  {shown.map(({ entry, rank }) => (
+                    <RankRow
+                      key={entry.address}
+                      rank={rank}
+                      entry={entry}
+                      unit={copy.unit}
+                      isMe={
+                        !!me && entry.address.toLowerCase() === me.toLowerCase()
+                      }
+                    />
+                  ))}
+                </div>
+
+                {rest.length > visible && (
+                  <div className="p-6 flex justify-center">
+                    <button
+                      onClick={() => setVisible((v) => v + PAGE)}
+                      className="rounded-full bg-surface hover:bg-nav-controls px-6 py-3 text-sm/none text-heading
+                        cursor-pointer motion-safe:transition-colors"
+                    >
+                      Show {Math.min(PAGE, rest.length - visible)} more
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
-        )}
+        </div>
       </div>
 
-      <BottomNav />
+      {/* Your standing — only once the board is real and you're actually on it. */}
+      {!loading && myRow && (
+        <MeBar
+          rank={myRow.rank}
+          entry={myRow.entry}
+          unit={copy.unit}
+          needsName={needsName}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
+import { Fuel } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { parseEther } from "viem";
@@ -14,12 +15,14 @@ const LOW_BALANCE = parseEther("0.005");
 const ASK_KEY     = "gd_gas_last_ask";
 const ASK_GAP_MS  = 6 * 60 * 60 * 1000; // at most one ask per 6h per device
 
-export function GasTopup() {
+/** `preview` shows the notice without asking the faucet — design QA only. */
+export function GasTopup({ preview = false }: { preview?: boolean } = {}) {
   const { address } = useAccount();
   const { isVerified } = useIdentityStatus();
-  const [notice, setNotice] = useState(false);
+  const [notice, setNotice] = useState(preview);
 
   useEffect(() => {
+    if (preview) return;
     if (!address || !isVerified) return;
     try {
       const last = Number(localStorage.getItem(ASK_KEY) ?? 0);
@@ -45,19 +48,21 @@ export function GasTopup() {
       } catch { /* silent — this is a background nicety */ }
     })();
     return () => { cancelled = true; };
-  }, [address, isVerified]);
+  }, [address, isVerified, preview]);
 
   if (!notice) return null;
   return (
-    <div style={{
-      position: "fixed", left: "50%", transform: "translateX(-50%)",
-      bottom: "calc(140px + env(safe-area-inset-bottom))", zIndex: 1300,
-      background: "#111", color: "#BFFD00", border: "1.5px solid #BFFD00",
-      borderRadius: 100, padding: "8px 16px", fontSize: 12.5, fontWeight: 800,
-      fontFamily: "'Space Grotesk', sans-serif",
-      boxShadow: "0 6px 24px rgba(0,0,0,0.4)", pointerEvents: "none",
-    }}>
-      ⛽ Gas topped up — you&apos;re covered for claims
+    <div
+      role="status"
+      className="modal-fade-in fixed left-1/2 -translate-x-1/2 z-[1300] pointer-events-none font-sans
+        flex items-center gap-2.5 rounded-full bg-nav-active text-white p-1.5 pr-5
+        shadow-[0px_4px_16px_0px_#00000029] max-w-[calc(100vw-24px)]"
+      style={{ bottom: "calc(140px + env(safe-area-inset-bottom, 0px))" }}
+    >
+      <span className="w-8 h-8 shrink-0 rounded-full bg-white/10 flex items-center justify-center">
+        <Fuel className="w-4 h-4" strokeWidth={2} />
+      </span>
+      <span className="text-sm/none truncate">Gas topped up — you&apos;re covered for claims</span>
     </div>
   );
 }

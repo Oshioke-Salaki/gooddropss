@@ -7,7 +7,8 @@ import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { ValoraDeepLink } from "@/components/ValoraDeepLink";
-import { SetNameSheet } from "@/components/SetNameSheet";
+import { ProfileSetup } from "@/components/profile/ProfileSetup";
+import { ProfileDrawerHost } from "@/components/profile/ProfileDrawer";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
 import { GasTopup } from "@/components/GasTopup";
@@ -72,9 +73,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <BadgeCelebration />
           <ChestReward />
           {children}
-          {/* Global "claim your hunter name" sheet — opened from anywhere via the
-              gd:setName event (wallet pill, post-claim screen, leaderboard). */}
-          <SetNameSheet />
+          {/* Profile setup: auto-offers an avatar (then a name) to anyone signed in
+              without one, and hosts the "set a name" sheet any surface can open
+              via the gd:setName event (wallet pill, post-claim screen, leaderboard). */}
+          <ProfileSetup />
+          <ProfileDrawerHost />
         </AuthProvider>
       </QueryClientProvider>
     </WagmiProvider>
