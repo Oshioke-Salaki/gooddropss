@@ -252,6 +252,7 @@ export default function HomePage() {
         claimPoints={heatmapPoints}
         onClose={() => setShowCreate(false)}
         onSuccess={fetchDrops}
+        onViewOnMap={(lat, lng) => setFocusCoord({ lat, lng })}
       />
       )}
 

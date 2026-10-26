@@ -1,14 +1,13 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Check, Copy, X } from "lucide-react";
-import { dropTier } from "@/components/map/markers";
+import { Check, Copy, Navigation, Share2 } from "lucide-react";
+import { Sheet } from "@/components/ui/Sheet";
 
 interface Props {
   /** Whole-G$ amount of a single drop, as typed. */
   amount: string;
-  /** Wei value of ONE drop — drives the tier colour on the value chip. */
+  /** Wei value of ONE drop (zero when unknown, e.g. a recovered session). */
   amountWei: bigint;
   qty: number;
   placeName: string | null;
@@ -18,8 +17,13 @@ interface Props {
   /** Recovered from an earlier session: the original amount and place are gone,
    *  so neither may be shown — a confident "10 G$" there would be a lie. */
   resuming: boolean;
+  /** Posts to X (the caller builds the text). */
   onShare: () => void;
   onClose: () => void;
+  /** How long the drop stays claimable, in seconds (for "Expires in…"). */
+  durationSeconds?: number;
+  /** Fly the map to the drop. Omitted where there's no map behind the modal. */
+  onViewOnMap?: () => void;
 }
 
 /** X (formerly Twitter) mark. Inlined — it's one path, and it inherits colour. */
@@ -31,28 +35,25 @@ function XLogo({ className = "" }: { className?: string }) {
   );
 }
 
+function humanDuration(s: number): string {
+  if (s < 3600 * 1.5) return "1 hour";
+  if (s < 86_400) return `${Math.round(s / 3600)} hours`;
+  const d = Math.round(s / 86_400);
+  return d === 1 ? "24 hours" : `${d} days`;
+}
+
 /**
- * Shown once a drop is live. Replaces the drawer rather than sitting inside it —
- * the job has changed from "configure a drop" to "share it", and a centred modal
- * says that more clearly than a form that suddenly reads differently.
+ * The moment a drop goes live.
  *
- * Two panes: the drop itself on the left, the link to it on the right. The right
- * pane disappears entirely for a scattered batch, which has no single URL to
- * point at — showing an empty QR frame there would be worse than showing none.
+ * Deliberately short: what's live, where, for how long — then the one job left,
+ * telling people. Everything else (clue, rules, reclaiming) lives elsewhere.
  */
 export function DropSuccessModal({
   amount, amountWei, qty, placeName, isPrivate, shareUrl, resuming, onShare, onClose,
+  durationSeconds, onViewOnMap,
 }: Props) {
   const [copied, setCopied] = useState(false);
 
-  // Mirrors the drawer: fade out before unmounting, so closing doesn't just blink.
-  const [exiting, setExiting] = useState(false);
-  const requestClose = useCallback(() => {
-    setExiting((already) => {
-      if (!already) window.setTimeout(onClose, 200);
-      return true;
-    });
-  }, [onClose]);
 
   const copy = useCallback(async () => {
     if (!shareUrl) return;
@@ -60,143 +61,133 @@ export function DropSuccessModal({
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard blocked (insecure origin, or denied) — the URL is on screen
-         and selectable, so there's still a way to take it. */
-    }
+    } catch { /* clipboard blocked — the link is on screen and selectable */ }
   }, [shareUrl]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") requestClose(); };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [requestClose]);
+  const nativeShare = useCallback(async () => {
+    const url = shareUrl ?? window.location.origin;
+    const text = isPrivate
+      ? "I hid some G$ for you on GoodDrops. Follow the link to find it."
+      : qty > 1
+        ? `I just hid ${qty} G$ drops on GoodDrops. First verified human there takes it.`
+        : `I just hid ${amount} G$ on GoodDrops. First verified human there takes it.`;
+    try {
+      if (navigator.share) { await navigator.share({ title: "GoodDrops", text, url }); return; }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch { /* share sheet dismissed */ }
+  }, [shareUrl, isPrivate, qty, amount]);
 
-  if (typeof document === "undefined") return null;
+  const each = Number(amount) || 0;
+  const multi = qty > 1;
+  const showAmount = !resuming && amountWei > 0n;
 
-  const tier = dropTier(amountWei);
-  // A resumed drop's amount is unknown, and a batch's chip would misread as the
-  // batch total rather than the per-drop value.
-  const showValue = !resuming && amountWei > 0n && qty === 1;
+  const title = resuming
+    ? "Your drop is live"
+    : isPrivate
+      ? "Your private drop is ready"
+      : multi ? `${qty} drops are live` : "Your drop is live";
 
-  return createPortal(
-    <div
-      onClick={requestClose}
-      className={`${exiting ? "modal-fade-out" : "modal-fade-in"} fixed inset-0 z-[1500] flex items-end justify-center bg-[#0000000A] font-sans backdrop-blur-md lg:items-center lg:p-5`}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Drop successful"
-        className="modal-rise max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-white p-6 shadow-[0px_0px_12px_0px_#0000000A] lg:max-h-none lg:w-[720px] lg:rounded-3xl"
-      >
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <h2 className="text-xl/none text-heading">
-            {qty > 1 ? `${qty} drops successful` : "Drop successful"}
-          </h2>
-          <button
-            type="button"
-            onClick={requestClose}
-            aria-label="Close"
-            className="shrink-0 cursor-pointer rounded-full bg-surface p-1.5 text-nav-muted motion-safe:transition-colors hover:bg-nav-controls hover:text-heading"
-          >
-            <X size={14} />
-          </button>
+
+  return (
+    <Sheet title={title} onClose={onClose} width={520} zIndex={1500}>
+      {/* ── Hero: what was hidden ─────────────────────────────────────────── */}
+      <div className="mt-5 flex items-center gap-4 rounded-2xl bg-surface p-4">
+        <div className="relative shrink-0">
+          <span aria-hidden className="absolute inset-0 -m-3 rounded-full bg-[radial-gradient(circle,rgba(255,152,37,0.35)_0%,rgba(255,152,37,0)_70%)]" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/treasure-chest-lg.png" alt="" width={80} height={80} className="success-pop relative w-18 h-18 lg:w-20 lg:h-20" />
         </div>
-
-        <div className="flex flex-col rounded-2xl border border-line lg:flex-row">
-          {/* ── The drop ── */}
-          <div
-            className={`flex flex-col justify-end p-6 ${
-              shareUrl ? "border-b border-line lg:w-[55%] lg:border-b-0 lg:border-r" : "w-full"
-            }`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/treasure-chest-lg.png"
-              alt=""
-              width={160}
-              height={160}
-              className="mx-auto mb-4 h-32 w-32 lg:h-40 lg:w-40"
-            />
-
-            {/* Same reading as the map pill: where it is, and what's in it. */}
-            <div className="mb-6 flex items-center gap-x-2 rounded-full bg-surface p-1 pr-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/location-pin.svg" alt="" width={28} height={45}
-                   className="-mt-4 h-[45px] w-7 shrink-0 select-none" />
-              <span className="min-w-0 flex-1 truncate text-sm/none text-heading">
-                {placeName ?? (isPrivate ? "Private spot" : "Chosen spot")}
-              </span>
-              {showValue && (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/treasure-chest.png" alt="" width={32} height={32}
-                       className="h-8 w-8 shrink-0" />
-                  <span
-                    className="shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-xs/none"
-                    style={{ background: tier.bg, borderColor: tier.border, color: tier.text }}
-                  >
-                    {amount} G$
-                  </span>
-                </>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={onShare}
-              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-nav-active py-[22px] text-base/none text-white motion-safe:transition-opacity hover:opacity-90"
-            >
-              Post on
-              <XLogo className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* ── The link ── */}
-          {shareUrl && (
-            <div className="flex flex-1 flex-col p-6">
-              <div className="mb-6 flex flex-1 items-center justify-center">
-                {/* Scales to the pane instead of a fixed px size, so it stays
-                    square and scannable at every width. */}
-                <QRCodeSVG
-                  value={shareUrl}
-                  level="M"
-                  className="h-auto w-full max-w-[257px]"
-                  style={{ aspectRatio: "1 / 1", height: "auto" }}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="min-w-0 flex-1 truncate text-sm/none text-heading" title={shareUrl}>
-                  {shareUrl}
-                </p>
-                <button
-                  type="button"
-                  onClick={copy}
-                  aria-label="Copy drop link"
-                  className="shrink-0 cursor-pointer text-nav-active motion-safe:transition-colors hover:text-brand"
-                >
-                  {copied ? <Check className="h-5 w-5 text-brand" /> : <Copy className="h-5 w-5" />}
-                </button>
-              </div>
-
-              <p className="mt-3 text-xs/[150%] text-nav-muted">
-                {isPrivate
-                  ? "Only people with this link can find the drop."
-                  : "Scan or share to jump straight to the drop."}
+        <div className="min-w-0 flex flex-col items-start gap-2">
+          <span className="inline-flex items-center gap-2 h-7 px-2.5 rounded-full bg-white text-brand text-xs/none">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inline-flex w-full h-full rounded-full bg-brand opacity-60 motion-safe:animate-ping" />
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-brand" />
+            </span>
+            {isPrivate ? "Locked in, link ready" : "Live on the map"}
+          </span>
+          {showAmount ? (
+            <>
+              <p className="font-anta text-[34px]/none lg:text-[38px]/none text-heading whitespace-nowrap">
+                {multi ? <>{qty}<span className="text-nav-muted text-[24px]"> × </span>{amount}</> : amount}{" "}
+                <span className="text-brand text-[22px]">G$</span>
               </p>
-            </div>
+              {multi && <p className="text-sm/none text-nav-muted">{(each * qty).toLocaleString()} G$ in total</p>}
+            </>
+          ) : (
+            <p className="text-sm/[140%] text-nav-muted">Recovered from your last session.</p>
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+
+      {/* Where and for how long — the two things a dropper checks. */}
+      {(placeName || durationSeconds) && !resuming && (
+        <p className="mt-4 text-sm/[140%] text-nav-muted text-center">
+          {placeName && <span className="text-heading">{placeName}</span>}
+          {placeName && durationSeconds ? " · " : ""}
+          {durationSeconds ? `Expires in ${humanDuration(durationSeconds)}` : ""}
+        </p>
+      )}
+
+      {/* ── The link (single drop) ────────────────────────────────────────── */}
+      {shareUrl && (
+        <div className="mt-4 rounded-2xl border border-line p-4 flex items-center gap-4">
+          <div className="shrink-0 rounded-xl border border-line p-2 bg-white">
+            <QRCodeSVG value={shareUrl} level="M" size={76} />
+          </div>
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
+            <span className="text-xs/none text-nav-muted">{isPrivate ? "Private link" : "Drop link"}</span>
+            <p className="text-sm/none text-heading truncate" title={shareUrl}>{shareUrl.replace(/^https?:\/\//, "")}</p>
+            <button
+              type="button"
+              onClick={copy}
+              className="self-start h-8 px-3 rounded-full border border-line text-xs/none text-heading flex items-center gap-1.5 cursor-pointer
+                motion-safe:transition-colors hover:bg-surface"
+            >
+              {copied ? <><Check className="w-3.5 h-3.5 text-brand" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy link</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Actions ───────────────────────────────────────────────────────── */}
+      <div className="mt-5 grid grid-cols-2 gap-2.5">
+        <button
+          type="button"
+          onClick={nativeShare}
+          className="h-12 rounded-full bg-brand text-white text-sm/none flex items-center justify-center gap-2 cursor-pointer
+            motion-safe:transition-colors hover:bg-brand/90"
+        >
+          <Share2 className="w-4 h-4" strokeWidth={2} /> {isPrivate ? "Send link" : "Share"}
+        </button>
+        <button
+          type="button"
+          onClick={onShare}
+          className="h-12 rounded-full bg-nav-active text-white text-sm/none flex items-center justify-center gap-2 cursor-pointer
+            motion-safe:transition-opacity hover:opacity-90"
+        >
+          Post on <XLogo className="w-3.5 h-3.5" />
+        </button>
+        {onViewOnMap && !isPrivate && (
+          <button
+            type="button"
+            onClick={() => { onViewOnMap(); onClose(); }}
+            className="h-12 rounded-full border border-line bg-white text-sm/none text-heading flex items-center justify-center gap-2 cursor-pointer
+              motion-safe:transition-colors hover:bg-surface"
+          >
+            <Navigation className="w-4 h-4" strokeWidth={2} /> View on map
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className={`h-12 rounded-full bg-surface text-sm/none text-heading cursor-pointer motion-safe:transition-colors hover:bg-nav-controls
+            ${onViewOnMap && !isPrivate ? "" : "col-span-2"}`}
+        >
+          Done
+        </button>
+      </div>
+    </Sheet>
   );
 }

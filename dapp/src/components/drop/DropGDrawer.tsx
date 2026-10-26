@@ -20,6 +20,8 @@ interface Props {
   campaignId?: string;
   campaignName?: string;
   claimPoints?: { lat: number; lng: number }[];
+  /** Fly the map behind to a point (the new drop). */
+  onViewOnMap?: (lat: number, lng: number) => void;
 }
 
 /**
@@ -34,7 +36,7 @@ interface Props {
  * createDrop → bind-riddle sequence, lives in useCreateDrop.
  */
 export function DropGDrawer({
-  userLocation, onClose, onSuccess, campaignId, campaignName, claimPoints = [],
+  userLocation, onClose, onSuccess, campaignId, campaignName, claimPoints = [], onViewOnMap,
 }: Props) {
   const d = useCreateDrop({ campaignId, claimPoints, onClose });
   const sheet = useSheetDrag({ onDismiss: d.handleClose });
@@ -93,6 +95,8 @@ export function DropGDrawer({
         resuming={d.resuming}
         onShare={d.handleShare}
         onClose={d.handleClose}
+        durationSeconds={d.resuming ? undefined : d.duration}
+        onViewOnMap={onViewOnMap && d.lat != null && d.lng != null ? () => onViewOnMap(d.lat as number, d.lng as number) : undefined}
       />
     );
   }

@@ -396,6 +396,7 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
         isPrivate={false}
         shareUrl={null}
         resuming={false}
+        durationSeconds={duration}
         onShare={shareOnX}
         onClose={() => { handleReset(); onSuccess(); }}
       />

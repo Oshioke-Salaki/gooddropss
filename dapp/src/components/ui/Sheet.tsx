@@ -1,5 +1,5 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
@@ -21,6 +21,8 @@ interface Props {
   /** Replaces the round X — e.g. a "Skip" pill on an onboarding step. */
   headerAction?: React.ReactNode;
 }
+
+const subscribeNoop = () => () => {};
 
 /**
  * The one modal container.
@@ -65,11 +67,17 @@ export function Sheet({
   // Escape closes only the top layer; the page behind stays locked until the
   // last layer closes; focus moves in on open and back to the opener on close.
   // Shared with every other overlay via ui/layers so stacked layers agree.
-  useEscapeLayer(true, dismiss);
-  useScrollLock(true);
-  useFocusReturn(true, sheetRef);
+  // The portal targets document.body, which doesn't exist on the server. Render
+  // nothing until hydration is done so the server HTML and the first client
+  // render agree (otherwise a sheet that's open on first paint is a hydration
+  // mismatch); the layer hooks wait for the same moment, so focus lands on a
+  // node that exists.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
+  useEscapeLayer(mounted, dismiss);
+  useScrollLock(mounted);
+  useFocusReturn(mounted, sheetRef);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
     <div
