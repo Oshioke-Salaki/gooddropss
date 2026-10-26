@@ -1,16 +1,1 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- GoodDrops mark — transparent background variant for light surfaces -->
-  <ellipse cx="256" cy="452" rx="70" ry="14" fill="#111111" opacity="0.15"/>
-
-  <!-- the pin / droplet with ink outline -->
-  <path d="M256 420 C 226 376 134 296 134 206 A 122 122 0 1 1 378 206 C 378 296 286 376 256 420 Z"
-        fill="#BFFD00" stroke="#111111" stroke-width="14"/>
-
-  <!-- coin face inside the pin head -->
-  <circle cx="256" cy="206" r="84" fill="#111111"/>
-
-  <!-- G$ -->
-  <text x="256" y="236" text-anchor="middle"
-        font-family="'Space Grotesk', Arial, Helvetica, sans-serif"
-        font-size="90" font-weight="900" fill="#BFFD00" letter-spacing="-2">G$</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none"><path d="M96.71 154.70 A 200 200 0 0 1 422.37 127.44 A 47.0 47.0 0 0 1 350.36 187.86 A 106 106 0 0 0 178.12 201.71 Z" fill="#2727E2"/><path d="M96.71 357.30 A 200 200 0 0 0 467.83 233.00 L 326.16 233.00 A 47.0 47.0 0 0 0 326.16 327.00 L 347.87 327.00 A 106 106 0 0 1 178.12 310.29 Z" fill="#2727E2"/><path d="M236.16 256.00 L 140.16 200.57 A 64 64 0 1 0 140.16 311.43 Z" fill="#FF9825"/></svg>

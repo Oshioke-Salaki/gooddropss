@@ -1,32 +1,17 @@
+import { BrandMark } from "@/components/BrandMark";
+
 /**
- * The GoodDrops wordmark.
+ * The GoodDrops lockup: the G-drop mark + the wordmark, in brand blue.
  *
- * One component because the mark previously lived inline in four places (nav,
- * drop page, admin login, the load gate) and they'd already drifted apart in
- * font, padding and radius. Colours come from the tokens, so a brand change is
- * one edit here.
- *
- * When the basket mark lands, it goes in this file and every surface picks it up.
+ * One component because the logo appears in the nav, the drop page, the
+ * sticker and poster, the admin and the sign-in callback, and they'd drift
+ * apart otherwise. The mark itself lives in lib/brandMark (shared with the
+ * favicon, app icons and OG images).
  */
 const SIZES = {
-  sm: {
-    text: "text-base",
-    chip: "text-sm px-1.5 py-0.5",
-    gap: "gap-1",
-    radius: "rounded",
-  },
-  md: {
-    text: "text-lg",
-    chip: "text-sm px-1.5 py-0.5",
-    gap: "gap-1.5",
-    radius: "rounded-md",
-  },
-  lg: {
-    text: "text-2xl",
-    chip: "text-xl px-2 py-0.5",
-    gap: "gap-1.5",
-    radius: "rounded-lg",
-  },
+  sm: { mark: "w-5 h-5", text: "text-base", gap: "gap-1.5" },
+  md: { mark: "w-7 h-7", text: "text-xl", gap: "gap-2" },
+  lg: { mark: "w-9 h-9", text: "text-2xl", gap: "gap-2.5" },
 } as const;
 
 export function Logo({
@@ -39,14 +24,10 @@ export function Logo({
   const s = SIZES[size];
   return (
     <span
-      className={`font-sans font-black tracking-tight text-heading flex items-center ${s.gap} ${s.text} ${className}`}
+      className={`font-sans font-bold tracking-[-0.02em] text-brand flex items-center leading-none ${s.gap} ${s.text} ${className}`}
     >
-      <span>Good</span>
-      <span
-        className={`bg-brand text-white leading-none ${s.chip} ${s.radius}`}
-      >
-        Drops.
-      </span>
+      <BrandMark className={`${s.mark} shrink-0`} />
+      <span>GoodDrops</span>
     </span>
   );
 }
