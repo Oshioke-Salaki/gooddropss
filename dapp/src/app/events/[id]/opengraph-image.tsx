@@ -6,7 +6,9 @@ import { CATEGORY_LABEL, isEventId } from "@/lib/events";
 
 export const contentType = "image/png";
 export const size = { width: 1200, height: 630 };
-export const revalidate = 600;
+// Per request: it reads the event from Redis (uncacheable), which a timed
+// static rebuild can't do. Social sites cache the image on their side anyway.
+export const dynamic = "force-dynamic";
 
 const BG = "#F5F5F5", CARD = "#FFFFFF", HEADING = "#121607", MUTED = "#6B6E63", BRAND = "#2727E2", SOFT = "#E9E9FC";
 

@@ -3,7 +3,8 @@ import { MARK_G_TOP, MARK_G_BOTTOM, MARK_DROP, BRAND_SPARK } from "@/lib/brandMa
 import { getPublicStats } from "./data";
 
 export const runtime = "nodejs";
-export const revalidate = 300;
+// Per request for the same reason as the page; the data itself is memoised.
+export const dynamic = "force-dynamic";
 export const alt = "GoodDrops in numbers";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

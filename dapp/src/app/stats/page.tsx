@@ -3,8 +3,10 @@ import { Nav } from "@/components/Nav";
 import { getPublicStats, type PublicStats } from "./data";
 import { StatsClient } from "./StatsClient";
 
-// Rebuilt at most once a minute; the client keeps it live after that.
-export const revalidate = 60;
+// Rendered per request: the numbers come through Redis (uncacheable fetches),
+// which can't run inside a timed static rebuild. getPublicStats is memoised
+// for 60s per server instance, so this stays cheap; the client keeps it live.
+export const dynamic = "force-dynamic";
 
 const fmt = (n: number) => n.toLocaleString("en");
 
