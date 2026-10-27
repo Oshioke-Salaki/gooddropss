@@ -92,9 +92,6 @@ export function brandStyle(base: StyleSpecification): StyleSpecification {
   return { ...base, name: "GoodDrops Night", layers };
 }
 
-/** Brand-blue 3D buildings (the look chosen in the lab), by building height. */
-export const BRAND_BUILDINGS = { low: "#272C92", high: "#3940C0", opacity: 0.95 } as const;
-
 // ── Sky and light that follow the hunter's local time ─────────────────────────
 
 export type DayPhase = "day" | "dusk" | "night";

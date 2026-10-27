@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_STYLE } from "@/components/map/style";
+import { addBuildings } from "@/components/map/buildings";
 
 export interface EventMapDrop { lat: number; lng: number; amount: string }
 
@@ -22,6 +23,7 @@ export function EventMap({ venue, drops }: { venue: { lat: number; lng: number; 
       attributionControl: false, dragRotate: false, pitchWithRotate: false,
     });
     map.touchZoomRotate.disableRotation();
+    map.on("load", () => addBuildings(map, { mode: "flat" })); // top-down map: brand-blue footprints
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     const el = document.createElement("div");
     el.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center">

@@ -33,7 +33,8 @@ import { MyLocationButton } from "@/components/MyLocationButton";
 import { InAppLocationHelp } from "@/components/InAppLocationHelp";
 import { isValoraBrowser } from "@/lib/valora";
 import type { StyleSpecification } from "maplibre-gl";
-import { BRAND_BUILDINGS, lightFor, skyFor, type DayPhase } from "@/components/maplab/brandStyle";
+import { lightFor, skyFor, type DayPhase } from "@/components/maplab/brandStyle";
+import { addBuildings } from "@/components/map/buildings";
 
 /**
  * Map-lab options (the /map-lab preview only). Absent on the real map, where
@@ -406,41 +407,11 @@ export default function MapView({
         },
       });
 
-      // 3D buildings at close zoom — pure wow-factor; guarded because layer
-      // naming varies across style versions and this must never break the map.
-      try {
-        if (lightRef.current) throw new Error("light device");
-        if (labRef.current && !labRef.current.buildings) throw new Error("lab: buildings off");
-        const style = map.getStyle();
-        const srcId = Object.keys(style.sources ?? {}).find(
-          (k) => (style.sources as Record<string, { type?: string }>)[k]?.type === "vector",
-        );
-        if (srcId) {
-          map.addLayer({
-            id: "gd-3d-buildings",
-            type: "fill-extrusion",
-            source: srcId,
-            "source-layer": "building",
-            minzoom: 14.5,
-            paint: (labRef.current?.brandBuildings ?? true)
-              ? {
-                  // Brand blue, lighter as buildings get taller; the vertical
-                  // gradient shades each wall from its base up.
-                  "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 10], 0, BRAND_BUILDINGS.low, 40, BRAND_BUILDINGS.high],
-                  "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
-                  "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-                  "fill-extrusion-opacity": BRAND_BUILDINGS.opacity,
-                  "fill-extrusion-vertical-gradient": true,
-                }
-              : {
-                  "fill-extrusion-color": "#1e2030",
-                  "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
-                  "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-                  "fill-extrusion-opacity": 0.7,
-                },
-          });
-        }
-      } catch { /* 3D buildings are optional — never block the map */ }
+      // Brand-blue 3D buildings (shared with every map). Light mode and the
+      // lab's "buildings off" skip them; the lab can also ask for classic grey.
+      if (!lightRef.current && !(labRef.current && !labRef.current.buildings)) {
+        addBuildings(map, { mode: "3d", brand: labRef.current?.brandBuildings ?? true, force: true });
+      }
 
       // Lab only: a hook for browser tests (dev builds, or ?labdebug on the lab page).
       if (labRef.current && (process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("labdebug"))) {

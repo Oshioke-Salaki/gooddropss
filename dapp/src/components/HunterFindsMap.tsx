@@ -2,9 +2,8 @@
 import { useEffect, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-
-// Same keyless tiles the main map uses.
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
+import { addBuildings } from "@/components/map/buildings";
+import { MAP_STYLE } from "@/components/map/style"; // same style as every other map
 
 export interface FindPoint {
   lat: number;    // degrees
@@ -36,6 +35,7 @@ export function HunterFindsMap({ points }: { points: FindPoint[] }) {
 
     map.on("load", () => {
       map.resize();
+      addBuildings(map, { mode: "flat" }); // top-down map: brand-blue footprints
       const bounds = new maplibregl.LngLatBounds();
       for (const p of points) {
         const el = document.createElement("div");

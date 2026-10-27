@@ -23,6 +23,7 @@ import { MyLocationButton } from "@/components/MyLocationButton";
 import { DropSuccessModal } from "@/components/drop/DropSuccessModal";
 import { Card, Label, TextField } from "@/components/drop/controls";
 import { MAP_STYLE } from "@/components/map/style";
+import { addBuildings } from "@/components/map/buildings";
 import { dropTier, esc } from "@/components/map/markers";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { CampaignDisc } from "@/components/CampaignDisc";
@@ -142,7 +143,11 @@ const DynamicMap = dynamic(
       });
       map.on("mouseout", () => { previewRef.current?.remove(); previewRef.current = null; });
 
-      map.on("load", () => { setReady(true); onReadyRef.current(map); });
+      map.on("load", () => {
+        addBuildings(map, { mode: "3d" }); // same brand-blue buildings as the main map
+        setReady(true);
+        onReadyRef.current(map);
+      });
       return () => { map.remove(); mapRef.current = null; setReady(false); onReadyRef.current(null); };
     }, []);
 

@@ -5,6 +5,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { landmarkBadgeHTML, PIN_TIP } from "@/components/map/markers";
 import type { Landmark } from "@/types";
 import { MAP_STYLE } from "@/components/map/style";
+import { addBuildings } from "@/components/map/buildings";
 
 
 // Shared with MapView. Picking a location and then seeing your drop on the map
@@ -65,7 +66,10 @@ export default function LocationPickerMap({
     mapRef.current = map;
     // Hand the instance up once it can take commands, so the shared zoom controls
     // drive this map exactly as they drive the main one.
-    map.once("load", () => onReadyRef.current?.(map));
+    map.once("load", () => {
+      addBuildings(map, { mode: "3d" }); // same brand-blue buildings as the main map
+      onReadyRef.current?.(map);
+    });
 
     // ── Tap to place ──────────────────────────────────────────────────────
     // The pin IS the map centre, so "tap here" is simply "recentre here" — one
