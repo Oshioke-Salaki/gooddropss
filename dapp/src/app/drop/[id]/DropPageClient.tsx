@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useAuth } from "@/hooks/useAuth";
 import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
 import {
@@ -99,7 +100,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     refresh: refreshIdentity,
   } = useIdentityStatus();
   const verificationOk           = isVerified;
-  const { writeContractAsync }   = useWriteContract();
+  const { writeContractAsync, sponsored }   = useSponsoredWrite();
 
   // Animated count-up for the claimed amount on the success screen.
   const successAmount    = drop ? Number(drop.amount) / 1e18 : 0;
@@ -204,7 +205,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     setErrMsg("");
     setEventLocked(false);
     try {
-      await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
+      // Sponsored Magic wallets need no CELO, so skip the faucet for them.
+      if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
       setStatus("claiming");
 
       const needsAnswer = parseDropHint(drop.hint).hasRiddle && !riddle?.lockedByMe;
@@ -232,7 +234,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         abi:          GOOD_DROPS_ABI,
         functionName: "claimWithProof",
         args:         [drop.id, BigInt(deadline), sig as `0x${string}`],
-      });
+      }, { onToppingUp: () => setStatus("gassing") });
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");
       track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "page" });
@@ -272,7 +274,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     // userLoc and privateToken were missing here: GPS resolves asynchronously, so
     // a callback frozen before the first fix would post userLat: undefined and the
     // claim would fail with "Invalid request" for no visible reason.
-  }, [drop, address, writeContractAsync, userLoc, privateToken, answer, riddle?.lockedByMe]);
+  }, [drop, address, writeContractAsync, sponsored, userLoc, privateToken, answer, riddle?.lockedByMe]);
 
   // ── Share helpers ──────────────────────────────────────────────────────────
   const pageUrl = typeof window !== "undefined"

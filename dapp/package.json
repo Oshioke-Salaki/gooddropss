@@ -16,6 +16,7 @@
   "dependencies": {
     "@goodsdks/citizen-sdk": "^1.2.5",
     "@goodsdks/identity-sdk": "^1.0.5",
+    "@magic-ext/smart-account": "^1.7.0",
     "@magiclabs/wagmi-connector": "^2.3.2",
     "@privy-io/react-auth": "^3.28.0",
     "@privy-io/wagmi": "^4.0.10",

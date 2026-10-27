@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
-import { useWriteContract, useSignMessage, useReadContract } from "wagmi";
+import { useSignMessage, useReadContract } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { parseUnits, maxUint256, decodeEventLog } from "viem";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { publicClient } from "@/lib/publicClient";
@@ -30,7 +31,7 @@ const INPUT =
 // it merchant-approved at claim time.
 export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onClose: () => void; onCreated: () => void }) {
   const { address } = useSignedInAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useSponsoredWrite();
   const { signMessageAsync } = useSignMessage();
   const { balance } = useGoodDollarProfile();
 

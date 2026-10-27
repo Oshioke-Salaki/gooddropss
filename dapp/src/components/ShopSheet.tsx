@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useWriteContract } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useAuth } from "@/hooks/useAuth";
 import { parseUnits } from "viem";
 import {
@@ -58,7 +58,7 @@ function ShopSheetBody({
   const { address, isConnected } = useSignedInAccount();
   const { login } = useAuth();
   const { balance } = useGoodDollarProfile();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useSponsoredWrite();
 
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState<PayStatus>("idle");

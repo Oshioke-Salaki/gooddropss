@@ -13,7 +13,7 @@ docker run -d --rm --name gd-srh --network gd-test -p 8079:80 \
 
 # 2. a dev server pointed at it
 UPSTASH_REDIS_REST_URL=http://localhost:8079 UPSTASH_REDIS_REST_TOKEN=local_test_token \
-  NEXT_DIST_DIR=.next-events npx next dev -p 3105
+  SPONSOR_PER_PERSON=6 NEXT_DIST_DIR=.next-events npx next dev -p 3105
 
 # 3. the tests
 npm run e2e:api

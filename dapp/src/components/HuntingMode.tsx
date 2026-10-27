@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { ArrowLeft, Check, Loader2, Lock, Navigation } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { friendlyClaimError } from "@/lib/claimErrors";
@@ -36,7 +37,7 @@ const BRAND = "#2727E2";
 
 export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords }: Props) {
   const { address } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync, sponsored } = useSponsoredWrite();
 
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("idle");
   const [errMsg, setErrMsg]           = useState("");
@@ -95,7 +96,8 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
     setClaimStatus("claiming");
     try {
       // Guarantee gas before the claim so a low wallet never dead-ends mid-tx.
-      await ensureGasForClaim(address as `0x${string}`, () => setClaimStatus("gassing"));
+      // Sponsored Magic wallets need no CELO, so skip the faucet for them.
+      if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setClaimStatus("gassing"));
       setClaimStatus("claiming");
 
       const proofRes = await fetch("/api/claim-proof", {
@@ -121,7 +123,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
         abi: GOOD_DROPS_ABI,
         functionName: "claimWithProof",
         args: [drop.id, BigInt(deadline), sig as `0x${string}`],
-      });
+      }, { onToppingUp: () => setClaimStatus("gassing") });
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setClaimStatus("done");

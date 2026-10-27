@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Nav } from "@/components/Nav";
@@ -33,7 +34,7 @@ export default function MyDropsPage() {
   // which wrongly surfaced someone else's drops. Gate on the auth state too.
   const isConnected = authenticated && !!address;
   const { drops, loading, fetchDrops } = useMyDrops(isConnected ? address : undefined);
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useSponsoredWrite();
   const [tab, setTab] = useState<Tab>("created");
   const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
   const [reactivating, setReactivating] = useState<bigint | null>(null);

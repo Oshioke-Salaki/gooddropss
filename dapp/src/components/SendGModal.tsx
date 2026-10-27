@@ -3,9 +3,9 @@ import { useState } from "react";
 import {
   useAccount,
   usePublicClient,
-  useWriteContract,
   useSwitchChain,
 } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { celo } from "viem/chains";
 import { parseUnits, isAddress, getAddress } from "viem";
 import { X, Loader2, Check, ExternalLink, SendHorizontal } from "lucide-react";
@@ -44,7 +44,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
   const [txHash, setTxHash] = useState<`0x${string}` | "">("");
 
   const publicClient = usePublicClient();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useSponsoredWrite();
   const { chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
 

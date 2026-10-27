@@ -4,7 +4,8 @@ import { createPortal } from "react-dom";
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import dynamic from "next/dynamic";
-import { useWriteContract, useReadContract } from "wagmi";
+import { useReadContract } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { X, Trash2, Loader2, ChevronUp, ChevronDown, MousePointerClick } from "lucide-react";
@@ -211,7 +212,7 @@ const ROW_FIELD =
  */
 export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) {
   const { address, isConnected } = useSignedInAccount();
-  const { writeContractAsync }   = useWriteContract();
+  const { writeContractAsync }   = useSponsoredWrite();
   const { balance, isFetching }  = useGoodDollarProfile();
   const profile = useProfile(address);
   const hasUsername = !!profile?.username;

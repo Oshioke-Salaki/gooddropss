@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import {
   ArrowLeft, Check, Clock, Coins, Compass, Flag, Flame, Gift, Hourglass, IdCard, Link2, Loader2,
   MapPin, Navigation, Puzzle, RefreshCw, Search, Star, Tag, Target, Trophy, Zap,
@@ -240,7 +241,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const { authenticated } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync, sponsored } = useSponsoredWrite();
 
   // Not useGoodDollarProfile().isVerified — that's a bare getWhitelistedRoot()
   // check, which can't tell "never verified" from "verified but lapsed".
@@ -351,7 +352,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
     try {
       // Ensure gas BEFORE requesting the proof, so a low wallet never fails the
       // claim mid-tx and the proof stays fresh while any top-up lands.
-      await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
+      // Sponsored Magic wallets need no CELO, so skip the faucet for them.
+      if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
       setStatus("claiming");
 
       const proofRes = await fetch("/api/claim-proof", {
@@ -377,7 +379,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
         abi: GOOD_DROPS_ABI,
         functionName: "claimWithProof",
         args: [drop.id, BigInt(deadline), sig as `0x${string}`],
-      });
+      }, { onToppingUp: () => setStatus("gassing") });
 
       await publicClient.waitForTransactionReceipt({ hash: tx });
       setStatus("done");

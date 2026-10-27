@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useWriteContract, useSignMessage, useReadContract } from "wagmi";
+import { useSignMessage, useReadContract } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256, decodeEventLog } from "viem";
 import { publicClient } from "@/lib/publicClient";
@@ -87,7 +88,7 @@ export interface UseCreateDropOpts {
  */
 export function useCreateDrop({ campaignId, eventId, defaultLocation = null, claimPoints = [], onClose }: UseCreateDropOpts) {
   const { address, isConnected } = useSignedInAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useSponsoredWrite();
   const { signMessageAsync } = useSignMessage();
   const { balance, isFetching: balanceFetching } = useGoodDollarProfile();
   // Dropping is identity-gated exactly like claiming: only verified humans can

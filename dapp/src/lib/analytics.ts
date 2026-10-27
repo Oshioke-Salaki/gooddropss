@@ -21,6 +21,8 @@ type Events = {
   event_reminder_on: Record<string, never>;
   event_shared: Record<string, never>;
   event_calendar_added: Record<string, never>;
+  tx_sponsored: { fn: string };
+  tx_sponsor_fallback: { fn: string };
 };
 
 export type ClaimFailReason =

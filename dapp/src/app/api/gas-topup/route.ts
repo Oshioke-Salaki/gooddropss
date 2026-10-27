@@ -5,6 +5,7 @@ import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
 import { isVerifiedHuman, resolveIdentityRoot } from "@/lib/identityRoot";
 import { normalizePk } from "@/lib/pk";
+import { weiNeeded } from "@/lib/gasNeeds";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -35,8 +36,10 @@ export const maxDuration = 30;
 // Counters are marked BEFORE the transfer and rolled back on failure, so a
 // crash can never leave a loophole open (fail-closed).
 
-const TOPUP_CELO      = process.env.GAS_TOPUP_AMOUNT_CELO ?? "0.5"; // ~500+ txs on Celo
-const THRESHOLD_CELO  = "0.01";     // only top up below this balance
+const TOPUP_CELO      = process.env.GAS_TOPUP_AMOUNT_CELO ?? "0.5"; // ~8 claims at ~200 gwei
+// "Low on gas" means below one claim at the LIVE gas price (see lib/gasNeeds).
+// A fixed 0.01 CELO used to strand wallets holding 0.01–0.06 CELO: too rich
+// for a top-up, too poor to claim.
 const COOLDOWN_S      = 72 * 3600;  // one top-up per person per 3 days
 const MONTHLY_CAP     = 3;          // per identity root per rolling 30 days
 // Global circuit breaker. Raised now that most top-ups are Tier-1 (GoodDollar-
@@ -126,8 +129,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Gate 2 — target must actually be low on gas (checked on-chain, never trusted).
+    const need = weiNeeded(await publicClient.getGasPrice());
     const balance = await publicClient.getBalance({ address: address as `0x${string}` });
-    if (balance >= parseEther(THRESHOLD_CELO)) {
+    if (balance >= need) {
       return NextResponse.json({ ok: false, reason: "balance_ok" });
     }
 
@@ -162,6 +166,11 @@ export async function POST(req: NextRequest) {
         });
         const rc = await publicClient.waitForTransactionReceipt({ hash: t, timeout: 25_000 });
         if (rc.status === "success") { tx = t; via = "gooddollar"; }
+        // GoodDollar sets its own top-up size. If it still leaves the wallet short
+        // of one claim, Tier 2 below tops up the rest instead of letting it fail.
+        if (tx && (await publicClient.getBalance({ address: address as `0x${string}` })) < need) {
+          tx = null;
+        }
       }
     } catch (e) {
       console.warn("[gas-topup] GoodDollar faucet unavailable, falling back to self-fund", e);

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
-import { useWriteContract, useReadContract } from "wagmi";
+import { useReadContract } from "wagmi";
+import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { parseUnits, maxUint256 } from "viem";
 import { decodeEventLog } from "viem";
@@ -91,7 +92,7 @@ const SECONDARY =
  */
 export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Props) {
   const { address, isConnected }  = useSignedInAccount();
-  const { writeContractAsync }    = useWriteContract();
+  const { writeContractAsync }    = useSponsoredWrite();
   const { balance, isFetching }   = useGoodDollarProfile();
   const { landmarks }             = useLandmarks();
   const profile = useProfile(address);
