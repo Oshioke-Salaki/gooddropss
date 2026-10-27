@@ -5,6 +5,7 @@ import { memo } from "@/lib/serverCache";
 import { buildBoard } from "@/lib/board";
 import { getRedis, keys } from "@/lib/redis";
 import { getEvents, statsFor } from "@/lib/eventStore";
+import { circulatedG } from "@/lib/circulation";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -14,6 +15,8 @@ export interface PublicStats {
   /** Whole G$. */
   droppedG: number;
   claimedG: number;
+  /** The headline: see lib/circulation. */
+  circulatedG: number;
   hunters: number;
   droppers: number;
   events: { hosted: number; claimedG: number } | null;
@@ -47,6 +50,7 @@ export function getPublicStats(): Promise<PublicStats> {
       claims: board.totalClaims,
       droppedG: whole(board.droppedWei),
       claimedG: whole(board.claimedWei),
+      circulatedG: circulatedG(whole(board.droppedWei)),
       hunters: board.hunters.length,
       droppers: board.droppers.length,
       events: await eventTotals(),

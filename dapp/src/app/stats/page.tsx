@@ -13,7 +13,7 @@ const fmt = (n: number) => n.toLocaleString("en");
 export async function generateMetadata(): Promise<Metadata> {
   const s = await getPublicStats().catch(() => null);
   const description = s
-    ? `${fmt(s.drops)} drops hidden, ${fmt(s.claimedG)} G$ found by ${fmt(s.hunters)} hunters. Live numbers from GoodDrops, the real-world treasure hunt for GoodDollar.`
+    ? `${fmt(s.circulatedG)} G$ circulated, ${fmt(s.drops)} drops hidden and ${fmt(s.claims)} found. Live numbers from GoodDrops, the real-world treasure hunt for GoodDollar.`
     : "Live numbers from GoodDrops, the real-world treasure hunt for GoodDollar.";
   return {
     title: "GoodDrops in numbers",

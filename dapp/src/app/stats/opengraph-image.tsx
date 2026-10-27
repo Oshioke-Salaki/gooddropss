@@ -46,10 +46,10 @@ export default async function StatsOg() {
 
           <div style={{ display: "flex", flexDirection: "column", marginTop: 56 }}>
             <span style={{ fontSize: 108, fontWeight: 700, color: BRAND, letterSpacing: "-0.04em", lineHeight: 1, display: "flex" }}>
-              {s ? `${compact(s.claimedG)} G$` : "Real G$"}
+              {s ? `${compact(s.circulatedG)} G$` : "Real G$"}
             </span>
             <span style={{ fontSize: 30, color: MUTED, marginTop: 14, display: "flex" }}>
-              {s ? "found at real places by face-verified people" : "hidden at real places, found by real people"}
+              {s ? "circulated through GoodDrops" : "hidden at real places, found by real people"}
             </span>
           </div>
 

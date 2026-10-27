@@ -33,7 +33,10 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
   const [s, setS] = useState<PublicStats | null>(initial);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Start from the data's own timestamp so the server and the browser render the
+  // same "Updated …" text (a live Date.now() here broke hydration); the real
+  // clock takes over right after mount.
+  const [now, setNow] = useState(() => initial?.at ?? 0);
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
@@ -53,6 +56,7 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
   useEffect(() => {
     if (!initial) load();
     const t = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 60_000);
+    setNow(Date.now());
     const tick = window.setInterval(() => setNow(Date.now()), 5_000);
     return () => { window.clearInterval(t); window.clearInterval(tick); };
   }, [initial, load]);
@@ -66,7 +70,7 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
 
   async function share() {
     const text = s
-      ? `GoodDrops so far: ${fmt(s.drops)} drops hidden, ${compact(s.claimedG)} G$ found by ${fmt(s.hunters)} people.`
+      ? `GoodDrops so far: ${compact(s.circulatedG)} G$ circulated, ${fmt(s.drops)} drops hidden and ${fmt(s.claims)} found.`
       : "GoodDrops in numbers";
     if ((await shareOrCopy({ title: "GoodDrops in numbers", text, url: `${window.location.origin}/stats` })) === "copied") {
       setCopied(true);
@@ -112,14 +116,14 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
             <div className="col-span-2 rounded-3xl bg-brand text-white p-6 lg:p-7 flex flex-col justify-between min-h-[168px]">
               <span className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center"><Coins className="w-5 h-5" /></span>
               <div>
-                {s ? <p className="font-anta text-[44px]/none lg:text-[56px]/none">{fmt(s.claimedG)} <span className="text-[24px] lg:text-[28px] text-white/70">G$</span></p>
+                {s ? <p className="font-anta text-[44px]/none lg:text-[56px]/none">{fmt(s.circulatedG)} <span className="text-[24px] lg:text-[28px] text-white/70">G$</span></p>
                   : <Skeleton className="h-12 w-56 bg-white/20" />}
-                <p className="text-sm/none text-white/80 mt-3">G$ found and put into circulation</p>
+                <p className="text-sm/none text-white/80 mt-3">G$ circulated</p>
               </div>
             </div>
             <Tile icon={<MapIcon className="w-5 h-5" />} value={s && fmt(s.drops)} label="Drops hidden" />
             <Tile icon={<Target className="w-5 h-5" />} value={s && fmt(s.claims)} label="Drops claimed" />
-            <Tile icon={<Gift className="w-5 h-5" />} value={s && `${compact(s.droppedG)} G$`} label="G$ dropped" />
+            <Tile icon={<Gift className="w-5 h-5" />} value={s && `${compact(s.claimedG)} G$`} label="G$ found" sub="Claimed by hunters" />
             <Tile icon={<Users className="w-5 h-5" />} value={s && fmt(s.hunters)} label="Hunters" sub="Unique people" />
             <Tile icon={<Users className="w-5 h-5" />} value={s && fmt(s.droppers)} label="Droppers" sub="Unique people" />
             <Tile icon={<Check className="w-5 h-5" />} value={s && (s.drops ? `${Math.round((s.claims / s.drops) * 100)}%` : "–")} label="Found rate" sub="Drops claimed before expiring" />
