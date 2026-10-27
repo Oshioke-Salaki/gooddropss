@@ -32,8 +32,30 @@ import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
 import { InAppLocationHelp } from "@/components/InAppLocationHelp";
 import { isValoraBrowser } from "@/lib/valora";
+import type { StyleSpecification } from "maplibre-gl";
+import { BRAND_BUILDINGS, lightFor, skyFor, type DayPhase } from "@/components/maplab/brandStyle";
+
+/**
+ * Map-lab options (the /map-lab preview only). Absent on the real map, where
+ * nothing below changes behaviour. Markers are never touched: the lab only
+ * swaps the base style and adds layers under them.
+ */
+export interface MapLab {
+  /** Resolved style (GoodDrops Night or the original). Change it by remounting. */
+  style: StyleSpecification | string;
+  /** Brand-blue 3D buildings (the default) or the classic dark grey. */
+  brandBuildings: boolean;
+  buildings: boolean;
+  /** Sky and light for a tilted map; null leaves the style's own. */
+  sky: DayPhase | null;
+  /** Lite tier: the map's own light mode (flat camera, no buildings, capped DPR). */
+  lite: boolean;
+  onStats?: (s: { fps: number; zoom: number }) => void;
+}
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
+
+
 
 
 
@@ -186,6 +208,8 @@ interface Props {
    *  landmark placement) instead of doing nothing. */
   pickingMode?: boolean;
   onMapPick?: (lat: number, lng: number) => void;
+  /** Preview-only extras for /map-lab. */
+  lab?: MapLab;
 }
 
 type DropFeatureProps = { dropIndex: number };
@@ -220,8 +244,12 @@ export default function MapView({
   spots = [], onSpotClick, landmarks = [], events = [], onEventClick,
   heatmapPoints = [], showHeatmap = false, focus = null,
   interactiveLandmarks = false, onLandmarkClick,
-  pickingMode = false, onMapPick,
+  pickingMode = false, onMapPick, lab,
 }: Props) {
+  // Read once at init: the lab remounts the map to change style.
+  const labRef = useRef(lab);
+  labRef.current = lab;
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
   const lightRef = useRef(false);
@@ -297,11 +325,11 @@ export default function MapView({
     // Light mode (Data Saver, 2G, low-RAM or low-core phones): no 3D buildings,
     // a flat camera and a capped render resolution — the three biggest GPU and
     // battery costs on an entry-level Android. See lib/deviceTier.
-    lightRef.current = isLightDevice();
+    lightRef.current = isLightDevice() || !!labRef.current?.lite;
     flatRef.current = lightRef.current || prefersReducedMotion();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE,
+      style: labRef.current?.style ?? MAP_STYLE,
       center: [0, 20],
       zoom: 2.4,
       maxPitch: flatRef.current ? 0 : 62,
@@ -382,6 +410,7 @@ export default function MapView({
       // naming varies across style versions and this must never break the map.
       try {
         if (lightRef.current) throw new Error("light device");
+        if (labRef.current && !labRef.current.buildings) throw new Error("lab: buildings off");
         const style = map.getStyle();
         const srcId = Object.keys(style.sources ?? {}).find(
           (k) => (style.sources as Record<string, { type?: string }>)[k]?.type === "vector",
@@ -393,16 +422,30 @@ export default function MapView({
             source: srcId,
             "source-layer": "building",
             minzoom: 14.5,
-            paint: {
-              "fill-extrusion-color": "#1e2030",
-              "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
-              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-              "fill-extrusion-opacity": 0.7,
-            },
+            paint: (labRef.current?.brandBuildings ?? true)
+              ? {
+                  // Brand blue, lighter as buildings get taller; the vertical
+                  // gradient shades each wall from its base up.
+                  "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 10], 0, BRAND_BUILDINGS.low, 40, BRAND_BUILDINGS.high],
+                  "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
+                  "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+                  "fill-extrusion-opacity": BRAND_BUILDINGS.opacity,
+                  "fill-extrusion-vertical-gradient": true,
+                }
+              : {
+                  "fill-extrusion-color": "#1e2030",
+                  "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12],
+                  "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+                  "fill-extrusion-opacity": 0.7,
+                },
           });
         }
       } catch { /* 3D buildings are optional — never block the map */ }
 
+      // Lab only: a hook for browser tests (dev builds, or ?labdebug on the lab page).
+      if (labRef.current && (process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("labdebug"))) {
+        (window as unknown as { __labMap?: maplibregl.Map }).__labMap = map;
+      }
       setMapReady(true);
     });
 
@@ -412,6 +455,28 @@ export default function MapView({
       setMapReady(false);
     };
   }, []);
+
+  // ── Map lab only: sky and frame stats ────────────────────────────────────────
+  // Every effect here returns at once on the real map (no `lab` prop).
+  const labSky = lab?.sky ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !labRef.current || !labSky) return;
+    try { map.setSky(skyFor(labSky)); map.setLight(lightFor(labSky)); } catch { /* optional */ }
+  }, [mapReady, labSky]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !labRef.current?.onStats) return;
+    let frames = 0;
+    const onRender = () => { frames++; };
+    map.on("render", onRender);
+    const t = setInterval(() => {
+      labRef.current?.onStats?.({ fps: frames, zoom: map.getZoom() });
+      frames = 0;
+    }, 1000);
+    return () => { map.off("render", onRender); clearInterval(t); };
+  }, [mapReady]);
 
   // ── Drop clustering + markers ───────────────────────────────────────────────
   const renderDropMarkers = useCallback(() => {
