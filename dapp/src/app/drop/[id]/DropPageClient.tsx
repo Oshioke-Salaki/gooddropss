@@ -7,7 +7,7 @@ import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
 import {
   Navigation, Copy, Share2, Check, ArrowLeft, Search, Lock, Link2, Trophy, Zap, Clock,
   Hourglass, Puzzle, Crosshair, IdCard, RefreshCw, Loader2, Coins, MapPinOff, Handshake,
-  Mail, MapPin, Sparkles, CalendarDays,
+  Mail, MapPin, PartyPopper, CalendarDays,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
@@ -150,6 +150,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           functionName: "getDrop",
           args: [id],
         });
+        // Unknown ids come back as an all-zero struct, not a revert.
+        if (/^0x0{40}$/i.test(r.dropper)) { if (!cancelled) setDrop(null); return; }
         if (!cancelled) setDrop({
           id,
           dropper:   r.dropper,
@@ -562,7 +564,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         <Celebration active colors={isChainLast ? ["#2727E2", "#FF9825", "#E9E9FC"] : undefined} />
         <section className={`${CARD} flex flex-col items-center text-center`}>
           <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
-            {isChainLast ? <Trophy className="w-7 h-7" strokeWidth={1.75} /> : <Sparkles className="w-7 h-7" strokeWidth={1.75} />}
+            {isChainLast ? <Trophy className="w-7 h-7" strokeWidth={1.75} /> : <PartyPopper className="w-7 h-7" strokeWidth={1.75} />}
           </span>
           <p className="text-xl/none text-heading mt-5">
             {isChainLast ? "Hunt complete" : "You found it"}

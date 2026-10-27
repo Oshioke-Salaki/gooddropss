@@ -4,7 +4,7 @@ import { useAccount } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import {
   Loader2, Plus, ArrowLeft, ChevronRight, MapPin, Users, BarChart3,
-  HeartHandshake, Flag, Sparkles, Check,
+  HeartHandshake, Flag, CalendarCheck, Check,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Nav } from "@/components/Nav";
@@ -427,7 +427,7 @@ export default function SponsorPage() {
               )}
               <div className="flex items-center gap-3 rounded-full border border-line p-2 pr-5">
                 <span className="flex h-11.5 w-11.5 shrink-0 items-center justify-center rounded-full bg-surface text-heading">
-                  <Sparkles className="h-5 w-5" strokeWidth={1.75} />
+                  <CalendarCheck className="h-5 w-5" strokeWidth={1.75} />
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm/none text-heading">Created</p>

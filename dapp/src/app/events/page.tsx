@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CalendarPlus, Loader2, Navigation, RefreshCw, Sparkles } from "lucide-react";
+import { CalendarPlus, Loader2, Navigation, RefreshCw, Ticket } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { useAuth } from "@/hooks/useAuth";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
@@ -125,7 +125,7 @@ export default function EventsPage() {
               {nothingOn && (
                 <div className="bg-white rounded-3xl p-8 lg:p-10 shadow-[0px_0px_12px_0px_#0000000A] flex flex-col items-center text-center">
                   <span className="w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
-                    <Sparkles className="w-7 h-7" strokeWidth={1.75} />
+                    <Ticket className="w-7 h-7" strokeWidth={1.75} />
                   </span>
                   <p className="mt-5 text-xl/none text-heading">Nothing on right now</p>
                   <p className="mt-3 text-sm/[150%] text-nav-muted max-w-[460px]">

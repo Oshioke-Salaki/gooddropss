@@ -5,7 +5,9 @@ import { reportClientError } from "@/lib/clientErrors";
 
 // Last-resort boundary: replaces the root layout when the layout itself fails,
 // so it carries its own <html>/<body> and leans only on plain markup.
-export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+// "Try again" is a full reload: when the root layout broke, re-rendering it
+// in place would only hit the same error.
+export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
   useEffect(() => { reportClientError(error, "global-error"); }, [error]);
 
   return (
@@ -20,7 +22,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
             <div className="flex flex-col sm:flex-row gap-3 mt-6 w-full">
               <button
                 type="button"
-                onClick={reset}
+                onClick={() => window.location.reload()}
                 className="flex-1 h-12 rounded-full bg-brand text-white text-base/none cursor-pointer"
               >
                 Try again

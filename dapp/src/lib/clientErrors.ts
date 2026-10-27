@@ -17,7 +17,9 @@ const NOISE = [
   /chrome-extension:|moz-extension:|safari-extension:/i,
   /MetaMask|inpage\.js|evmAsk|tronlink|phantom/i,
   /Non-Error promise rejection captured/i,
-  /Load failed|Failed to fetch|NetworkError/i,
+  // Plain network drops only; "Failed to fetch dynamically imported module"
+  // means a stale build, which we do want to hear about.
+  /^(TypeError: )?(Load failed|Failed to fetch)$|NetworkError/i,
 ];
 
 function scrub(s: string): string {

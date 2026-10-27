@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { X, Bell, MapPin, Check, Loader2, Navigation, Sparkles, CalendarDays } from "lucide-react";
+import { X, Bell, MapPin, Check, Loader2, Navigation, Radar, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
@@ -114,7 +114,7 @@ export function ColdStartCard({ drops, userLoc, loading, onDrop, onShowNearest, 
   //   live drops, all far away   → go look at the nearest one
   // Hiding a drop yourself is always offered, but second.
   const title = empty ? "No drops live right now" : `Nearest drop: ${formatKm(nearestM)} away`;
-  const Icon = empty ? Sparkles : MapPin;
+  const Icon = empty ? Radar : MapPin;
 
   const alertLabel = subscribed
     ? "Alerts on"
