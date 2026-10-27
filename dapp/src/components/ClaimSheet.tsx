@@ -579,7 +579,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   <p className="flex items-center gap-1.5 text-xs/none text-nav-muted">
                     <Search className="w-3.5 h-3.5" strokeWidth={2} /> Clue
                   </p>
-                  <p className="mt-2.5 text-base/[150%] text-heading">{parsed.hint}</p>
+                  <p className="mt-2.5 text-base/[150%] text-heading [overflow-wrap:anywhere]">{parsed.hint}</p>
                 </div>
               )}
 

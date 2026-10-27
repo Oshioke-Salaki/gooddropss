@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { ValoraDeepLink } from "@/components/ValoraDeepLink";
 import { ProfileSetup } from "@/components/profile/ProfileSetup";
+import { UbiPrompt } from "@/components/UbiPrompt";
 import { ProfileDrawerHost } from "@/components/profile/ProfileDrawer";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
@@ -80,6 +81,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               without one, and hosts the "set a name" sheet any surface can open
               via the gd:setName event (wallet pill, post-claim screen, leaderboard). */}
           <ProfileSetup />
+          <UbiPrompt />
           <ProfileDrawerHost />
         </AuthProvider>
       </QueryClientProvider>

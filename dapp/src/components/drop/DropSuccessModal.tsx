@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Check, Copy, Navigation, Share2 } from "lucide-react";
+import { Check, Copy, LockKeyhole, MapPinCheck, Navigation, Share2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { shareOrCopy } from "@/lib/share";
 
@@ -100,11 +100,10 @@ export function DropSuccessModal({
           <img src="/treasure-chest-lg.png" alt="" width={80} height={80} className="success-pop relative w-18 h-18 lg:w-20 lg:h-20" />
         </div>
         <div className="min-w-0 flex flex-col items-start gap-2">
-          <span className="inline-flex items-center gap-2 h-7 px-2.5 rounded-full bg-white text-brand text-xs/none">
-            <span className="relative flex w-2 h-2">
-              <span className="absolute inline-flex w-full h-full rounded-full bg-brand opacity-60 motion-safe:animate-ping" />
-              <span className="relative inline-flex w-2 h-2 rounded-full bg-brand" />
-            </span>
+          <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-white text-brand text-xs/none">
+            {isPrivate
+              ? <LockKeyhole aria-hidden className="w-3.5 h-3.5" strokeWidth={2} />
+              : <MapPinCheck aria-hidden className="w-3.5 h-3.5" strokeWidth={2} />}
             {isPrivate ? "Locked in, link ready" : "Live on the map"}
           </span>
           {showAmount ? (

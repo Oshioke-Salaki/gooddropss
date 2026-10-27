@@ -104,10 +104,9 @@ function makeUserElement(): HTMLDivElement {
   el.style.pointerEvents = "none";
   el.innerHTML = `
     <div style="position:relative;width:24px;height:24px;pointer-events:none;">
-      <div class="user-loc-pulse" style="
-        position:absolute;inset:-10px;
-        background:rgba(59,130,246,0.18);
-        border:2px solid rgba(59,130,246,0.35);
+      <div style="
+        position:absolute;inset:-9px;
+        background:rgba(59,130,246,0.16);
         border-radius:50%;
       "></div>
       <div style="
@@ -122,15 +121,15 @@ function makeUserElement(): HTMLDivElement {
 }
 
 // Temporary "here it is" highlight dropped when previewing a place from an admin
-// list. Pulsing brand ring so it reads distinctly from the blue user dot.
+// list. A brand-blue ring so it reads distinctly from the blue user dot.
 function makeFocusElement(): HTMLDivElement {
   const el = document.createElement("div");
   el.style.pointerEvents = "none";
   el.innerHTML = `
     <div style="position:relative;width:22px;height:22px;">
-      <div class="user-loc-pulse" style="
+      <div style="
         position:absolute;inset:-14px;
-        background:rgba(39,39,226,0.18);
+        background:rgba(39,39,226,0.12);
         border:2px solid rgba(39,39,226,0.55);
         border-radius:50%;
       "></div>

@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { CalendarPlus, Loader2, Navigation, RefreshCw, Ticket } from "lucide-react";
+import { Activity, CalendarPlus, Loader2, Navigation, RefreshCw, Ticket } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { useAuth } from "@/hooks/useAuth";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
@@ -177,10 +177,7 @@ function Section({ title, count, live = false, children }: { title: string; coun
     <section aria-label={title}>
       <h2 className="flex items-center gap-2.5 text-xl/none text-heading mb-4">
         {live && (
-          <span className="relative flex w-2.5 h-2.5" aria-hidden>
-            <span className="absolute inline-flex w-full h-full rounded-full bg-brand opacity-60 motion-safe:animate-ping" />
-            <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-brand" />
-          </span>
+          <Activity aria-hidden className="w-5 h-5 text-brand" strokeWidth={2} />
         )}
         {title}
         <span className="text-sm/none text-nav-muted">{count}</span>

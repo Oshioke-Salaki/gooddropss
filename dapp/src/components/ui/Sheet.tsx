@@ -94,7 +94,7 @@ export function Sheet({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="modal-rise w-full bg-white rounded-t-3xl p-6 outline-none
-          max-h-[85dvh] overflow-y-auto overscroll-contain
+          max-h-[85dvh] overflow-y-auto overflow-x-hidden overscroll-contain
           lg:rounded-3xl lg:max-h-[calc(100dvh-48px)] lg:max-w-[calc(100vw-48px)]"
         style={{
           width: enabled ? undefined : width,

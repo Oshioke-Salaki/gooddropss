@@ -3,12 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import { useEscapeLayer, useFocusReturn, useScrollLock } from "@/components/ui/layers";
-import {
-  useBalance,
-  useSignMessage,
-  usePublicClient,
-  useWalletClient,
-} from "wagmi";
+import { useBalance, useSignMessage } from "wagmi";
 import { formatUnits } from "viem";
 import {
   Copy,
@@ -25,9 +20,7 @@ import { Avatar } from "@/components/Avatar";
 import { SendGModal } from "@/components/SendGModal";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
-import { friendlyUbiError } from "@/lib/claimErrors";
-import { useIdentitySDK } from "@goodsdks/identity-sdk";
-import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
+import { useUbiClaim } from "@/hooks/useUbiClaim";
 
 interface Props {
   address: `0x${string}`;
@@ -72,9 +65,6 @@ export function WalletModal({
   const profile = useProfile(address);
   const router = useRouter();
   const { signMessageAsync } = useSignMessage();
-  const publicClient = usePublicClient();
-  const { data: walletClient } = useWalletClient();
-  const identitySDKHook = useIdentitySDK("production");
 
   // ── Hunting streak ────────────────────────────────────────────────────────
   const [streak, setStreak] = useState<{
@@ -100,49 +90,14 @@ export function WalletModal({
   }, [address]);
 
   // ── UBI claim ─────────────────────────────────────────────────────────────
-  const [ubiEntitlement, setUbiEntitlement] = useState<bigint | null>(null);
-  const [ubiStatus, setUbiStatus] = useState<
-    "can_claim" | "already_claimed" | "not_whitelisted" | "loading"
-  >("loading");
-  const [ubiClaiming, setUbiClaiming] = useState(false);
-  const [ubiClaimDone, setUbiClaimDone] = useState(false);
-  const [ubiErr, setUbiErr] = useState("");
-
-  useEffect(() => {
-    if (!address || !publicClient || !walletClient) return;
-    const identitySDK =
-      identitySDKHook ??
-      makeIdentitySDK(publicClient, walletClient);
-    const sdk = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
-    sdk
-      .getWalletClaimStatus()
-      .then((s) => {
-        setUbiStatus(s.status);
-        setUbiEntitlement(s.entitlement);
-      })
-      .catch(() => setUbiStatus("already_claimed"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, !!publicClient, !!walletClient]);
-
-  async function handleUbiClaim() {
-    if (!address || !publicClient || !walletClient) return;
-    setUbiClaiming(true);
-    setUbiErr("");
-    try {
-      const identitySDK =
-        identitySDKHook ??
-        makeIdentitySDK(publicClient, walletClient);
-      const sdk = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
-      await sdk.claim();
-      setUbiClaimDone(true);
-      setUbiStatus("already_claimed");
-    } catch (e: unknown) {
-      const msg = friendlyUbiError(e);
-      if (msg) setUbiErr(msg);
-    } finally {
-      setUbiClaiming(false);
-    }
-  }
+  // Shared with the load-time prompt (UbiPrompt): claiming in either updates both.
+  const ubi = useUbiClaim();
+  const ubiStatus = ubi.status === "error" ? "not_whitelisted" : ubi.status; // hide the row on a failed read
+  const ubiEntitlement = ubi.claimed ?? ubi.entitlement;
+  const ubiClaiming = ubi.claiming;
+  const ubiClaimDone = ubi.claimed !== null;
+  const ubiErr = ubi.error;
+  const handleUbiClaim = () => { void ubi.claim(); };
 
   const celoAmt = nativeBalance
     ? parseFloat(
@@ -285,7 +240,7 @@ export function WalletModal({
           backdrop. At lg and up: the two 400px cards, Send G$ to the LEFT. */}
       <div
         className="fixed z-[1200] left-0 right-0 top-nav flex flex-col
-          max-h-[calc(100dvh-var(--spacing-nav))] overflow-y-auto font-sans
+          max-h-[calc(100dvh-var(--spacing-nav))] overflow-y-auto overflow-x-hidden font-sans
           lg:left-auto lg:right-15 lg:top-[calc(var(--spacing-nav)+16px)]
           lg:flex-row lg:items-start lg:gap-4 lg:max-h-none lg:overflow-visible"
       >

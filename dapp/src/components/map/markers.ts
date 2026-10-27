@@ -270,6 +270,11 @@ export function landmarkBadgeSize(
 
 // ── Event pin ────────────────────────────────────────────────────────────────
 
+// lucide "activity": a still "happening now" mark instead of a pulsing dot.
+const LIVE_ICON =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>';
+
 const CALENDAR_ICON =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden><path d="M8 2v4"/><path d="M16 2v4"/>' +
@@ -285,7 +290,7 @@ export function eventPinHTML({ title, live, when, budget }: { title: string; liv
   const short = title.length > 24 ? `${title.slice(0, 23).trimEnd()}…` : title;
   const state = live
     ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-streak px-2 py-1.5 text-[11px]/none text-white lg:text-xs/none">
-         <span class="relative flex w-1.5 h-1.5"><span class="absolute inline-flex w-full h-full rounded-full bg-white opacity-70 motion-safe:animate-ping"></span><span class="relative w-1.5 h-1.5 rounded-full bg-white"></span></span>Live</span>`
+         ${LIVE_ICON}Live</span>`
     : `<span class="rounded-full bg-white px-2 py-1.5 text-[11px]/none text-heading lg:text-xs/none whitespace-nowrap">${esc(when)}</span>`;
   return `
     <div class="flex items-center gap-x-1.5 rounded-full ${PILL_GLASS} p-0.5 pr-1 select-none font-sans">

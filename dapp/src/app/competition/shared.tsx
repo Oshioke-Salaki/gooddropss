@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, Check, ChevronDown, ChevronUp, Copy, Lock, RefreshCw, Users,
+  ArrowRight, Check, ChevronDown, ChevronUp, Copy, Lock, RefreshCw, Timer, Users,
 } from "lucide-react";
 import clsx from "clsx";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
@@ -43,10 +43,7 @@ export function PhasePill({ phase, loading }: { phase: Phase; loading: boolean }
       )}
     >
       {phase === "live" && (
-        <span className="relative flex w-2 h-2">
-          <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-60" />
-          <span className="relative inline-flex rounded-full w-2 h-2 bg-brand" />
-        </span>
+        <Timer aria-hidden className="w-4 h-4" strokeWidth={2} />
       )}
       {copy}
     </span>

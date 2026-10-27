@@ -19,12 +19,28 @@ self.addEventListener("install", (e) => {
   self.skipWaiting();
 });
 
+// Workers before v22 answered pages and /api from cache. A browser that last
+// visited back then boots that old build, and its page code has no "reload when
+// a new worker takes over", so it sat on the old app until a hard refresh.
+const CACHE_FIRST_ERA = /^gooddrops-v(\d+)$/;
+const wasCacheFirst = (key) => {
+  const m = CACHE_FIRST_ERA.exec(key);
+  return !!m && Number(m[1]) < 22;
+};
+
 self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const stale = (await caches.keys()).filter((k) => k !== CACHE);
+    const rescue = stale.some(wasCacheFirst);
+    await Promise.all(stale.map((k) => caches.delete(k)));
+    await self.clients.claim();
+    // Only when replacing one of those old workers: reload its tabs onto the
+    // current build. Normal upgrades never reload anyone mid-claim.
+    if (rescue) {
+      const tabs = await self.clients.matchAll({ type: "window" });
+      await Promise.all(tabs.map((t) => t.navigate(t.url).catch(() => {})));
+    }
+  })());
 });
 
 function putInCache(req, res) {

@@ -1,6 +1,6 @@
 "use client";
 import {
-  CalendarDays, GraduationCap, HeartHandshake, Music, PartyPopper, ShoppingBasket, Trophy, Users,
+  Activity, CalendarDays, GraduationCap, HeartHandshake, Music, PartyPopper, ShoppingBasket, Trophy, Users,
   type LucideIcon,
 } from "lucide-react";
 import { CATEGORY_LABEL, type EventCategory, type EventPhase, type GdEvent } from "@/lib/events";
@@ -28,10 +28,7 @@ export function PhasePill({ phase, cancelled, label }: { phase: EventPhase; canc
   if (phase === "live") {
     return (
       <span className="inline-flex items-center gap-2 h-8 px-3 rounded-full bg-brand text-white text-sm/none">
-        <span className="relative flex w-2 h-2">
-          <span className="absolute inline-flex w-full h-full rounded-full bg-white opacity-70 motion-safe:animate-ping" />
-          <span className="relative inline-flex w-2 h-2 rounded-full bg-white" />
-        </span>
+        <Activity aria-hidden className="w-4 h-4" strokeWidth={2} />
         {label ?? "Live now"}
       </span>
     );

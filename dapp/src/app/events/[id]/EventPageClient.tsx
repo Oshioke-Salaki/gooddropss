@@ -295,7 +295,7 @@ function LiveStats({ event: e, stats: s, interested, phase, cancelled }: {
         <h2 id="stats-h" className="text-lg/none text-heading">{headline}</h2>
         {phase === "live" && !cancelled && (
           <span className="inline-flex items-center gap-1.5 text-xs/none text-nav-muted">
-            <span className="w-1.5 h-1.5 rounded-full bg-brand motion-safe:animate-pulse" /> Updates live
+            <RefreshCw aria-hidden className="w-3.5 h-3.5 text-brand" strokeWidth={2} /> Updates live
           </span>
         )}
       </div>
