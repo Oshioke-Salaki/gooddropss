@@ -17,17 +17,20 @@ const SIZES = {
 export function Logo({
   size = "md",
   className = "",
+  compact = false,
 }: {
   size?: keyof typeof SIZES;
   className?: string;
+  /** Phones show the mark alone (a touch larger); the name returns from sm up. */
+  compact?: boolean;
 }) {
   const s = SIZES[size];
   return (
     <span
       className={`font-sans font-bold tracking-[-0.02em] text-brand flex items-center leading-none ${s.gap} ${s.text} ${className}`}
     >
-      <BrandMark className={`${s.mark} shrink-0`} />
-      <span>GoodDrops</span>
+      <BrandMark className={`${compact ? "w-8 h-8 sm:w-7 sm:h-7" : s.mark} shrink-0`} />
+      <span className={compact ? "hidden sm:inline" : undefined}>GoodDrops</span>
     </span>
   );
 }

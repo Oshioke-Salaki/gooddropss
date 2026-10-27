@@ -38,7 +38,7 @@ export function MyLocationButton({ onClick, locating = false, denied = false, er
         disabled={locating}
         title={denied ? "Location access denied — enable it in your browser settings" : "Go to my location"}
         aria-label={label}
-        className={`bg-surface border border-line rounded-full py-3 px-4 flex items-center gap-3 transition-colors ${
+        className={`bg-surface border border-line rounded-full p-3 lg:px-4 flex items-center gap-3 transition-colors ${
           locating ? "cursor-wait opacity-70" : "cursor-pointer hover:bg-[#ECECEC] active:bg-[#E0E0E0]"
         }`}
       >
@@ -47,7 +47,9 @@ export function MyLocationButton({ onClick, locating = false, denied = false, er
           : denied
             ? <MapPinOff className="w-5 h-5 text-nav-muted" />
             : <MapPin className="w-5 h-5 text-nav-active" />}
-        <span className={`text-sm/[100%] whitespace-nowrap ${denied ? "text-nav-muted" : "text-nav-active"}`}>
+        {/* Icon-only on phones: the bottom row also holds the drops-in-range pill
+            and the + button, and the label is what made them collide. */}
+        <span className={`hidden lg:inline text-sm/[100%] whitespace-nowrap ${denied ? "text-nav-muted" : "text-nav-active"}`}>
           {label}
         </span>
       </button>

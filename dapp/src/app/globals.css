@@ -246,6 +246,11 @@
   background: rgba(245, 244, 240, 0.85) !important;
   font-size: 10px !important;
 }
+/* Below lg the main map's credits sit top-left (MapView), but the search bar
+   covers the map's top 66px there. The licence needs them visible. */
+@media (max-width: 1023.98px) {
+  .gd-main-map .maplibregl-ctrl-top-left { top: 66px; }
+}
 
 
 /* ── Claim success celebration ───────────────────────────────────────────── */

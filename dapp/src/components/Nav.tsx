@@ -417,7 +417,7 @@ export function Nav() {
         <div className="flex items-center justify-between gap-3 px-4 py-4 lg:px-[60px]">
           {/* Logo */}
           <Link href="/" aria-label="GoodDrops home" className="shrink-0">
-            <Logo size="md" />
+            <Logo size="md" compact />
           </Link>
 
           {/* Desktop nav links */}

@@ -30,6 +30,8 @@ import { isLightDevice, prefersReducedMotion } from "@/lib/deviceTier";
 import { countDropsPerLandmark } from "@/lib/landmarkDrops";
 import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
+import { InAppLocationHelp } from "@/components/InAppLocationHelp";
+import { isValoraBrowser } from "@/lib/valora";
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
 
@@ -229,6 +231,18 @@ export default function MapView({
   const [locating, setLocating]         = useState(false);
   const [locateErr, setLocateErr]       = useState("");
   const [locPerm, setLocPerm]           = useState<LocPerm>("unknown");
+  // In a wallet's in-app browser a refused location can't be fixed in settings,
+  // so explain the way out instead (InAppLocationHelp). Once per session.
+  const [locHelp, setLocHelp]           = useState(false);
+  const offerLocHelp = useCallback((force = false) => {
+    if (!isValoraBrowser()) return false;
+    try {
+      if (!force && sessionStorage.getItem("gd:loc-help")) return true;
+      sessionStorage.setItem("gd:loc-help", "1");
+    } catch { /* storage blocked */ }
+    setLocHelp(true);
+    return true;
+  }, []);
   const [showNearbyList, setShowNearbyList] = useState(false);
 
   // Latest callbacks/data in refs so the map init effect never re-runs.
@@ -296,7 +310,17 @@ export default function MapView({
         ? { pixelRatio: Math.min(typeof window !== "undefined" ? window.devicePixelRatio : 1, 1.5), fadeDuration: 0 }
         : {}),
     });
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
+    // Phones: top-left, the one map corner with no controls (the bottom row holds
+    // locate, the drops pill and +). Desktop keeps the usual bottom-right.
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      window.matchMedia("(min-width: 1024px)").matches ? "bottom-right" : "top-left",
+    );
+    // Compact attribution opens expanded until the first drag, where it sat under
+    // the drops-in-range pill. Start it folded to its (i) button.
+    map.once("load", () => {
+      map.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+    });
     map.touchZoomRotate.enableRotation();
     mapRef.current = map;
 
@@ -736,6 +760,8 @@ export default function MapView({
         },
         (err) => {
           if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
+          // In-app WebViews often report "unavailable" rather than "denied".
+          if (err.code !== err.TIMEOUT) offerLocHelp();
         },
         { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 },
       );
@@ -758,7 +784,7 @@ export default function MapView({
         }
       };
     }).catch(() => doRequest());
-  }, [onUserLocation]);  
+  }, [onUserLocation, offerLocHelp]);
 
   // Continuous high-accuracy watch once permission is granted.
   useEffect(() => {
@@ -788,7 +814,9 @@ export default function MapView({
       },
       (err) => {
         setLocating(false);
-        if (err.code === err.PERMISSION_DENIED) {
+        if (err.code !== err.TIMEOUT && offerLocHelp(true)) {
+          if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
+        } else if (err.code === err.PERMISSION_DENIED) {
           setLocPerm("denied");
           setLocateErr("Location denied — enable in browser settings & reload");
         } else if (err.code === err.TIMEOUT) {
@@ -800,9 +828,10 @@ export default function MapView({
       },
       { enableHighAccuracy: true, timeout: 8_000, maximumAge: 0 },
     );
-  }, [onUserLocation]);
+  }, [onUserLocation, offerLocHelp]);
 
   function flyToUser() {
+    if (locPerm === "denied" && offerLocHelp(true)) return;
     if (locPerm === "denied") {
       setLocateErr("Location denied — enable in browser settings & reload");
       setTimeout(() => setLocateErr(""), 5_000);
@@ -817,7 +846,7 @@ export default function MapView({
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+      <div ref={containerRef} className="gd-main-map" style={{ position: "absolute", inset: 0 }} />
 
       {/* Landmark placement: pan so the crosshair sits on the spot, then confirm.
           Reliable even in a tilted 3D view where a clean "click" rarely fires. */}
@@ -867,6 +896,8 @@ export default function MapView({
         />
       </div>
 
+      {locHelp && <InAppLocationHelp onClose={() => setLocHelp(false)} />}
+
       {/* ── Nearby drops chip + list ──────────────────────────────────────── */}
       {nearbyDrops.length > 0 && (
         <>
@@ -914,6 +945,7 @@ export default function MapView({
             }}
             aria-expanded={nearbyDrops.length > 1 ? showNearbyList : undefined}
             className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[1001] font-sans h-11 p-1 pr-5 rounded-full
+              max-w-[calc(100vw-160px)] lg:max-w-none
               bg-brand text-white text-sm/none flex items-center gap-2.5 whitespace-nowrap cursor-pointer
               shadow-[0px_4px_16px_0px_#2727E240] motion-safe:transition-colors hover:bg-brand/90"
           >
@@ -921,9 +953,18 @@ export default function MapView({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/treasure-chest.png" alt="" width={26} height={26} className="w-[26px] h-[26px] select-none" />
             </span>
-            {nearbyDrops.length === 1
-              ? `${formatG$(nearbyDrops[0].drop.amount)} G$ — claim now`
-              : `${nearbyDrops.length} drops in range`}
+            {/* Capped width (above) keeps it clear of the locate and + buttons on phones. */}
+            {/* Short label on phones so it never truncates mid-word. */}
+            <span className="min-w-0 truncate sm:hidden">
+              {nearbyDrops.length === 1
+                ? `Claim ${formatG$(nearbyDrops[0].drop.amount)} G$`
+                : `${nearbyDrops.length} in range`}
+            </span>
+            <span className="min-w-0 truncate hidden sm:inline">
+              {nearbyDrops.length === 1
+                ? `${formatG$(nearbyDrops[0].drop.amount)} G$ — claim now`
+                : `${nearbyDrops.length} drops in range`}
+            </span>
             {nearbyDrops.length > 1 && (
               showNearbyList
                 ? <ChevronUp className="w-4 h-4 opacity-80" strokeWidth={2} />
