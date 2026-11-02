@@ -7,11 +7,11 @@ import { Sheet } from "@/components/ui/Sheet";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { track } from "@/lib/analytics";
 import {
-  CATEGORY_LABEL, EVENT_CATEGORIES, LIMITS, draftDigest, eventMessage, validateDraft,
+  CATEGORY_LABEL, EVENT_CATEGORIES, LIMITS, PER_PERSON_CHOICES, draftDigest, eventMessage, isSafeEdit, isTimeZone, validateDraft,
   type EventCategory, type EventDraft, type GdEvent,
 } from "@/lib/events";
 import { CATEGORY_ICON } from "./Pieces";
-import { fromLocalInput, toLocalInput } from "./format";
+import { fromLocalInput, toLocalInput, tzLabel, viewerTz } from "./format";
 import { announceEventsChanged } from "./useEvents";
 
 // The picker holds a live map; load it only when someone opens it.
@@ -26,10 +26,20 @@ const FIELD =
   "border border-transparent outline-none focus:border-brand motion-safe:transition-colors disabled:opacity-60";
 const LABEL = "text-sm/none text-nav-muted mb-2.5 block";
 
+// Where GoodDrops events happen most, then the rest of the world's big zones.
+const ZONES = [
+  "Africa/Lagos", "Africa/Accra", "Africa/Abidjan", "Africa/Douala", "Africa/Kinshasa", "Africa/Nairobi", "Africa/Kampala",
+  "Africa/Dar_es_Salaam", "Africa/Kigali", "Africa/Addis_Ababa", "Africa/Johannesburg", "Africa/Cairo", "Europe/London",
+  "Europe/Berlin", "Asia/Dubai", "Asia/Kolkata", "Asia/Jakarta", "Asia/Manila", "America/New_York", "America/Sao_Paulo", "UTC",
+];
+const zoneName = (tz: string) => tz === "UTC" ? "UTC" : (tz.split("/").pop() ?? tz).replace(/_/g, " ");
+
 interface Props {
   address: string;
   /** Present when editing. */
   event?: GdEvent | null;
+  /** The organizer is a trusted host: every edit goes live without review. */
+  trusted?: boolean;
   onClose: () => void;
   onSaved?: (e: GdEvent) => void;
 }
@@ -39,7 +49,7 @@ interface Props {
  * (lib/events validateDraft), then the organizer signs the normalised content
  * — what admins review is precisely what was signed.
  */
-export function EventForm({ address, event, onClose, onSaved }: Props) {
+export function EventForm({ address, event, trusted = false, onClose, onSaved }: Props) {
   const editing = !!event;
   const base: EventDraft | null = event ? (event.pendingEdit ?? event) : null;
   const nowSec = Math.floor(Date.now() / 1000);
@@ -50,8 +60,15 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
   const [description, setDescription] = useState(base?.description ?? "");
   const [venueName, setVenueName] = useState(base?.venueName ?? "");
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(base ? { lat: base.lat, lng: base.lng } : null);
-  const [start, setStart] = useState(toLocalInput(base?.startsAt ?? defaultStart));
-  const [end, setEnd] = useState(toLocalInput(base?.endsAt ?? defaultStart + 3 * 3600));
+  // Times are entered as the venue's clock reads. Older events have no zone, so
+  // they open in this device's zone, which is how they were entered.
+  const [tz, setTz] = useState(() => {
+    const own = viewerTz();
+    return base?.tz ?? (isTimeZone(own) ? own : "Africa/Lagos");
+  });
+  const [start, setStart] = useState(() => toLocalInput(base?.startsAt ?? defaultStart, tz));
+  const [end, setEnd] = useState(() => toLocalInput(base?.endsAt ?? defaultStart + 3 * 3600, tz));
+  const [perPerson, setPerPerson] = useState<number>(base?.perPerson ?? LIMITS.perPersonDefault);
   const [budget, setBudget] = useState(base ? String(base.budgetG) : "");
   const [link, setLink] = useState(base?.link ?? "");
   const [cohosts, setCohosts] = useState<string[]>(base?.cohosts ?? []);
@@ -63,23 +80,34 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
   const [error, setError] = useState("");
   const [touched, setTouched] = useState(false);
   const [done, setDone] = useState<GdEvent | null>(null);
+  const [appliedNow, setAppliedNow] = useState(false);
 
   const { landmarks } = useLandmarks();
   const { signMessageAsync } = useSignMessage();
 
-  const startsAt = fromLocalInput(start);
-  const endsAt = fromLocalInput(end);
+  // The inputs only hold whole minutes. While a time is left as it was, keep
+  // the exact stored value, so an untouched start never reads as "moved".
+  const [initial] = useState(() => ({ start, end, tz }));
+  const keep = (v: string, was: string, exact: number | undefined) =>
+    v === was && tz === initial.tz && exact !== undefined ? exact : fromLocalInput(v, tz);
+  const startsAt = keep(start, initial.start, base?.startsAt);
+  const endsAt = keep(end, initial.end, base?.endsAt);
+  const zones = useMemo(() => [...new Set([tz, ...ZONES])], [tz]);
   const live = editing && event!.status === "approved" && nowSec >= event!.startsAt;
 
   const raw = {
     title, description, category: category ?? "", venueName, lat: pin?.lat, lng: pin?.lng,
-    startsAt, endsAt, budgetG: Number(budget), link, cohosts,
+    startsAt, endsAt, budgetG: Number(budget), link, cohosts, perPerson, tz,
   };
   const check = useMemo(
     () => validateDraft(raw, Math.floor(Date.now() / 1000), { organizer: address, allowStarted: live }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [title, description, category, venueName, pin, startsAt, endsAt, budget, link, cohosts, address, live],
+    [title, description, category, venueName, pin, startsAt, endsAt, budget, link, cohosts, perPerson, tz, address, live],
   );
+  // On an approved event, only the end time and the per-person limit go live
+  // without review (the server decides; this is just to say so up front).
+  const instant = editing && event!.status === "approved" && check.ok && (trusted || isSafeEdit(event!, check.value));
+  const extendsPastDrops = editing && event!.status === "approved" && Number.isFinite(endsAt) && endsAt > event!.endsAt;
 
   // Inline time feedback as soon as both are set — the most common mistake.
   const timeError =
@@ -124,6 +152,7 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setError(body.error ?? "Couldn't save the event. Try again."); return; }
       if (!editing) track("event_submitted", { category: draft.category });
+      setAppliedNow(!!body.applied || (!editing && (body.event as GdEvent).status === "approved"));
       setDone(body.event as GdEvent);
       onSaved?.(body.event as GdEvent);
       announceEventsChanged();
@@ -137,7 +166,7 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
   }
 
   const title_ = done
-    ? (editing ? "Changes sent for review" : "Event submitted")
+    ? (appliedNow ? (editing ? "Changes are live" : "Your event is live") : editing ? "Changes sent for review" : "Event submitted")
     : editing ? "Edit event" : "Host an event";
 
   return (
@@ -150,7 +179,9 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
             </span>
             <p className="text-lg/[1.3] text-heading">{done.title}</p>
             <p className="text-sm/[150%] text-nav-muted max-w-[420px]">
-              {editing && done.status === "approved"
+              {appliedNow
+                ? (editing ? "Everyone sees the update now." : "It's on the Events page now. Add your drops next, so they're ready when it starts.")
+                : editing && done.status === "approved"
                 ? "Your event stays live as it was while we review the changes. We'll notify you when they're approved."
                 : "We review every event before it goes public, usually within a day. We'll notify you when it's approved, and then you can add your drops."}
             </p>
@@ -164,9 +195,9 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
           </div>
         ) : (
           <form className="pt-6 flex flex-col gap-6" onSubmit={(ev) => { ev.preventDefault(); submit(); }} noValidate>
-            {editing && event!.status === "approved" && (
+            {editing && event!.status === "approved" && !trusted && (
               <p className="rounded-2xl bg-streak-bg text-sm/[145%] text-heading px-4 py-3">
-                Changes to a live event are reviewed first. Hunters keep seeing the current version until they&apos;re approved.
+                Changing the end time or the per-person limit goes live right away. Other changes are reviewed first, and people keep seeing the current version until then.
               </p>
             )}
             {editing && event!.status === "rejected" && event!.rejectReason && (
@@ -234,19 +265,54 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
                 <input id="ev-end" type="datetime-local" className={FIELD} value={end} disabled={busy}
                   min={start} onChange={(e) => setEnd(e.target.value)} aria-invalid={!!timeError} />
               </div>
-              <p className={`sm:col-span-2 -mt-2 text-sm/none ${timeError ? "text-danger" : "text-nav-muted"}`} role="status">
-                {timeError || (live ? "It has started, so only the end time can change." : "Shown in your local time.")}
+              <p className={`sm:col-span-2 -mt-2 text-sm/[140%] ${timeError ? "text-danger" : "text-nav-muted"}`} role="status">
+                {timeError || (live ? "It has started, so only the end time can change." : "As the clock reads at the venue.")}
+              </p>
+              {extendsPastDrops && !timeError && (
+                <p className="sm:col-span-2 -mt-2 text-sm/[140%] text-heading rounded-2xl bg-streak-bg px-4 py-3">
+                  Drops you&apos;ve already placed keep their old expiry. To keep them out longer, reactivate them from My Drops.
+                </p>
+              )}
+              <div className="sm:col-span-2">
+                <label className={LABEL} htmlFor="ev-tz">Venue time zone</label>
+                <select id="ev-tz" value={tz} disabled={busy || live} onChange={(e) => setTz(e.target.value)}
+                  className={`${FIELD} appearance-none cursor-pointer`}>
+                  {zones.map((z) => (
+                    <option key={z} value={z}>{zoneName(z)} ({tzLabel(Number.isFinite(startsAt) ? startsAt : nowSec, z)})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <span className={LABEL} id="ev-pp-label">Most drops one person can find</span>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="ev-pp-label">
+                {PER_PERSON_CHOICES.map((n) => {
+                  const on = perPerson === n;
+                  return (
+                    <button key={n} type="button" role="radio" aria-checked={on} disabled={busy} onClick={() => setPerPerson(n)}
+                      className={`h-11 min-w-11 px-4 rounded-full text-sm/none cursor-pointer motion-safe:transition-colors
+                        ${on ? "bg-nav-active text-white" : "border border-line bg-white text-heading hover:bg-surface"}`}>
+                      {n === 0 ? "No limit" : n}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-sm/[140%] text-nav-muted">
+                {perPerson === 0
+                  ? "Anyone can find as many as they reach. One fast person could take most of them."
+                  : "Spreads the G$ across more people. Someone's linked wallets count as one person."}
               </p>
             </div>
 
             <div>
-              <label className={LABEL} htmlFor="ev-budget">G$ budget</label>
+              <label className={LABEL} htmlFor="ev-budget">G$ you plan to drop</label>
               <div className="relative">
                 <input id="ev-budget" inputMode="numeric" className={`${FIELD} pr-14`} value={budget} disabled={busy}
                   placeholder="e.g. 5000" onChange={(e) => setBudget(e.target.value.replace(/[^\d]/g, ""))} />
                 <span className="pointer-events-none absolute right-6 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">G$</span>
               </div>
-              <p className="mt-2 text-sm/[140%] text-nav-muted">This is what hunters see. Drops are funded when you place them, up to 500 G$ each.</p>
+              <p className="mt-2 text-sm/[140%] text-nav-muted">People see this as your plan, next to what you&apos;ve actually placed. Drops are funded when you place them, up to 500 G$ each.</p>
             </div>
 
             <div>
@@ -296,7 +362,7 @@ export function EventForm({ address, event, onClose, onSaved }: Props) {
                 {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> Waiting for signature…</> : editing ? "Save changes" : "Submit for review"}
               </button>
               <p className="text-xs/[145%] text-nav-muted text-center">
-                You&apos;ll sign a message to prove it&apos;s you. Free, no gas.
+                {instant ? "This change goes live as soon as you sign. " : ""}You&apos;ll sign a message to prove it&apos;s you. Free, no gas.
               </p>
             </div>
           </form>

@@ -26,7 +26,7 @@ import {
   shortAddr,
   formatUsdApprox,
 } from "@/lib/utils";
-import { friendlyClaimError } from "@/lib/claimErrors";
+import { eventLockTitle, friendlyClaimError } from "@/lib/claimErrors";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { Sheet } from "@/components/ui/Sheet";
 import { TaskUnlock } from "@/components/TaskUnlock";
@@ -734,7 +734,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     <Notice
                       tone="brand"
                       icon={<Lock className="w-5 h-5" strokeWidth={1.75} />}
-                      title={eventInfo ? `Unlocks ${eventStartLabel(eventInfo.startsAt)}` : "Not unlocked yet"}
+                      title={eventLockTitle(errMsg, eventInfo ? eventStartLabel(eventInfo.startsAt) : null)}
                       body={errMsg}
                       action={parsed?.eventId ? (
                         <Link href={`/events/${parsed.eventId}`} className="shrink-0 h-9 px-3.5 rounded-full bg-white text-sm/none text-brand flex items-center">

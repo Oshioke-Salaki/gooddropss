@@ -45,7 +45,7 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
 
   // An event drop before its event starts (from /api/claim-proof). The server's
   // sentence names the event, so show it as-is.
-  const eventLock = /(this drop unlocks when .+? starts\.|.+? was cancelled, so its drops stay locked\.)/i.exec(text);
+  const eventLock = /(this drop unlocks when .+? starts\.|.+? was (?:cancelled|taken down), so its drops stay locked\.|the hunt at .+? has ended\.|you've reached the limit of \d+ drops? per person at .+?\. leave the rest for others\.)/i.exec(text);
   if (eventLock) return { message: eventLock[1], terminal: true, kind: "event" };
 
   // The contract's own revert reason is the most reliable signal there is, so
@@ -110,4 +110,14 @@ export function friendlyUbiError(raw: unknown): string {
     return "GoodDollar's gas faucet is busy — it couldn't cover the fee to send your UBI. Try again in a minute.";
   if (fe.kind === "unknown") return "Couldn't claim your UBI right now — please try again.";
   return fe.message;
+}
+
+/** Heading for an event notice, from the server's sentence (see friendlyClaimError). */
+export function eventLockTitle(message: string, startLabel: string | null): string {
+  const m = message.toLowerCase();
+  if (m.includes("per person")) return "You've hit this event's limit";
+  if (m.includes("has ended")) return "This hunt is over";
+  if (m.includes("was cancelled")) return "Event cancelled";
+  if (m.includes("taken down")) return "Event taken down";
+  return startLabel ? `Unlocks ${startLabel}` : "Not unlocked yet";
 }

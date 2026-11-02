@@ -13,7 +13,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
 import { publicClient } from "@/lib/publicClient";
-import { friendlyClaimError } from "@/lib/claimErrors";
+import { eventLockTitle, friendlyClaimError } from "@/lib/claimErrors";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
@@ -736,7 +736,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
                   <Lock className="w-4 h-4" strokeWidth={2} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm/none text-heading">{eventInfo ? `Unlocks ${eventStartLabel(eventInfo.startsAt)}` : "Not unlocked yet"}</p>
+                  <p className="text-sm/none text-heading">{eventLockTitle(errMsg, eventInfo ? eventStartLabel(eventInfo.startsAt) : null)}</p>
                   <p className="text-sm/[140%] text-nav-muted mt-1.5">{errMsg}</p>
                 </div>
                 {parsedHint?.eventId && (

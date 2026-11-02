@@ -3,6 +3,7 @@ import { keys } from "@/lib/redis";
 import { fetchEventDrops } from "@/lib/subgraph";
 import { resolveRoots } from "@/lib/roots";
 import { memo } from "@/lib/serverCache";
+import { sendPush } from "@/lib/push";
 import { computeEventStats, eventIdOf, EMPTY_STATS, type EventStats, type GdEvent } from "@/lib/events";
 import type { Drop } from "@/types";
 
@@ -66,6 +67,12 @@ async function dropsByEvent(): Promise<Map<string, Drop[]>> {
   });
 }
 
+/** Drops tagged for one event by its hosts (from the shared 15 s scan). */
+export async function hostDropsFor(e: GdEvent): Promise<Drop[]> {
+  const hosts = new Set([e.organizer, ...e.cohosts].map((a) => a.toLowerCase()));
+  return ((await dropsByEvent()).get(e.id) ?? []).filter((d) => hosts.has(d.dropper.toLowerCase()));
+}
+
 /** Stats for each event (identity-scoped hunter counts). Missing events get zeros. */
 export async function statsFor(events: GdEvent[], now = Math.floor(Date.now() / 1000)): Promise<Map<string, EventStats>> {
   const out = new Map<string, EventStats>();
@@ -90,4 +97,62 @@ export async function statsFor(events: GdEvent[], now = Math.floor(Date.now() / 
 export async function eventForHint(redis: Redis, hint: string): Promise<GdEvent | null> {
   const id = eventIdOf(hint);
   return id ? getEvent(redis, id) : null;
+}
+
+// ── Trusted hosts ─────────────────────────────────────────────────────────────
+// Partner wallets (campus leads, sponsors) an admin vouches for: their events
+// and edits go live without waiting for review.
+
+export async function isTrustedHost(redis: Redis, address: string): Promise<boolean> {
+  return (await redis.sismember(keys.eventsTrusted(), address.toLowerCase())) === 1;
+}
+
+// ── Telling interested people ─────────────────────────────────────────────────
+
+/**
+ * Push to everyone who tapped "Remind me". Best effort and time-boxed: a dead
+ * subscription or a slow push service never fails the action that caused it.
+ */
+export async function notifyInterested(
+  redis: Redis,
+  e: Pick<GdEvent, "id">,
+  msg: { title: string; body: string },
+  budgetMs = 20_000,
+): Promise<number> {
+  const who = await redis.smembers(keys.eventInterested(e.id));
+  const deadline = Date.now() + budgetMs;
+  let sent = 0;
+  for (let i = 0; i < who.length && Date.now() < deadline; i += 10) {
+    const batch = who.slice(i, i + 10);
+    const results = await Promise.all(batch.map((a) =>
+      sendPush(redis, a, { ...msg, url: `/events/${e.id}`, tag: `event-${e.id}` }).catch(() => null)));
+    sent += results.filter((r) => r?.ok).length;
+  }
+  return sent;
+}
+
+/** "Sat 14 Nov, 6:00 PM WAT" in the venue's zone (Lagos for older events). */
+export function venueWhen(e: Pick<GdEvent, "startsAt" | "tz">): string {
+  const tz = e.tz ?? "Africa/Lagos";
+  try {
+    const d = new Date(e.startsAt * 1000);
+    const s = d.toLocaleString("en", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: tz });
+    const z = new Intl.DateTimeFormat("en", { timeZone: tz, timeZoneName: "short" }).formatToParts(d).find((p) => p.type === "timeZoneName")?.value;
+    return z ? `${s} ${z}` : s;
+  } catch {
+    return new Date(e.startsAt * 1000).toUTCString();
+  }
+}
+
+/**
+ * After an approved event's start moves: tell interested people, and let the
+ * start reminder fire again for the new time.
+ */
+export async function announceTimeChange(redis: Redis, before: GdEvent, after: GdEvent): Promise<void> {
+  if (Math.abs(before.startsAt - after.startsAt) < 60) return;
+  await redis.del(keys.eventReminded(after.id)).catch(() => {});
+  await notifyInterested(redis, after, {
+    title: `${after.title} has a new time`,
+    body: `Now ${venueWhen(after)} at ${after.venueName}.`,
+  });
 }

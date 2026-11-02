@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, http } from "viem";
 import { signClaimProof } from "@/lib/claimProof";
-import { eventClaimGate, eventIdOf } from "@/lib/events";
+import { eventClaimGate, eventIdOf, hostsOf, type GdEvent } from "@/lib/events";
+import { eventSlot } from "@/lib/eventCap";
 import { eventForHint } from "@/lib/eventStore";
 import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
@@ -98,13 +99,17 @@ export async function POST(req: NextRequest) {
     // until it starts. The tag is read from the chain, so it can't be dropped
     // by the client. If we can't look the event up, refuse rather than risk
     // releasing drops early.
+    // The event a host's drop belongs to; its per-person limit applies below.
+    let dropEvent: GdEvent | null = null;
     if (eventIdOf(drop.hint)) {
       const r = getRedis();
       if (!r) return NextResponse.json({ error: "Couldn't check this drop's event — try again in a moment." }, { status: 503 });
-      const gate = eventClaimGate(await eventForHint(r, drop.hint), drop.dropper, Math.floor(Date.now() / 1000));
+      const ev = await eventForHint(r, drop.hint);
+      const gate = eventClaimGate(ev, drop.dropper, Math.floor(Date.now() / 1000));
       if (gate.locked) {
         return NextResponse.json({ error: gate.reason, code: "event-locked", startsAt: gate.startsAt }, { status: 403 });
       }
+      if (ev && ev.status === "approved" && hostsOf(ev).has(drop.dropper.toLowerCase())) dropEvent = ev;
     }
 
     // ── 2. Resolve real drop coordinates ────────────────────────────────────
@@ -228,6 +233,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── 5b. Event per-person limit ───────────────────────────────────────────
+    // Checked here, before a riddle can be reserved, and the slot is only taken
+    // right before signing, so a failed check above never uses one up.
+    const capOpts = {
+      readDrop: async (id: string) => {
+        const d = await onChainClient.readContract({
+          address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(id)],
+        });
+        return { claimed: Number(d.status) === 1, claimer: d.claimer };
+      },
+      rootOf: (a: string) => resolveIdentityRoot(a),
+    };
+    if (dropEvent) {
+      if (!redis) return NextResponse.json({ error: "Couldn't check this drop's event — try again in a moment." }, { status: 503 });
+      const capErr = await eventSlot(redis, dropEvent, root, BigInt(dropId).toString(), { ...capOpts, reserve: false });
+      if (capErr) return NextResponse.json({ error: capErr, code: "event-cap" }, { status: 403 });
+    }
+
     // ── 6. Riddle gate ───────────────────────────────────────────────────────
     // The [R] marker lives on-chain, so a riddle drop is recognisable even if
     // Redis is down — in which case we fail CLOSED (503) rather than sign a proof
@@ -325,6 +348,12 @@ export async function POST(req: NextRequest) {
       // Leave the approval in place — its TTL expires it. If the on-chain claim
       // tx fails, the hunter can retry within the window without re-scanning; the
       // contract enforces one claim per drop, so this can't double-reward.
+    }
+
+    // Take the slot last, once every other check has passed.
+    if (dropEvent && redis) {
+      const capErr = await eventSlot(redis, dropEvent, root, BigInt(dropId).toString(), { ...capOpts, reserve: true });
+      if (capErr) return NextResponse.json({ error: capErr, code: "event-cap" }, { status: 403 });
     }
 
     // ── 7. Sign the proof ────────────────────────────────────────────────────

@@ -22,9 +22,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const e = await publicEventFor(id);
   if (!e) return { title: "Event", robots: { index: false } };
 
-  const when = new Date(e.startsAt * 1000).toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: "Africa/Lagos" });
+  const when = new Date(e.startsAt * 1000).toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short", timeZone: e.tz ?? "Africa/Lagos" });
   const title = e.status === "cancelled" ? `${e.title} (cancelled)` : e.title;
-  const description = `${CATEGORY_LABEL[e.category]} · ${when} · ${e.venueName}. ${e.budgetG.toLocaleString("en-US")} G$ of drops to find. ${e.description.slice(0, 120)}`.trim();
+  const description = `${CATEGORY_LABEL[e.category]} · ${when} · ${e.venueName}. G$ drops to find, ${e.budgetG.toLocaleString("en-US")} G$ planned. ${e.description.slice(0, 120)}`.trim();
   return {
     title,
     description,

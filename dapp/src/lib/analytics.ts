@@ -21,6 +21,9 @@ type Events = {
   event_reminder_on: Record<string, never>;
   event_shared: Record<string, never>;
   event_calendar_added: Record<string, never>;
+  event_door_opened: Record<string, never>;
+  event_leftovers_reclaimed: Record<string, never>;
+  event_screen_opened: Record<string, never>;
   tx_sponsored: { fn: string };
   tx_sponsor_fallback: { fn: string };
 };

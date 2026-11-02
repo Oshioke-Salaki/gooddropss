@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   validateDraft, eventPhase, eventClaimGate, computeEventStats, buildEventHint, eventIdOf,
   draftDigest, eventMessage, publicEvent, statsToJson, statsFromJson, LIMITS, type GdEvent, type EventDraft,
+  isSafeEdit, perPersonCap, draftOf, isTimeZone,
 } from "./events";
 import { DROP_STATUS, type Drop } from "@/types";
 
@@ -96,10 +97,62 @@ describe("lifecycle", () => {
     expect(eventClaimGate(ev({ status: "rejected" }), ORG, NOW).locked).toBe(false);
     expect(eventClaimGate(null, ORG, NOW).locked).toBe(false);
   });
-  it("keeps drops locked when cancelled before the start, but not after", () => {
+  it("locks a cancelled event's drops, whenever it was cancelled", () => {
     expect(eventClaimGate(ev({ status: "cancelled", cancelledAt: NOW }), ORG, NOW + 10 * 86_400).locked).toBe(true);
     const e = ev();
-    expect(eventClaimGate({ ...e, status: "cancelled", cancelledAt: e.startsAt + 60 }, ORG, e.startsAt + 120).locked).toBe(false);
+    expect(eventClaimGate({ ...e, status: "cancelled", cancelledAt: e.startsAt + 60 }, ORG, e.startsAt + 120).locked).toBe(true);
+  });
+  it("locks after the end, past a short grace for claims under way", () => {
+    const e = ev();
+    expect(eventClaimGate(e, ORG, e.endsAt).locked).toBe(false);
+    expect(eventClaimGate(e, ORG, e.endsAt + LIMITS.endGraceS - 1).locked).toBe(false);
+    const after = eventClaimGate(e, CO, e.endsAt + LIMITS.endGraceS);
+    expect(after.locked).toBe(true);
+    expect(after.locked && after.reason).toContain("has ended");
+    expect(eventClaimGate(e, STRANGER, e.endsAt + 86_400).locked).toBe(false);
+  });
+  it("keeps drops locked when an approved event is taken down, not when a new one is rejected", () => {
+    expect(eventClaimGate(ev({ status: "rejected", approvedAt: NOW - 10 }), ORG, NOW).locked).toBe(true);
+    expect(eventClaimGate(ev({ status: "rejected" }), ORG, NOW).locked).toBe(false);
+  });
+});
+
+describe("per-person limit, time zone and safe edits", () => {
+  it("defaults the limit for drafts without one, and 0 means no limit", () => {
+    expect(perPersonCap({})).toBe(LIMITS.perPersonDefault);
+    expect(perPersonCap({ perPerson: 1 })).toBe(1);
+    expect(perPersonCap({ perPerson: 0 })).toBe(Infinity);
+  });
+  it("validates the limit and the zone", () => {
+    const v = validateDraft({ ...good, perPerson: 5, tz: "Africa/Nairobi" }, NOW);
+    expect(v.ok && v.value.perPerson).toBe(5);
+    expect(v.ok && v.value.tz).toBe("Africa/Nairobi");
+    expect(validateDraft({ ...good, perPerson: -1 }, NOW).ok).toBe(false);
+    expect(validateDraft({ ...good, perPerson: 2.5 }, NOW).ok).toBe(false);
+    expect(validateDraft({ ...good, perPerson: LIMITS.perPersonMax + 1 }, NOW).ok).toBe(false);
+    expect(validateDraft({ ...good, tz: "Mars/Olympus" }, NOW).ok).toBe(false);
+    expect(validateDraft({ ...good, tz: "<script>" }, NOW).ok).toBe(false);
+    expect(isTimeZone("UTC")).toBe(true);
+  });
+  it("hashes a draft without the new fields exactly as before", () => {
+    const old = (validateDraft(good, NOW) as { ok: true; value: EventDraft }).value;
+    expect("perPerson" in old).toBe(false);
+    expect("tz" in old).toBe(false);
+    // Signed by a page from before this change: same digest as an explicit undefined.
+    expect(draftDigest(old)).toBe(draftDigest({ ...old, perPerson: undefined, tz: undefined }));
+    expect(draftDigest({ ...old, perPerson: 3 })).not.toBe(draftDigest(old));
+  });
+  it("treats only end time and limit changes as safe", () => {
+    const live = draftOf(ev({ perPerson: 3, tz: "Africa/Lagos" }));
+    expect(isSafeEdit(live, { ...live, endsAt: live.endsAt + 1800 })).toBe(true);
+    expect(isSafeEdit(live, { ...live, perPerson: 10 })).toBe(true);
+    expect(isSafeEdit(live, { ...live, startsAt: live.startsAt + 60 })).toBe(false);
+    expect(isSafeEdit(live, { ...live, title: "Other" })).toBe(false);
+    expect(isSafeEdit(live, { ...live, lat: live.lat + 0.01 })).toBe(false);
+    expect(isSafeEdit(live, { ...live, tz: "Africa/Nairobi" })).toBe(false);
+    // An older event without a zone can gain one in a safe edit.
+    const old = draftOf(ev());
+    expect(isSafeEdit(old, { ...old, tz: "Africa/Lagos", endsAt: old.endsAt + 60 })).toBe(true);
   });
 });
 

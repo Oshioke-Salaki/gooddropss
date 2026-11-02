@@ -51,11 +51,11 @@ export function CancelEventSheet({ event, address, onClose, onCancelled }: {
         <p className="text-base/[1.4] text-heading">{event.title}</p>
         <ul className="rounded-2xl bg-surface p-4 flex flex-col gap-2.5 text-sm/[145%] text-heading list-disc pl-8">
           <li>It comes off the Events page. Anyone with the link sees that it was cancelled.</li>
-          {started ? (
-            <li>Drops already out stay claimable until they expire.</li>
-          ) : (
-            <li>Drops you&apos;ve already placed stay locked. Once they expire, reclaim your G$ from My Drops.</li>
-          )}
+          <li>Everyone who asked for a reminder gets a notice.</li>
+          <li>
+            {started ? "The hunt stops: drops still out are locked at once." : "Drops you've already placed stay locked."}{" "}
+            Once they expire, take your G$ back from this page.
+          </li>
           <li>This can&apos;t be undone. You can submit a new event any time.</li>
         </ul>
         <p className="min-h-5 text-sm/none text-danger" role="alert">{error}</p>

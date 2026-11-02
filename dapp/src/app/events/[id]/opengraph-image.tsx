@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { MARK_G_TOP, MARK_G_BOTTOM, MARK_DROP, BRAND_SPARK } from "@/lib/brandMark";
 import { getRedis } from "@/lib/redis";
-import { getEvent } from "@/lib/eventStore";
+import { getEvent, venueWhen } from "@/lib/eventStore";
 import { CATEGORY_LABEL, isEventId } from "@/lib/events";
 
 export const contentType = "image/png";
@@ -31,11 +31,9 @@ export default async function EventOgImage({ params }: { params: Promise<{ id: s
   } catch { /* render the generic card */ }
   const visible = e && (e.status === "approved" || e.status === "cancelled");
 
-  // Times shown in Lagos time: crawlers have no viewer timezone, and the
-  // audience is overwhelmingly WAT.
-  const when = visible
-    ? new Date(e!.startsAt * 1000).toLocaleString("en", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Lagos" }) + " WAT"
-    : "";
+  // In the venue's time zone (Lagos for events made before zones existed):
+  // crawlers have no viewer time zone.
+  const when = visible ? venueWhen(e!) : "";
 
   return new ImageResponse(
     (
@@ -68,7 +66,7 @@ export default async function EventOgImage({ params }: { params: Promise<{ id: s
             <div style={{ position: "absolute", left: 64, bottom: 56, display: "flex", alignItems: "baseline", gap: 14 }}>
               <span style={{ fontSize: 64, color: HEADING }}>{e!.budgetG.toLocaleString("en-US")}</span>
               <span style={{ fontSize: 40, color: BRAND }}>G$</span>
-              <span style={{ fontSize: 28, color: MUTED }}>to find</span>
+              <span style={{ fontSize: 28, color: MUTED }}>planned</span>
             </div>
           )}
           <div style={{ position: "absolute", right: -60, bottom: -60, width: 340, height: 340, borderRadius: 170, background: SOFT, display: "flex", alignItems: "center", justifyContent: "center" }}>

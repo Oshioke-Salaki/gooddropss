@@ -154,4 +154,8 @@ export const keys = {
   eventInterestRl:   (ip: string)     => `gd:event:rl:${ip}`,               // per-IP counter for Remind me (TTL'd)
   eventCreateRl:     (addr: string)   => `gd:event:createrl:${addr.toLowerCase()}`, // per-organizer submit counter (TTL'd)
   eventSigUsed:      (sigHash: string) => `gd:event:sig:${sigHash}`,        // NX marker: signature already used (TTL'd)
+  eventsTrusted:     ()               => `gd:events:trusted`,               // Set of partner host addresses (skip review)
+  // ZSet dropId → unix s a claim proof was signed, per person (identity root) per
+  // event. Enforces the host's per-person limit; unused proofs are pruned.
+  eventFound:        (id: string, root: string) => `gd:event:found:${id}:${root.toLowerCase()}`,
 };

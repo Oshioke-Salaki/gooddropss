@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
-import { getEvents, saveEvent, statsFor } from "@/lib/eventStore";
+import { getEvents, isTrustedHost, saveEvent, statsFor } from "@/lib/eventStore";
 import { verifyEventSignature } from "@/lib/eventAuth";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { sessionAddress, startSessionQuietly } from "@/lib/walletSession";
@@ -101,18 +101,23 @@ export async function POST(req: NextRequest) {
   });
   if (sigErr) return NextResponse.json({ error: sigErr }, { status: 401 });
 
-  // Abuse limits: a handful of open events per organizer, and a daily cap on submissions.
+  // Abuse limits: a handful of open events per organizer (more for partner
+  // hosts an admin trusts), and a daily cap on submissions.
+  const trusted = await isTrustedHost(redis, organizer);
+  const maxOpen = trusted ? LIMITS.maxOpenTrusted : LIMITS.maxOpenPerOrganizer;
   const mine = await getEvents(redis, await redis.smembers(keys.eventsByHost(organizer)));
   const open = mine.filter((e) => e.organizer === organizer && (e.status === "pending" || (e.status === "approved" && e.endsAt > now)));
-  if (open.length >= LIMITS.maxOpenPerOrganizer) {
-    return NextResponse.json({ error: `You can have ${LIMITS.maxOpenPerOrganizer} events pending or upcoming at a time.` }, { status: 429 });
+  if (open.length >= maxOpen) {
+    return NextResponse.json({ error: `You can have ${maxOpen} events pending or upcoming at a time.` }, { status: 429 });
   }
   const daily = await redis.incr(keys.eventCreateRl(organizer));
   if (daily === 1) await redis.expire(keys.eventCreateRl(organizer), 86_400);
-  if (daily > 10) return NextResponse.json({ error: "Too many submissions today — try again tomorrow." }, { status: 429 });
+  if (daily > (trusted ? 40 : 10)) return NextResponse.json({ error: "Too many submissions today — try again tomorrow." }, { status: 429 });
 
+  // A trusted host's event goes live at once; everyone else's waits for review.
   const event: GdEvent = {
-    ...v.value, id: newEventId(), organizer, status: "pending", createdAt: now, updatedAt: now, pendingEdit: null,
+    ...v.value, id: newEventId(), organizer, status: trusted ? "approved" : "pending", createdAt: now, updatedAt: now, pendingEdit: null,
+    ...(trusted ? { approvedAt: now } : {}),
   };
   await saveEvent(redis, event);
   // The signature just proved the wallet: let this browser see its pending event.

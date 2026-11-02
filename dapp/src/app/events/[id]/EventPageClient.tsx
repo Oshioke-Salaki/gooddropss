@@ -4,8 +4,8 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { QRCodeSVG } from "qrcode.react";
 import {
-  ArrowLeft, Bell, BellRing, CalendarPlus, Check, Clock, ExternalLink, Loader2, MapPin, Navigation,
-  Pencil, Plus, RefreshCw, Share2, XCircle,
+  ArrowLeft, Bell, BellRing, CalendarPlus, Check, Clock, ExternalLink, FileText, Loader2, MapPin, Monitor, Navigation,
+  Pencil, Plus, RefreshCw, Share2, UserRound, XCircle,
 } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
@@ -19,14 +19,14 @@ import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { useProfiles } from "@/hooks/useProfile";
 import { shareOrCopy } from "@/lib/share";
 import { track } from "@/lib/analytics";
-import { gpsToDeg, formatG$ } from "@/lib/utils";
-import { eventIdOf, hostsOf, type GdEvent } from "@/lib/events";
-import { fromDropJson, type DropJson } from "@/lib/dropJson";
+import { formatG$ } from "@/lib/utils";
+import { perPersonCap, type GdEvent } from "@/lib/events";
 import { CategoryChip, PhasePill, BudgetBar } from "@/components/events/Pieces";
 import { EventForm } from "@/components/events/EventForm";
 import { CancelEventSheet } from "@/components/events/CancelEventSheet";
-import { buildIcs, downloadIcs } from "@/components/events/ics";
-import { ago, formatRange, relativeLine } from "@/components/events/format";
+import { Leftovers } from "@/components/events/Leftovers";
+import { JoinSteps } from "@/components/events/JoinSteps";
+import { ago, differsFromViewer, formatRange, relativeLine } from "@/components/events/format";
 import { useEventDetail, useNowSec } from "@/components/events/useEvents";
 import type { EventMapDrop } from "@/components/events/EventMap";
 
@@ -48,6 +48,11 @@ export default function EventPageClient({ id }: { id: string }) {
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [dropping, setDropping] = useState(false);
+  // Opened from the QR at the venue door (?door=1): lead with getting set up.
+  const [fromDoor, setFromDoor] = useState(false);
+  useEffect(() => {
+    try { setFromDoor(new URLSearchParams(window.location.search).get("door") === "1"); } catch { /* not in a browser */ }
+  }, []);
 
   if (notFound && needsVerify && address) {
     return (
@@ -95,7 +100,7 @@ export default function EventPageClient({ id }: { id: string }) {
       {isHost && <HostBanner event={e} />}
       {cancelled && (
         <div className="mb-5 rounded-3xl bg-danger/10 text-danger px-5 py-4 text-sm/[145%]" role="status">
-          This event was cancelled. {now < e.startsAt ? "Its drops stay locked." : ""}
+          This event was cancelled, so its drops are locked.
         </div>
       )}
 
@@ -108,11 +113,25 @@ export default function EventPageClient({ id }: { id: string }) {
             <div className="flex items-center gap-2 flex-wrap">
               <CategoryChip category={e.category} />
               <PhasePill phase={phase} cancelled={cancelled} />
-              {!cancelled && <span className="text-sm/none text-nav-muted">{relativeLine(phase, e.startsAt, e.endsAt, now)}</span>}
+              {!cancelled && <span className="text-sm/none text-nav-muted">{relativeLine(phase, e.startsAt, e.endsAt, now, e.tz)}</span>}
             </div>
             <h1 className="mt-5 text-[28px]/[1.15] lg:text-[40px]/[1.1] text-heading break-words">{e.title}</h1>
             <div className="mt-5 flex flex-col gap-3 text-base/[1.35] text-heading">
-              <span className="flex items-start gap-3"><Clock className="w-5 h-5 shrink-0 mt-0.5 text-nav-muted" strokeWidth={1.75} />{formatRange(e.startsAt, e.endsAt)}</span>
+              <span className="flex items-start gap-3">
+                <Clock className="w-5 h-5 shrink-0 mt-0.5 text-nav-muted" strokeWidth={1.75} />
+                <span className="min-w-0">
+                  {formatRange(e.startsAt, e.endsAt, e.tz)}
+                  {e.tz && differsFromViewer(e.tz, e.startsAt) && (
+                    <span className="block mt-1 text-sm text-nav-muted">Your time: {formatRange(e.startsAt, e.endsAt)}</span>
+                  )}
+                </span>
+              </span>
+              {Number.isFinite(perPersonCap(e)) && (
+                <span className="flex items-start gap-3">
+                  <UserRound className="w-5 h-5 shrink-0 mt-0.5 text-nav-muted" strokeWidth={1.75} />
+                  Up to {perPersonCap(e)} {perPersonCap(e) === 1 ? "drop" : "drops"} per person, so more people get some
+                </span>
+              )}
               <span className="flex items-start gap-3">
                 <MapPin className="w-5 h-5 shrink-0 mt-0.5 text-nav-muted" strokeWidth={1.75} />
                 <span className="min-w-0">
@@ -145,8 +164,12 @@ export default function EventPageClient({ id }: { id: string }) {
 
         {/* ── Side column ─────────────────────────────────────────────── */}
         <aside className="flex flex-col gap-5 row-start-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-[calc(var(--spacing-nav)+24px)]">
+          {!isHost && !cancelled && phase !== "ended" && e.status === "approved" && (
+            <JoinSteps address={address} onSignIn={login} live={phase === "live"} fromDoor={fromDoor} mapHref={`/?focus=${e.lat},${e.lng}`} />
+          )}
+          {isHost && address && (phase === "ended" || cancelled) && <Leftovers eventId={e.id} address={address} now={now} />}
           <ActionsCard
-            event={e} phase={phase} cancelled={cancelled} interestedCount={data.interested}
+            event={e} stats={s} phase={phase} cancelled={cancelled} interestedCount={data.interested}
             viewerInterested={data.viewer.interested} address={address} onSignIn={login} onChanged={refresh}
           />
           {isHost && (
@@ -173,12 +196,24 @@ export default function EventPageClient({ id }: { id: string }) {
                   </button>
                 </div>
               )}
-              {e.status === "approved" && !cancelled && (
+              {e.status === "approved" && !cancelled && phase !== "ended" && (
                 <div className="mt-2 rounded-2xl border border-line p-4 flex items-center gap-4">
                   <div className="shrink-0 bg-white p-1.5 rounded-xl border border-line">
-                    <QRCodeSVG value={`${typeof window !== "undefined" ? window.location.origin : "https://www.gooddrops.xyz"}/events/${e.id}`} size={72} level="M" />
+                    <QRCodeSVG value={`${typeof window !== "undefined" ? window.location.origin : "https://www.gooddrops.xyz"}/events/${e.id}?door=1`} size={72} level="M" />
                   </div>
-                  <p className="text-xs/[145%] text-nav-muted">Put this QR up at the venue so people can open the event and follow the hunt.</p>
+                  <p className="text-xs/[145%] text-nav-muted">Door QR. Print it or show it at the entrance: new people scan it and get set up to hunt in about two minutes.</p>
+                </div>
+              )}
+              {e.status === "approved" && (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <Link href={`/events/${e.id}/screen`} target="_blank"
+                    className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-1.5 hover:bg-surface">
+                    <Monitor className="w-3.5 h-3.5" /> Big screen
+                  </Link>
+                  <Link href={`/events/${e.id}/report`}
+                    className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-1.5 hover:bg-surface">
+                    <FileText className="w-3.5 h-3.5" /> Report
+                  </Link>
                 </div>
               )}
             </section>
@@ -187,7 +222,7 @@ export default function EventPageClient({ id }: { id: string }) {
       </div>
 
       {editing && address && (
-        <EventForm address={address} event={e} onClose={() => { setEditing(false); refresh(); }} onSaved={() => refresh()} />
+        <EventForm address={address} event={e} trusted={!!data.viewer.trusted} onClose={() => { setEditing(false); refresh(); }} onSaved={() => refresh()} />
       )}
       {cancelling && address && (
         <CancelEventSheet event={e} address={address} onClose={() => setCancelling(false)} onCancelled={() => refresh()} />
@@ -319,13 +354,18 @@ function LiveStats({ event: e, stats: s, interested, phase, cancelled }: {
         <Tile value={`${s.claims.toLocaleString()}`} label={`of ${s.drops.toLocaleString()} drops claimed`} />
         <Tile value={`${claimed.toLocaleString()} G$`} label="G$ circulated" />
         <Tile value={`${hidden.toLocaleString()} G$`} label={cancelled ? "locked by the cancellation" : phase === "upcoming" ? "waiting to unlock" : phase === "live" ? "still hidden" : "left unclaimed"} />
-        <Tile value={`${usedPct}%`} label={`of ${e.budgetG.toLocaleString()} G$ budget dropped`} />
+        <Tile value={`${dropped.toLocaleString()} G$`} label={`placed of ${e.budgetG.toLocaleString()} planned (${usedPct}%)`} />
         <Tile value={interested.toLocaleString()} label="interested" />
       </div>
       <BudgetBar className="mt-5" budgetG={e.budgetG} droppedG={dropped} claimedG={claimed} />
       <p className="mt-2 text-xs/[145%] text-nav-muted">
-        {dropped.toLocaleString()} of {e.budgetG.toLocaleString()} G$ dropped · {claimed.toLocaleString()} found. Numbers come straight from the chain.
+        {dropped.toLocaleString()} of {e.budgetG.toLocaleString()} G$ placed · {claimed.toLocaleString()} found. Numbers come straight from the chain.
       </p>
+      {phase === "ended" && !cancelled && (
+        <Link href={`/events/${e.id}/report`} className="mt-4 inline-flex items-center gap-2 h-11 px-5 rounded-full border border-line text-sm/none text-heading hover:bg-surface">
+          <FileText className="w-4 h-4" /> See the full report
+        </Link>
+      )}
     </section>
   );
 }
@@ -333,7 +373,7 @@ function LiveStats({ event: e, stats: s, interested, phase, cancelled }: {
 function Tile({ value, label, accent = false }: { value: string; label: string; accent?: boolean }) {
   return (
     <div className={`rounded-2xl p-4 min-w-0 ${accent ? "bg-brand text-white" : "bg-surface"}`}>
-      <p className={`font-anta text-[26px]/none truncate ${accent ? "text-white" : "text-heading"}`}>{value}</p>
+      <p className={`font-anta text-[clamp(19px,5.6vw,26px)]/none truncate ${accent ? "text-white" : "text-heading"}`}>{value}</p>
       <p className={`mt-2 text-xs/[1.3] ${accent ? "text-white/80" : "text-nav-muted"}`}>{label}</p>
     </div>
   );
@@ -385,8 +425,8 @@ function Activity({ stats: s, now }: { stats: import("@/lib/events").EventStatsJ
   );
 }
 
-function ActionsCard({ event: e, phase, cancelled, interestedCount, viewerInterested, address, onSignIn, onChanged }: {
-  event: GdEvent; phase: "upcoming" | "live" | "ended"; cancelled: boolean; interestedCount: number; viewerInterested: boolean;
+function ActionsCard({ event: e, stats, phase, cancelled, interestedCount, viewerInterested, address, onSignIn, onChanged }: {
+  event: GdEvent; stats: import("@/lib/events").EventStatsJson; phase: "upcoming" | "live" | "ended"; cancelled: boolean; interestedCount: number; viewerInterested: boolean;
   address: string | undefined; onSignIn: () => void; onChanged: () => void;
 }) {
   const push = usePushSubscription();
@@ -416,25 +456,40 @@ function ActionsCard({ event: e, phase, cancelled, interestedCount, viewerIntere
 
   const url = typeof window !== "undefined" ? `${window.location.origin}/events/${e.id}` : `https://www.gooddrops.xyz/events/${e.id}`;
   async function share() {
-    const r = await shareOrCopy({ title: e.title, text: `${e.title} · ${e.budgetG.toLocaleString()} G$ of drops to find on GoodDrops`, url });
+    const r = await shareOrCopy({ title: e.title, text: `${e.title} · G$ drops to find on GoodDrops`, url });
     if (r === "shared" || r === "copied") track("event_shared");
     if (r === "copied") { setShared(true); setTimeout(() => setShared(false), 1800); }
   }
-  function calendar() {
-    downloadIcs(`${e.title.replace(/[^\w\- ]+/g, "").trim().slice(0, 40) || "event"}.ics`, buildIcs({ ...e, url }));
-    track("event_calendar_added");
-  }
+  // Honest money: what's actually been placed leads; the plan is the plan.
+  const placed = g(stats.droppedWei);
 
-  const open = !cancelled && phase !== "ended";
+  // Reminders only make sense before the start; once it's live, the next
+  // step is the map.
+  const open = !cancelled && phase === "upcoming";
+  const liveNow = !cancelled && phase === "live";
   const pushOff = on && push.status !== "subscribed";
 
   return (
     <section className={`${CARD} p-6 flex flex-col gap-3`}>
-      <div className="flex items-baseline gap-2">
-        <span className="font-anta text-[34px]/none text-heading">{e.budgetG.toLocaleString()}</span>
-        <span className="text-brand text-xl">G$</span>
-        <span className="text-sm text-nav-muted">to find</span>
-      </div>
+      {placed > 0 ? (
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-anta text-[34px]/none text-heading">{placed.toLocaleString()}</span>
+            <span className="text-brand text-xl">G$</span>
+            <span className="text-sm text-nav-muted">placed</span>
+          </div>
+          <p className="mt-2 text-xs/[145%] text-nav-muted">of {e.budgetG.toLocaleString()} G$ the host plans to drop</p>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-anta text-[34px]/none text-heading">{e.budgetG.toLocaleString()}</span>
+            <span className="text-brand text-xl">G$</span>
+            <span className="text-sm text-nav-muted">planned</span>
+          </div>
+          <p className="mt-2 text-xs/[145%] text-nav-muted">{phase === "ended" || cancelled ? "No drops were placed." : "The host hasn't placed drops yet. This shows what's actually out there once they do."}</p>
+        </div>
+      )}
       {open && (
         <>
           <button type="button" onClick={toggleRemind} disabled={busy} aria-pressed={on}
@@ -461,16 +516,22 @@ function ActionsCard({ event: e, phase, cancelled, interestedCount, viewerIntere
           {msg && <p className="text-xs/none text-danger text-center" role="alert">{msg}</p>}
         </>
       )}
+      {liveNow && (
+        <Link href={`/?focus=${e.lat},${e.lng}`}
+          className="h-12 rounded-full bg-brand text-white text-sm/none flex items-center justify-center gap-2 hover:bg-brand/90">
+          <Navigation className="w-4 h-4" /> Hunt on the map
+        </Link>
+      )}
       <div className={`grid gap-2.5 ${open ? "grid-cols-2" : "grid-cols-1"}`}>
         <button type="button" onClick={share}
           className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-2 cursor-pointer hover:bg-surface">
           {shared ? <><Check className="w-4 h-4 text-brand" /> Link copied</> : <><Share2 className="w-4 h-4" /> Share</>}
         </button>
         {open && (
-          <button type="button" onClick={calendar}
+          <a href={`/api/events/${e.id}/ics`} onClick={() => track("event_calendar_added")}
             className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-2 cursor-pointer hover:bg-surface">
             <CalendarPlus className="w-4 h-4" /> Calendar
-          </button>
+          </a>
         )}
       </div>
     </section>
@@ -478,7 +539,7 @@ function ActionsCard({ event: e, phase, cancelled, interestedCount, viewerIntere
 }
 
 function MapSection({ event: e, phase, live, cancelled }: { event: GdEvent; phase: "upcoming" | "live" | "ended"; live: number; cancelled: boolean }) {
-  const drops = useEventDrops(e, phase);
+  const drops = useEventDrops(e.id, phase === "live" && !cancelled);
   return (
     <section className={`${CARD} overflow-hidden`}>
       <div className="h-[260px] lg:h-[320px]">
@@ -486,7 +547,7 @@ function MapSection({ event: e, phase, live, cancelled }: { event: GdEvent; phas
       </div>
       <div className="p-5 flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm/[145%] text-nav-muted">
-          {cancelled ? "This event was cancelled, so its drops are off the map." : phase === "upcoming" ? "Drops appear on the map when it starts." : phase === "live" ? `${live} ${live === 1 ? "drop is" : "drops are"} live around the venue.` : "The hunt is over."}
+          {cancelled ? "This event was cancelled, so its drops are locked and off the map." : phase === "upcoming" ? "Drops appear on the map when it starts." : phase === "live" ? `${live} ${live === 1 ? "drop is" : "drops are"} live around the venue.` : "The hunt is over."}
         </p>
         {phase === "live" && !cancelled && (
           <Link href={`/?focus=${e.lat},${e.lng}`} className="h-11 px-5 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 hover:bg-brand/90">
@@ -498,24 +559,23 @@ function MapSection({ event: e, phase, live, cancelled }: { event: GdEvent; phas
   );
 }
 
-/** This event's live drops (by its hosts), for the map. Not shown before the start. */
-function useEventDrops(e: GdEvent, phase: "upcoming" | "live" | "ended"): EventMapDrop[] {
+/**
+ * This event's live drops, for the map. A small per-event list from the
+ * server (not every drop in the world), and only while the event is live.
+ */
+function useEventDrops(eventId: string, active: boolean): EventMapDrop[] {
   const [drops, setDrops] = useState<EventMapDrop[]>([]);
-  const hostKey = [e.organizer, ...e.cohosts].join(",");
   useEffect(() => {
-    if (phase !== "live") { setDrops([]); return; }
+    if (!active) { setDrops([]); return; }
     let alive = true;
-    const hosts = hostsOf(e);
-    const load = () => fetch("/api/drops/live").then((r) => r.json()).then((d: { drops?: DropJson[] }) => {
-      if (!alive || !Array.isArray(d.drops)) return;
-      setDrops(d.drops.map(fromDropJson)
-        .filter((x) => eventIdOf(x.hint) === e.id && hosts.has(x.dropper.toLowerCase()))
-        .map((x) => ({ lat: gpsToDeg(x.lat), lng: gpsToDeg(x.lng), amount: formatG$(x.amount) })));
+    const load = () => fetch(`/api/events/${eventId}/drops`).then((r) => r.json()).then((d: { live?: { lat: number; lng: number; amountWei: string }[] }) => {
+      if (!alive || !Array.isArray(d.live)) return;
+      setDrops(d.live.map((x) => ({ lat: x.lat, lng: x.lng, amount: formatG$(BigInt(x.amountWei)) })));
     }).catch(() => {});
     load();
-    const id = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 30_000);
-    return () => { alive = false; window.clearInterval(id); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.id, hostKey, phase]);
+    const id = window.setInterval(() => { if (document.visibilityState === "visible") load(); }, 20_000);
+    window.addEventListener("gd:drop-created", load);
+    return () => { alive = false; window.clearInterval(id); window.removeEventListener("gd:drop-created", load); };
+  }, [eventId, active]);
   return drops;
 }

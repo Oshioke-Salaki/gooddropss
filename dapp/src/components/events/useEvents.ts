@@ -19,7 +19,7 @@ export interface EventDetail {
   event: GdEvent;
   stats: EventStatsJson;
   interested: number;
-  viewer: { isHost: boolean; isOrganizer: boolean; interested: boolean; verified?: boolean };
+  viewer: { isHost: boolean; isOrganizer: boolean; interested: boolean; verified?: boolean; trusted?: boolean };
   phase: EventPhase;
 }
 
@@ -92,10 +92,10 @@ export function useHostEvents(address: string | undefined) {
   return usePolled<{ events: EventRow[]; verified?: boolean; hidden?: number }>(address ? `/api/events?host=${address.toLowerCase()}` : null, 30_000);
 }
 
-export function useEventDetail(id: string, viewer: string | undefined) {
+export function useEventDetail(id: string, viewer: string | undefined, intervalMs = 20_000) {
   const url = `/api/events/${id}${viewer ? `?viewer=${viewer.toLowerCase()}` : ""}`;
   // A 404 means not found or not visible to this viewer (unapproved), not a blip.
-  return usePolled<EventDetail>(url, 20_000);
+  return usePolled<EventDetail>(url, intervalMs);
 }
 
 /** Tell every events view on the page to refetch (after create/edit/cancel). */

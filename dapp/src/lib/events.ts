@@ -44,6 +44,13 @@ export interface EventDraft {
   budgetG: number;  // whole G$ the organizer plans to drop
   link: string;     // optional https URL ("" when none)
   cohosts: string[]; // lowercased addresses that may drop for the event
+  /**
+   * Most drops one person may find at this event; 0 means no limit. Left out
+   * of drafts signed before it existed, which then get LIMITS.perPersonDefault.
+   */
+  perPerson?: number;
+  /** IANA time zone of the venue, e.g. "Africa/Nairobi". Absent on older events. */
+  tz?: string;
 }
 
 export interface GdEvent extends EventDraft {
@@ -73,7 +80,16 @@ export const LIMITS = {
   sigWindowMs: 10 * 60 * 1000, // a signature is good for 10 minutes
   /** How long before the start interested people get a reminder push. */
   reminderLeadS: 60 * 60,
+  perPersonDefault: 3,
+  perPersonMax: 50,
+  /** Partner hosts (admin-trusted) skip review and can run more at once. */
+  maxOpenTrusted: 20,
+  /** Claims started right at the end still go through for this long. */
+  endGraceS: 10 * 60,
 } as const;
+
+/** The choices a host gets for the per-person limit (0 = no limit). */
+export const PER_PERSON_CHOICES = [1, 2, 3, 5, 10, 0] as const;
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 const ID_RE = /^[a-z0-9]{6,20}$/;
@@ -155,7 +171,54 @@ export function validateDraft(input: unknown, now: number, opts: { allowStarted?
   }
   if (cohosts.length > LIMITS.maxCohosts) return { ok: false, error: `At most ${LIMITS.maxCohosts} co-hosts.` };
 
-  return { ok: true, value: { title, description, category, venueName, lat, lng, startsAt, endsAt, budgetG, link, cohosts } };
+  const value: EventDraft = { title, description, category, venueName, lat, lng, startsAt, endsAt, budgetG, link, cohosts };
+
+  // Both are optional keys: a draft signed without them must hash the same.
+  if (i.perPerson !== undefined && i.perPerson !== null) {
+    const n = Number(i.perPerson);
+    if (!Number.isInteger(n) || n < 0 || n > LIMITS.perPersonMax) return { ok: false, error: "Pick how many drops one person can find." };
+    value.perPerson = n;
+  }
+  if (i.tz !== undefined && i.tz !== null && i.tz !== "") {
+    if (!isTimeZone(i.tz)) return { ok: false, error: "Pick the venue's time zone." };
+    value.tz = i.tz;
+  }
+  return { ok: true, value };
+}
+
+/** A real IANA zone name this runtime can format with. */
+export function isTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || tz.length > 64 || !/^[A-Za-z_]+(\/[A-Za-z0-9_+\-]+){0,2}$|^UTC$/.test(tz)) return false;
+  try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; }
+}
+
+/** The organizer-controlled fields of an event, as a draft. */
+export function draftOf(e: EventDraft): EventDraft {
+  const d: EventDraft = {
+    title: e.title, description: e.description, category: e.category, venueName: e.venueName,
+    lat: e.lat, lng: e.lng, startsAt: e.startsAt, endsAt: e.endsAt, budgetG: e.budgetG, link: e.link, cohosts: e.cohosts,
+  };
+  if (e.perPerson !== undefined) d.perPerson = e.perPerson;
+  if (e.tz !== undefined) d.tz = e.tz;
+  return d;
+}
+
+/** Most drops one person may find; Infinity when the host chose no limit. */
+export function perPersonCap(e: Pick<EventDraft, "perPerson">): number {
+  const n = e.perPerson ?? LIMITS.perPersonDefault;
+  return n === 0 ? Infinity : n;
+}
+
+/**
+ * Edits that can go live without review on an approved event: the end time
+ * and the per-person limit. Nothing a hunter decides to travel on (place,
+ * start, what it is) and nothing public-facing that could be abused.
+ */
+export function isSafeEdit(live: EventDraft, next: EventDraft): boolean {
+  const a = draftOf(live), b = draftOf(next);
+  // Older events have no time zone; the first edit from the new form adds one.
+  const strip = (d: EventDraft) => ({ ...d, endsAt: 0, perPerson: undefined, tz: a.tz === undefined ? undefined : d.tz });
+  return canonical(strip(a)) === canonical(strip(b));
 }
 
 // ── Signing ──────────────────────────────────────────────────────────────────
@@ -167,7 +230,7 @@ export function validateDraft(input: unknown, now: number, opts: { allowStarted?
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
   if (v && typeof v === "object") {
-    return `{${Object.keys(v as object).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(",")}}`;
+    return `{${Object.keys(v as object).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(",")}}`;
   }
   return JSON.stringify(v);
 }
@@ -201,9 +264,10 @@ export function hostsOf(e: Pick<GdEvent, "organizer" | "cohosts">): Set<string> 
 
 /**
  * Can a drop tagged for this event be claimed right now?
- * Locked only while an approved (or cancelled-before-start) event hasn't
- * started yet, and only for drops placed by its hosts. A tag on anyone else's
- * drop, or for an unknown/pending/rejected event, changes nothing.
+ * Locked before an approved event starts, after it ends (past a short grace),
+ * and for good once it's cancelled, and only for drops placed by its hosts. A
+ * tag on anyone else's drop, or for an unknown/pending/rejected event, changes
+ * nothing.
  */
 export function eventClaimGate(
   e: GdEvent | null,
@@ -215,8 +279,20 @@ export function eventClaimGate(
   if (e.status === "approved" && now < e.startsAt) {
     return { locked: true, reason: `This drop unlocks when ${e.title} starts.`, startsAt: e.startsAt };
   }
-  if (e.status === "cancelled" && (e.cancelledAt ?? 0) < e.startsAt) {
+  // A cancelled event's hunt is off, whenever it was cancelled: what's left
+  // goes back to the host once the drops expire.
+  if (e.status === "cancelled") {
     return { locked: true, reason: `${e.title} was cancelled, so its drops stay locked.`, startsAt: e.startsAt };
+  }
+  // Taken down by an admin after approval: same, so a removal can't release
+  // drops that were waiting for the start.
+  if (e.status === "rejected" && e.approvedAt) {
+    return { locked: true, reason: `${e.title} was taken down, so its drops stay locked.`, startsAt: e.startsAt };
+  }
+  // After the end (plus a short grace for claims already under way) the
+  // leftovers belong to the host, not to whoever walks by later.
+  if (e.status === "approved" && now >= e.endsAt + LIMITS.endGraceS) {
+    return { locked: true, reason: `The hunt at ${e.title} has ended.`, startsAt: e.startsAt };
   }
   return { locked: false };
 }

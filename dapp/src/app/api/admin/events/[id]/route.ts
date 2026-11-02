@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
-import { getEvent, saveEvent } from "@/lib/eventStore";
+import { announceTimeChange, getEvent, notifyInterested, saveEvent } from "@/lib/eventStore";
 import { sendPush } from "@/lib/push";
 import { eventPhase, isEventId, type GdEvent } from "@/lib/events";
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       break;
     case "approveEdit":
       if (!e.pendingEdit) return conflict("There's no pending edit.");
-      next = { ...e, ...e.pendingEdit, pendingEdit: null, updatedAt: now };
+      next = { ...e, ...e.pendingEdit, pendingEdit: null, rejectReason: undefined, updatedAt: now };
       push = { title: "Your event changes are live", body: `${e.pendingEdit.title} is updated.` };
       break;
     case "rejectEdit":
@@ -74,7 +74,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await saveEvent(redis, next, e);
   if (push) {
     // Best effort: a missing subscription must never fail the review.
-    sendPush(redis, e.organizer, { ...push, url: `/events/${id}`, tag: `event-${id}` }).catch(() => {});
+    const msg = push;
+    after(() => sendPush(redis, e.organizer, { ...msg, url: `/events/${id}`, tag: `event-${id}` }).then(() => {}, () => {}));
+  }
+  if (body.action === "remove") {
+    after(() => notifyInterested(redis, next, {
+      title: `${e.title} is off`,
+      body: "It was taken down, so its G$ drops won't be available.",
+    }).then(() => {}, () => {}));
+  }
+  // A live event's start moved: people waiting on it hear about it.
+  if (body.action === "approveEdit") {
+    after(() => announceTimeChange(redis, e, next).catch((err) => console.error("[events/time-push]", err)));
   }
   return NextResponse.json({ event: next });
 }

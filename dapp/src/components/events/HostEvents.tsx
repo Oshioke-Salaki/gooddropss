@@ -28,7 +28,7 @@ export function HostEvents({ rows, now, onEdit, onCancel }: {
               <Link href={`/events/${e.id}`} className="min-w-0 flex-1 group">
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusPill event={e} />
-                  <span className="text-xs/none text-nav-muted">{formatWhen(e.startsAt)}</span>
+                  <span className="text-xs/none text-nav-muted">{formatWhen(e.startsAt, e.tz)}</span>
                 </div>
                 <p className="mt-2 text-base/[1.3] text-heading truncate group-hover:text-brand">{e.title}</p>
               </Link>

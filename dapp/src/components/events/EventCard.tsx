@@ -43,11 +43,11 @@ export function EventCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <PhasePill phase={phase} label={phase === "live" ? "Live now" : undefined} />
-            <span className="text-sm/none text-nav-muted">{relativeLine(phase, e.startsAt, e.endsAt, now)}</span>
+            <span className="text-sm/none text-nav-muted">{relativeLine(phase, e.startsAt, e.endsAt, now, e.tz)}</span>
           </div>
           <h3 className="mt-3 text-lg/[1.25] text-heading line-clamp-2 group-hover:text-brand motion-safe:transition-colors">{e.title}</h3>
           <div className="mt-2 flex flex-col gap-1.5 text-sm/[1.3] text-nav-muted">
-            <span className="flex items-center gap-1.5 min-w-0"><Clock className="w-3.5 h-3.5 shrink-0" />{formatWhen(e.startsAt)}</span>
+            <span className="flex items-center gap-1.5 min-w-0"><Clock className="w-3.5 h-3.5 shrink-0" />{formatWhen(e.startsAt, e.tz)}</span>
             <span className="flex items-center gap-1.5 min-w-0">
               <MapPin className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{e.venueName}</span>
@@ -59,11 +59,12 @@ export function EventCard({
 
       <div className="mt-5">
         <div className="flex items-baseline justify-between gap-3 mb-2">
+          {/* What's really out there leads; the host's plan is secondary. */}
           <span className="text-base/none text-heading">
-            <span className="font-anta">{e.budgetG.toLocaleString("en-US")}</span> <span className="text-brand">G$</span>
-            <span className="text-sm text-nav-muted"> budget</span>
+            <span className="font-anta">{(dropped > 0 ? dropped : e.budgetG).toLocaleString("en-US")}</span> <span className="text-brand">G$</span>
+            <span className="text-sm text-nav-muted">{dropped > 0 ? " placed" : " planned"}</span>
           </span>
-          <span className="text-xs/none text-nav-muted">{shortG(dropped)} dropped · {shortG(claimed)} found</span>
+          <span className="text-xs/none text-nav-muted">{dropped > 0 ? `of ${shortG(e.budgetG)} planned · ${shortG(claimed)} found` : phase === "ended" ? "no drops placed" : "no drops yet"}</span>
         </div>
         <BudgetBar budgetG={e.budgetG} droppedG={dropped} claimedG={claimed} />
       </div>

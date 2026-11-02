@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarDays, Check, Clock, ExternalLink, MapPin, PencilLine, Trash2, X, Users, Wallet, ArrowRight,
+  CalendarDays, Check, Clock, ExternalLink, MapPin, PencilLine, Trash2, X, Users, Wallet, ArrowRight, ShieldCheck, UserRound,
 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
@@ -11,7 +11,7 @@ import { shortAddr } from "@/lib/utils";
 import {
   CATEGORY_LABEL, eventPhase, type EventDraft, type EventStatsJson, type GdEvent,
 } from "@/lib/events";
-import { AdminPage, Button, Card, EmptyState, Hint, RowsSkeleton, SectionTitle, Tag, timeAgo } from "@/components/admin/ui";
+import { AdminPage, Button, Card, EmptyState, Hint, Input, RowsSkeleton, SectionTitle, Tag, timeAgo } from "@/components/admin/ui";
 
 interface Row { event: GdEvent; stats: EventStatsJson }
 type Action = "approve" | "reject" | "approveEdit" | "rejectEdit" | "remove";
@@ -59,6 +59,37 @@ export function EventsBody() {
   const [busy, setBusy] = useState<string | null>(null);
   const [hint, setHint] = useState<{ text: string; tone: "ok" | "bad" } | null>(null);
   const [reasonFor, setReasonFor] = useState<{ row: Row; action: "reject" | "rejectEdit" | "remove" } | null>(null);
+  const [trusted, setTrusted] = useState<string[] | null>(null);
+  const [trustBusy, setTrustBusy] = useState<string | null>(null);
+
+  const loadTrusted = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin/events/trusted", { cache: "no-store" });
+      if (r.ok) setTrusted(((await r.json()) as { hosts: string[] }).hosts);
+    } catch { /* the list stays as it was */ }
+  }, []);
+  useEffect(() => { loadTrusted(); }, [loadTrusted]);
+
+  async function setTrust(address: string, on: boolean): Promise<boolean> {
+    setTrustBusy(address);
+    setHint(null);
+    try {
+      const r = await fetch("/api/admin/events/trusted", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, trusted: on }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? "That didn't go through.");
+      setTrusted(d.hosts);
+      setHint({ tone: "ok", text: on ? `${handle(address.toLowerCase())} is trusted. Their events and edits now go live without review.` : `${handle(address.toLowerCase())} goes through review again.` });
+      return true;
+    } catch (e) {
+      setHint({ tone: "bad", text: (e as Error).message });
+      return false;
+    } finally {
+      setTrustBusy(null);
+    }
+  }
+  const isTrusted = (a: string) => !!trusted?.includes(a.toLowerCase());
 
   const load = useCallback(async () => {
     try {
@@ -78,8 +109,9 @@ export function EventsBody() {
   const addresses = useMemo(() => {
     const s = new Set<string>();
     for (const r of [...(review ?? []), ...(recent ?? [])]) { s.add(r.event.organizer); r.event.cohosts.forEach((c) => s.add(c)); }
+    for (const a of trusted ?? []) s.add(a);
     return [...s];
-  }, [review, recent]);
+  }, [review, recent, trusted]);
   const profiles = useProfiles(addresses);
   const handle = (a: string) => (profiles[a]?.username ? `@${profiles[a]!.username}` : shortAddr(a));
 
@@ -135,7 +167,7 @@ export function EventsBody() {
   return (
     <AdminPage
       title={<>Events {review && review.length > 0 && <Tag tone="warn">{review.length} to review</Tag>}</>}
-      subtitle="Nothing is public until it's approved here. Organizers are notified of every decision."
+      subtitle="New events wait here for approval, except from trusted hosts. Organizers are notified of every decision."
       width="max-w-[1040px]"
     >
       <Hint text={hint?.text} tone={hint?.tone} className="mb-4" />
@@ -163,10 +195,16 @@ export function EventsBody() {
                   busy={busy}
                   onApprove={() => act(row, row.event.pendingEdit ? "approveEdit" : "approve")}
                   onReject={() => setReasonFor({ row, action: row.event.pendingEdit ? "rejectEdit" : "reject" })}
+                  trusted={isTrusted(row.event.organizer)}
+                  trustBusy={trustBusy === row.event.organizer}
+                  onTrust={() => setTrust(row.event.organizer, true)}
                 />
               ))}
             </div>
           )}
+
+          <SectionTitle className="mt-10 mb-4">Trusted hosts</SectionTitle>
+          <TrustedHosts hosts={trusted} handle={handle} busy={trustBusy} onSet={setTrust} />
 
           <SectionTitle className="mt-10 mb-4">All events</SectionTitle>
           {recent && recent.length === 0 ? (
@@ -174,7 +212,7 @@ export function EventsBody() {
           ) : (
             <div className="flex flex-col gap-3">
               {(recent ?? []).map((row) => (
-                <EventRow key={row.event.id} row={row} handle={handle} busy={busy}
+                <EventRow key={row.event.id} row={row} handle={handle} busy={busy} trusted={isTrusted(row.event.organizer)}
                   onRemove={() => setReasonFor({ row, action: "remove" })} />
               ))}
             </div>
@@ -198,10 +236,10 @@ export function EventsBody() {
 // ── Review card ───────────────────────────────────────────────────────────────
 
 function ReviewCard({
-  row, handle, history, busy, onApprove, onReject,
+  row, handle, history, busy, onApprove, onReject, trusted, trustBusy, onTrust,
 }: {
   row: Row; handle: (a: string) => string; history?: Record<GdEvent["status"], number>; busy: string | null;
-  onApprove: () => void; onReject: () => void;
+  onApprove: () => void; onReject: () => void; trusted: boolean; trustBusy: boolean; onTrust: () => void;
 }) {
   const e = row.event;
   const isEdit = !!e.pendingEdit;
@@ -259,6 +297,13 @@ function ReviewCard({
           ) : (
             <Tag>First event</Tag>
           )}
+          {trusted ? (
+            <Tag tone="good"><ShieldCheck className="w-3.5 h-3.5" /> Trusted</Tag>
+          ) : (
+            <Button size="sm" variant="quiet" onClick={onTrust} busy={trustBusy} disabled={trustBusy}>
+              {trustBusy ? null : <ShieldCheck className="w-4 h-4" />} Trust this host
+            </Button>
+          )}
         </div>
       </div>
     </Card>
@@ -280,6 +325,7 @@ function Facts({ d, handle }: { d: EventDraft; handle: (a: string) => string }) 
     },
     { Icon: CalendarDays, label: `When (${tzLabel()})`, value: <>{when(d.startsAt)} – {when(d.endsAt)} <span className="text-nav-muted">· {duration(d.startsAt, d.endsAt)}</span></> },
     { Icon: Wallet, label: "Budget", value: g(d.budgetG) },
+    { Icon: UserRound, label: "Per person", value: d.perPerson === 0 ? "No limit" : `Up to ${d.perPerson ?? 3} drops` },
   ];
   if (d.link) {
     items.push({
@@ -315,6 +361,9 @@ function EditDiff({ before, after, handle }: { before: EventDraft; after: EventD
   add("Starts", when(before.startsAt), when(after.startsAt));
   add("Ends", when(before.endsAt), when(after.endsAt));
   add("Budget", g(before.budgetG), g(after.budgetG));
+  const pp = (d: EventDraft) => d.perPerson === 0 ? "No limit" : `Up to ${d.perPerson ?? 3}`;
+  add("Per person", pp(before), pp(after));
+  add("Time zone", before.tz ?? "Not set", after.tz ?? "Not set");
   add("Link", before.link || "—", after.link || "—");
   add("Co-hosts", before.cohosts.map(handle).join(", ") || "—", after.cohosts.map(handle).join(", ") || "—");
 
@@ -344,7 +393,7 @@ function EditDiff({ before, after, handle }: { before: EventDraft; after: EventD
 
 // ── List row ─────────────────────────────────────────────────────────────────
 
-function EventRow({ row, handle, busy, onRemove }: { row: Row; handle: (a: string) => string; busy: string | null; onRemove: () => void }) {
+function EventRow({ row, handle, busy, trusted, onRemove }: { row: Row; handle: (a: string) => string; busy: string | null; trusted: boolean; onRemove: () => void }) {
   const e = row.event;
   const now = Math.floor(Date.now() / 1000);
   const st = STATUS[e.status];
@@ -356,6 +405,7 @@ function EventRow({ row, handle, busy, onRemove }: { row: Row; handle: (a: strin
           <Tag tone={st.tone}>{phase === "upcoming" ? "Approved · upcoming" : phase === "ended" ? "Ended" : st.label}</Tag>
           {e.pendingEdit && <Tag tone="dark">Edit pending</Tag>}
           <Tag>{CATEGORY_LABEL[e.category]}</Tag>
+          {trusted && <Tag tone="good"><ShieldCheck className="w-3.5 h-3.5" /> Trusted host</Tag>}
         </div>
         <Link href={`/events/${e.id}`} target="_blank" className="text-base/[1.3] text-heading hover:underline break-words">{e.title}</Link>
         <p className="text-sm/[140%] text-nav-muted mt-1.5">
@@ -372,6 +422,45 @@ function EventRow({ row, handle, busy, onRemove }: { row: Row; handle: (a: strin
         <Button variant="danger" size="sm" onClick={onRemove} disabled={!!busy} busy={busy === `${e.id}:remove`}>
           {busy === `${e.id}:remove` ? null : <Trash2 className="w-4 h-4" />} Take down
         </Button>
+      )}
+    </Card>
+  );
+}
+
+// ── Trusted hosts ─────────────────────────────────────────────────────────────
+
+function TrustedHosts({ hosts, handle, busy, onSet }: {
+  hosts: string[] | null; handle: (a: string) => string; busy: string | null; onSet: (a: string, on: boolean) => Promise<boolean>;
+}) {
+  const [input, setInput] = useState("");
+  const valid = /^0x[0-9a-fA-F]{40}$/.test(input.trim());
+  return (
+    <Card className="flex flex-col gap-4">
+      <p className="text-sm/[145%] text-nav-muted">
+        Partner wallets you vouch for, like campus leads and sponsors. Their events go live without review, edits apply at once, and they can run up to 20 at a time. Remove anyone here to put them back through review.
+      </p>
+      <form className="flex gap-2" onSubmit={async (ev) => { ev.preventDefault(); if (valid && (await onSet(input.trim(), true))) setInput(""); }}>
+        <Input aria-label="Wallet address to trust" placeholder="0x… wallet address" value={input} autoCapitalize="none" spellCheck={false}
+          onChange={(ev) => setInput(ev.target.value)} />
+        <Button type="submit" variant="primary" disabled={!valid || !!busy} busy={!!busy && busy === input.trim()}>Trust</Button>
+      </form>
+      {hosts === null ? (
+        <RowsSkeleton count={1} height="h-12" />
+      ) : hosts.length === 0 ? (
+        <p className="text-sm/none text-nav-muted">Nobody yet.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line">
+          {hosts.map((a) => (
+            <li key={a} className="flex items-center gap-3 py-3 min-w-0">
+              <ProfileAvatar address={a} size={28} ringColor="transparent" />
+              <div className="min-w-0 flex-1">
+                <Link href={`/hunter/${a}`} target="_blank" className="text-sm/none text-heading hover:underline">{handle(a)}</Link>
+                <p className="text-xs/none text-nav-muted mt-1.5 truncate">{a}</p>
+              </div>
+              <Button size="sm" variant="secondary" onClick={() => onSet(a, false)} busy={busy === a} disabled={!!busy}>Remove</Button>
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   );
