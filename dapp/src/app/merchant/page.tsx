@@ -1,6 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { useSignMessage } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
+import { announceSessionChanged } from "@/hooks/useWalletSession";
+import { VerifyWalletCard } from "@/components/VerifyWalletCard";
+import { normalizeSpotDraft, spotDigest, spotMessage } from "@/lib/spotAuth";
 import {
   Store, MapPin, Check, UtensilsCrossed, ShoppingBag, Wrench, Bus, Camera,
   Megaphone, ArrowRight, Loader2, Plus, type LucideIcon,
@@ -36,8 +40,11 @@ export default function MerchantPage() {
   const { address, isConnected } = useSignedInAccount();
   const { login, ready } = useAuth();
   const { landmarks } = useLandmarks();
+  const { signMessageAsync } = useSignMessage();
 
   const [mySpots, setMySpots]   = useState<Spot[]>([]);
+  // Shops this wallet has that aren't live yet; only shown once the wallet is confirmed.
+  const [hiddenCount, setHiddenCount] = useState(0);
   const [loading, setLoading]   = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -52,7 +59,7 @@ export default function MerchantPage() {
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [myLoc, setMyLoc]         = useState<{ lat: number; lng: number } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<false | "signing" | "sending">(false);
   const [errMsg, setErrMsg]       = useState("");
   const [done, setDone]           = useState(false);
 
@@ -64,12 +71,20 @@ export default function MerchantPage() {
     // "Live" and then reject the next pause ("Only a live business can be paused").
     fetch(`/api/spots?owner=${address}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d) => setMySpots(Array.isArray(d.spots) ? d.spots : []))
+      .then((d) => {
+        setMySpots(Array.isArray(d.spots) ? d.spots : []);
+        setHiddenCount(typeof d.hidden === "number" ? d.hidden : 0);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [address]);
 
   useEffect(() => { fetchMySpots(); }, [fetchMySpots]);
+  // Confirming the wallet (or signing out) changes what we're allowed to see.
+  useEffect(() => {
+    window.addEventListener("gd:session-changed", fetchMySpots);
+    return () => window.removeEventListener("gd:session-changed", fetchMySpots);
+  }, [fetchMySpots]);
 
   // Default payout wallet to the connected address
   useEffect(() => {
@@ -99,22 +114,42 @@ export default function MerchantPage() {
 
   async function handleSubmit() {
     if (!address || !coords || submitting) return;
-    setSubmitting(true);
+    const payout = (wallet || address).trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(payout)) {
+      setErrMsg("That payout wallet doesn't look right. It should start with 0x and be 42 characters.");
+      return;
+    }
     setErrMsg("");
+    const fields = {
+      name, description, category, discount,
+      wallet: payout,
+      lat: coords.lat, lng: coords.lng,
+      placeName: placeName ?? "",
+    };
+    // The owner signs exactly these details, so nobody can register a shop in
+    // someone else's name, and the request can't be altered on the way.
+    setSubmitting("signing");
+    const timestamp = Date.now();
+    let signature: string;
+    try {
+      signature = await signMessageAsync({
+        message: spotMessage("register", "new", timestamp, spotDigest(normalizeSpotDraft(fields))),
+      });
+    } catch {
+      setSubmitting(false);
+      setErrMsg("Signing was cancelled. Your shop wasn't submitted.");
+      return;
+    }
+    setSubmitting("sending");
     try {
       const res = await fetch("/api/spots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name, description, category, discount,
-          wallet: wallet || address,
-          ownerAddress: address,
-          lat: coords.lat, lng: coords.lng,
-          placeName,
-        }),
+        body: JSON.stringify({ ...fields, ownerAddress: address, signature, timestamp }),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not register spot");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't submit your shop. Try again.");
+      announceSessionChanged();
       setDone(true);
       setShowForm(false);
       setName(""); setDesc(""); setDiscount(""); setCoords(null); setPlaceName(null);
@@ -214,7 +249,7 @@ export default function MerchantPage() {
                         onChange={(e) => setName(e.target.value)}
                         placeholder="Mama Nkechi's Kitchen"
                         maxLength={60}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className={INPUT}
                       />
                     </label>
@@ -226,7 +261,7 @@ export default function MerchantPage() {
                         onChange={(e) => setDesc(e.target.value)}
                         placeholder="Home-cooked meals, cold drinks"
                         maxLength={280}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className={INPUT}
                       />
                     </label>
@@ -242,7 +277,7 @@ export default function MerchantPage() {
                               type="button"
                               role="radio"
                               aria-checked={on}
-                              disabled={submitting}
+                              disabled={!!submitting}
                               onClick={() => setCategory(c.id)}
                               className={`inline-flex items-center gap-2 h-11 px-4 rounded-full text-sm/none cursor-pointer
                                 motion-safe:transition-colors
@@ -262,7 +297,7 @@ export default function MerchantPage() {
                         onChange={(e) => setDiscount(e.target.value)}
                         placeholder="10% off when you pay with G$"
                         maxLength={80}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className={INPUT}
                       />
                     </label>
@@ -274,7 +309,7 @@ export default function MerchantPage() {
                         onChange={(e) => setWallet(e.target.value)}
                         placeholder="0x…"
                         spellCheck={false}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className={`${INPUT} font-mono text-sm/none placeholder:font-sans`}
                       />
                       <span className="block mt-3 px-5 text-sm/none text-nav-muted">
@@ -290,7 +325,7 @@ export default function MerchantPage() {
                       <button
                         type="button"
                         onClick={() => setPickerOpen(true)}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className={`w-full h-14 rounded-full px-5 flex items-center gap-3 text-base/none cursor-pointer
                           motion-safe:transition-colors disabled:opacity-60
                           ${coords ? "bg-brand-soft text-brand" : "border border-line bg-white text-heading hover:bg-surface"}`}
@@ -320,7 +355,7 @@ export default function MerchantPage() {
                       <button
                         type="button"
                         onClick={() => { setShowForm(false); setErrMsg(""); }}
-                        disabled={submitting}
+                        disabled={!!submitting}
                         className="h-14 sm:flex-1 rounded-full border border-line bg-white text-base/none text-heading cursor-pointer
                           motion-safe:transition-colors hover:bg-surface disabled:opacity-60"
                       >
@@ -334,7 +369,7 @@ export default function MerchantPage() {
                           disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
                       >
                         {submitting && <Loader2 className="w-5 h-5 animate-spin" />}
-                        {submitting ? "Registering…" : "Submit for review"}
+                        {submitting === "signing" ? "Confirm in your wallet…" : submitting ? "Submitting…" : "Submit for review"}
                       </button>
                     </div>
                   </form>
@@ -348,11 +383,19 @@ export default function MerchantPage() {
                   )}
                 </div>
 
+                {!loading && hiddenCount > 0 && address && (
+                  <VerifyWalletCard
+                    address={address}
+                    title={hiddenCount === 1 ? "1 more shop isn't live yet" : `${hiddenCount} more shops aren't live yet`}
+                    body="Confirm it's your wallet to see shops that are under review or paused. It's free and moves no funds."
+                  />
+                )}
+
                 {loading ? (
                   <div className="flex flex-col gap-y-6">
                     {[1, 2].map((i) => <Skeleton key={i} className="h-56 rounded-3xl bg-white" />)}
                   </div>
-                ) : mySpots.length === 0 ? (
+                ) : mySpots.length === 0 && hiddenCount === 0 ? (
                   <div className={`${CARD} p-6 flex flex-col items-center text-center gap-y-4`}>
                     <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
                       <Store className="w-6 h-6" strokeWidth={1.75} />

@@ -28,7 +28,7 @@ describe("buildIcs", () => {
   it("uses UTC times and escapes text", () => {
     expect(ics).toContain("DTSTART:20270115T080000Z");
     expect(ics).toContain("DTEND:20270115T090000Z");
-    expect(ics).toContain("SUMMARY:Campus Hunt\\, Finals\; 2026");
+    expect(ics).toContain("SUMMARY:Campus Hunt\\, Finals\\; 2026");
     expect(ics).toContain("Line one\\nLine two");
     expect(ics.split("\r\n").every((l) => l.length <= 75)).toBe(true);
     expect(ics.startsWith("BEGIN:VCALENDAR")).toBe(true);

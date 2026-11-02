@@ -8,6 +8,7 @@ import {
 import { Logo } from "@/components/Logo";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import type { Spot } from "@/types";
+import { isSpotActive } from "@/lib/spotStatus";
 import { shareOrCopy } from "@/lib/share";
 
 const CATEGORY_ICON: Record<string, LucideIcon> = {
@@ -52,6 +53,26 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
   if (!spot) return (
     <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
       <p className="text-base/none text-heading">Shop not found</p>
+    </div>
+  );
+  // A poster only exists for a live shop: a QR that leads to a shop that can't
+  // take payments (under review, paused, rejected) helps nobody.
+  if (!isSpotActive(spot)) return (
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px] bg-white rounded-3xl p-7 flex flex-col items-center text-center gap-4">
+        <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
+          <Store className="w-6 h-6" strokeWidth={1.75} />
+        </span>
+        <p className="text-xl/none text-heading">{spot.name}</p>
+        <p className="text-sm/[140%] text-nav-muted">
+          {spot.status === "pending"
+            ? "This shop's poster will be ready as soon as the shop is approved."
+            : "This shop isn't taking G$ payments right now, so its poster is off."}
+        </p>
+        <a href="/merchant" className="mt-2 h-11 px-5 rounded-full border border-line text-sm/none text-heading flex items-center hover:bg-surface">
+          Go to your shops
+        </a>
+      </div>
     </div>
   );
 

@@ -26,6 +26,8 @@ interface Props {
   eventId?: string;
   eventName?: string;
   eventVenue?: { lat: number; lng: number; name: string } | null;
+  /** Unix seconds the event ends: event drops last until then (plus a short grace). */
+  eventEndsAt?: number;
 }
 
 /**
@@ -41,10 +43,10 @@ interface Props {
  */
 export function DropGDrawer({
   userLocation, onClose, onSuccess, campaignId, campaignName, claimPoints = [], onViewOnMap,
-  eventId, eventName, eventVenue = null,
+  eventId, eventName, eventVenue = null, eventEndsAt,
 }: Props) {
   const d = useCreateDrop({
-    campaignId, eventId, claimPoints, onClose,
+    campaignId, eventId, eventEndsAt, claimPoints, onClose,
     defaultLocation: eventVenue ? { lat: eventVenue.lat, lng: eventVenue.lng, placeName: eventVenue.name } : null,
   });
   const sheet = useSheetDrag({ onDismiss: d.handleClose });
@@ -103,7 +105,7 @@ export function DropGDrawer({
         resuming={d.resuming}
         onShare={d.handleShare}
         onClose={d.handleClose}
-        durationSeconds={d.resuming ? undefined : d.duration}
+        durationSeconds={d.resuming ? undefined : (d.placedForS ?? d.duration)}
         onViewOnMap={onViewOnMap && d.lat != null && d.lng != null ? () => onViewOnMap(d.lat as number, d.lng as number) : undefined}
       />
     );
@@ -274,6 +276,21 @@ export function DropGDrawer({
                         )}
                       </div>
 
+                      {d.eventExpiresAt ? (
+                        // Event drops last the event: no duration to pick, and
+                        // nothing can run out before the hunt starts.
+                        <div className="p-6">
+                          <p className="mb-3 text-sm/none text-nav-muted">Expires</p>
+                          <p className="text-base/[140%] text-heading">
+                            {new Date(d.eventExpiresAt * 1000).toLocaleString(undefined, {
+                              weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                            })}
+                          </p>
+                          <p className="mt-2 text-sm/[145%] text-nav-muted">
+                            An hour after the event ends. Anything unclaimed goes back to you after that from My Drops.
+                          </p>
+                        </div>
+                      ) : (
                       <div className="p-6">
                         <p className="mb-4 text-sm/none text-nav-muted">Expires in</p>
                         <div className="flex items-center gap-2">
@@ -297,6 +314,7 @@ export function DropGDrawer({
                           })}
                         </div>
                       </div>
+                      )}
                     </Card>
 
                     {/* ── Clue ── */}

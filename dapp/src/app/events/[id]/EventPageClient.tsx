@@ -10,6 +10,7 @@ import {
 import { Nav } from "@/components/Nav";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
+import { VerifyWalletCard } from "@/components/VerifyWalletCard";
 import { UserHandle } from "@/components/UserHandle";
 import { DropGDrawer } from "@/components/drop/DropGDrawer";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,12 +43,25 @@ export default function EventPageClient({ id }: { id: string }) {
   const { login } = useAuth();
   const { address } = useSignedInAccount();
   const now = useNowSec(15_000);
-  const { data, loading, error, notFound, refresh } = useEventDetail(id, address);
+  const { data, loading, error, notFound, needsVerify, refresh } = useEventDetail(id, address);
 
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [dropping, setDropping] = useState(false);
 
+  if (notFound && needsVerify && address) {
+    return (
+      <Shell>
+        <div className="max-w-[560px] mx-auto mt-10">
+          <VerifyWalletCard
+            address={address}
+            title="This event is waiting for approval"
+            body="It's one of yours. Confirm it's your wallet to see it on this device. It's free and moves no funds."
+          />
+        </div>
+      </Shell>
+    );
+  }
   if (notFound) return <Shell><Missing /></Shell>;
   if (loading) return <Shell><PageSkeleton /></Shell>;
   if (error || !data) {
@@ -184,6 +198,7 @@ export default function EventPageClient({ id }: { id: string }) {
           eventId={e.id}
           eventName={e.title}
           eventVenue={{ lat: e.lat, lng: e.lng, name: e.venueName }}
+          eventEndsAt={e.endsAt}
           onClose={() => setDropping(false)}
           onSuccess={() => refresh()}
         />

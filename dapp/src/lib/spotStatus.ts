@@ -18,10 +18,12 @@ export function merchantCanReactivate(spot: Pick<Spot, "status">): boolean {
   return spotStatus(spot) === "paused";
 }
 
-export const SPOT_STATUS_META: Record<SpotStatus, { label: string; emoji: string; tone: "good" | "warn" | "bad" | "muted" }> = {
-  active:    { label: "Live",              emoji: "🟢", tone: "good" },
-  pending:   { label: "Awaiting approval", emoji: "🕓", tone: "warn" },
-  paused:    { label: "Paused by you",     emoji: "⏸️", tone: "muted" },
-  suspended: { label: "Suspended by admin", emoji: "🚫", tone: "bad" },
-  rejected:  { label: "Not approved",      emoji: "❌", tone: "bad" },
+export const SPOT_STATUS_META: Record<SpotStatus, { label: string; tone: "good" | "warn" | "bad" | "muted" }> = {
+  active:    { label: "Live",               tone: "good" },
+  pending:   { label: "Awaiting approval",  tone: "warn" },
+  paused:    { label: "Paused by you",      tone: "muted" },
+  suspended: { label: "Suspended by admin", tone: "bad" },
+  rejected:  { label: "Not approved",       tone: "bad" },
 };
+
+export const SPOT_STATUSES: SpotStatus[] = ["active", "pending", "paused", "suspended", "rejected"];

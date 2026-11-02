@@ -10,6 +10,7 @@ import { EventCard, EventCardSkeleton } from "@/components/events/EventCard";
 import { EventForm } from "@/components/events/EventForm";
 import { CancelEventSheet } from "@/components/events/CancelEventSheet";
 import { HostEvents } from "@/components/events/HostEvents";
+import { VerifyWalletCard } from "@/components/VerifyWalletCard";
 import { useEventLists, useHostEvents, useNowSec, type EventRow } from "@/components/events/useEvents";
 
 const PAST_STEP = 6;
@@ -48,6 +49,7 @@ export default function EventsPage() {
   const past = data?.past ?? [];
   const nothingOn = !!data && live.length === 0 && upcoming.length === 0;
   const myRows = mine.data?.events ?? [];
+  const myHidden = mine.data?.hidden ?? 0;
 
   function host() {
     if (!address) { login(); return; }
@@ -84,10 +86,18 @@ export default function EventsPage() {
           )}
 
           {/* Your events */}
-          {address && myRows.length > 0 && (
+          {address && (myRows.length > 0 || myHidden > 0) && (
             <section className="mb-10" aria-labelledby="mine-h">
               <h2 id="mine-h" className="text-xl/none text-heading mb-4">Your events</h2>
-              <HostEvents rows={myRows} now={now} onEdit={setEditing} onCancel={setCancelling} />
+              {myHidden > 0 && (
+                <VerifyWalletCard
+                  address={address}
+                  className="mb-4"
+                  title={myHidden === 1 ? "1 of your events isn't public yet" : `${myHidden} of your events aren't public yet`}
+                  body="Confirm it's your wallet to see events in review and any notes from our team. It's free and moves no funds."
+                />
+              )}
+              {myRows.length > 0 && <HostEvents rows={myRows} now={now} onEdit={setEditing} onCancel={setCancelling} />}
             </section>
           )}
 

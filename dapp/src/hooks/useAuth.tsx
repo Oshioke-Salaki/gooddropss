@@ -42,7 +42,14 @@ export function useAuth() {
   const settled = status !== "connecting" && status !== "reconnecting";
   const ready = mounted && (settled || timedOut);
 
-  const logout = useCallback(() => disconnect(), [disconnect]);
+  // Signing out also ends the wallet session (lib/walletSession), so the next
+  // person on this browser can't read the last wallet's private records.
+  const logout = useCallback(() => {
+    fetch("/api/session", { method: "DELETE" })
+      .catch(() => {})
+      .finally(() => window.dispatchEvent(new Event("gd:session-changed")));
+    disconnect();
+  }, [disconnect]);
 
   return { ready, authenticated: isConnected, address, login, logout };
 }

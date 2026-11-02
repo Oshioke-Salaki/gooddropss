@@ -73,6 +73,9 @@ export interface UseCreateDropOpts {
   campaignId?: string;
   /** Tag drops for an event ([E:id], see lib/events). Never private. */
   eventId?: string;
+  /** Unix seconds the event ends. Event drops then last exactly the event (plus
+   *  a short grace), instead of a duration counted from when they were placed. */
+  eventEndsAt?: number;
   /** Where the form starts (e.g. the event venue). The person can still move it. */
   defaultLocation?: { lat: number; lng: number; placeName: string | null } | null;
   /** Coordinates where drops have been claimed — local demand while picking a spot. */
@@ -86,7 +89,10 @@ export interface UseCreateDropOpts {
  * resume dance. Kept out of the view so the drawer is only layout, and so this
  * can be reasoned about (and tested) on its own.
  */
-export function useCreateDrop({ campaignId, eventId, defaultLocation = null, claimPoints = [], onClose }: UseCreateDropOpts) {
+// Event drops stay claimable this long after the event ends, for stragglers.
+const EVENT_GRACE_S = 3_600;
+
+export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocation = null, claimPoints = [], onClose }: UseCreateDropOpts) {
   const { address, isConnected } = useSignedInAccount();
   const { writeContractAsync } = useSponsoredWrite();
   const { signMessageAsync } = useSignMessage();
@@ -308,6 +314,29 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
     return Math.min(nowSec + seconds + SKEW, nowSec + maxDuration - SKEW);
   }, []);
 
+  /**
+   * The expiry to put on chain, or null after reporting why there isn't one.
+   * Event drops expire when the event does (plus EVENT_GRACE_S), so drops placed
+   * days ahead can't run out before it starts. The contract caps a drop at 30
+   * days and floors it at 1 hour; outside that window we say when to come back.
+   */
+  const dropExpiry = useCallback((): number | null => {
+    if (!eventEndsAt) return expiryFor(duration);
+    const SKEW = 300;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const minDuration = Math.min(...DURATIONS.map((d) => d.seconds));
+    const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
+    const target = eventEndsAt + EVENT_GRACE_S;
+    if (target > nowSec + maxDuration - SKEW) {
+      const from = new Date((target - maxDuration + SKEW + 60) * 1000);
+      setErrMsg(`Drops can last up to 30 days, so add them from ${from.toLocaleDateString(undefined, { month: "short", day: "numeric" })}.`);
+      return null;
+    }
+    return Math.max(target, nowSec + minDuration + SKEW);
+  }, [eventEndsAt, duration, expiryFor]);
+  /** Seconds the last drop will live, for the success screen. */
+  const [placedForS, setPlacedForS] = useState<number | null>(null);
+
   /** Shared pre-flight for both drop paths. Returns false if it reported a problem. */
   const guard = useCallback((): boolean => {
     if (!address || lat === null || lng === null) return false;
@@ -336,7 +365,9 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
     if (totalWei > balance)  { setErrMsg(`Not enough G$ — ${qty} × ${formatG$(amountWei)} needs ${formatG$(totalWei)} G$.`); return; }
     if (hint.length > hintMaxLen) { setErrMsg(`Clue is too long (max ${hintMaxLen} chars).`); return; }
 
-    const expiry = expiryFor(duration);
+    const expiry = dropExpiry();
+    if (expiry === null) return;
+    setPlacedForS(expiry - Math.floor(Date.now() / 1000));
     const points = scatterPoints(lat, lng, qty, CLAIM_RADIUS_M);
     const lats = points.map((p) => degToGps(p.lat));
     const lngs = points.map((p) => degToGps(p.lng));
@@ -374,7 +405,7 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
       setStatus("error");
     }
   }, [address, lat, lng, amountWei, maxDrop, minDrop, totalWei, balance, qty, hint, hintMaxLen,
-      duration, expiryFor, writeContractAsync, eventId]);
+      dropExpiry, writeContractAsync, eventId]);
 
   // ── Single drop ─────────────────────────────────────────────────────────────
   const handleDrop = useCallback(async () => {
@@ -394,7 +425,9 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
       return;
     }
 
-    const expiry = expiryFor(duration);
+    const expiry = dropExpiry();
+    if (expiry === null) return;
+    setPlacedForS(expiry - Math.floor(Date.now() / 1000));
 
     // Private drops store real coordinates server-side and pass (0,0) on-chain, so
     // GPS is never readable from the blockchain or its events.
@@ -517,7 +550,7 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
       setStatus("error");
     }
   }, [guard, multiActive, handleMultiDrop, pending, amountNum, amountWei, hint, hintMaxLen,
-      maxDrop, minDrop, balance, duration, expiryFor, lat, lng, isPrivate, campaignId, eventId,
+      maxDrop, minDrop, balance, dropExpiry, lat, lng, isPrivate, campaignId, eventId,
       targetAddress, riddleOn, riddleQuestion, riddleAnswer, address,
       signMessageAsync, writeContractAsync, bindRiddle]);
 
@@ -564,7 +597,8 @@ export function useCreateDrop({ campaignId, eventId, defaultLocation = null, cla
     lat, lng, placeName, pickerOpen, setPickerOpen, handleLocationConfirm,
     nearbyLandmarks, nearbyDemand, landmarks,
     // form
-    amount, setAmount, quantity, setQuantity, duration, setDuration,
+    amount, setAmount, quantity, setQuantity, duration, setDuration, placedForS,
+    eventExpiresAt: eventEndsAt ? eventEndsAt + EVENT_GRACE_S : null,
     hint, setHint, isPrivate, setIsPrivate, targetAddress, setTargetAddress,
     hasRiddle, setHasRiddle, riddleQuestion, setRiddleQuestion,
     riddleAnswer, setRiddleAnswer,

@@ -10,7 +10,8 @@ import { formatG$, shortAddr } from "@/lib/utils";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { DROP_STATUS } from "@/types";
-import { spotActionMessage } from "@/lib/spotAuth";
+import { pickSpotPatch, spotDigest, spotMessage, type SpotAction } from "@/lib/spotAuth";
+import { announceSessionChanged } from "@/hooks/useWalletSession";
 import { spotStatus, isSpotActive, merchantCanReactivate, SPOT_STATUS_META } from "@/lib/spotStatus";
 import type { Spot, SpotPayment, SpotStatus } from "@/types";
 import { TaskDropCreator } from "@/components/merchant/TaskDropCreator";
@@ -127,10 +128,13 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
     return () => { alive = false; };
   }, [spot.id, showTask]);
 
-  async function signAction(action: string): Promise<{ signature: string; timestamp: number } | null> {
+  // Each signature covers exactly this action on this shop (and, for edits, the
+  // exact new details), so it can't be reused for anything else.
+  async function signAction(action: SpotAction, content: Record<string, unknown> | null): Promise<{ signature: string; timestamp: number } | null> {
     const timestamp = Date.now();
     try {
-      const signature = await signMessageAsync({ message: spotActionMessage(action, spot.id, timestamp) });
+      const digest = spotDigest(content ? pickSpotPatch(content) : null);
+      const signature = await signMessageAsync({ message: spotMessage(action, spot.id, timestamp, digest) });
       return { signature, timestamp };
     } catch { return null; }
   }
@@ -138,39 +142,42 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
   async function changeStatus(action: "pause" | "reactivate") {
     if (busy) return;
     setBusy(action); setErr("");
-    const signed = await signAction(action);
-    if (!signed) { setBusy(null); setErr("Cancelled."); return; }
+    const signed = await signAction(action, null);
+    if (!signed) { setBusy(null); setErr("Signing was cancelled."); return; }
     try {
       const res = await fetch(`/api/spots/${spot.id}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...signed }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { setErr(d.error ?? "Couldn't update — try again."); return; }
+      if (!res.ok) { setErr(d.error ?? "Couldn't update. Try again."); return; }
+      announceSessionChanged();
       onChanged();
-    } catch { setErr("Network error — try again."); }
+    } catch { setErr("Network error. Try again."); }
     finally { setBusy(null); }
   }
 
   async function saveEdits() {
     if (busy) return;
     if (name.trim().length < 2) { setErr("Name must be at least 2 characters."); return; }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(wallet.trim())) { setErr("That payout wallet doesn't look right. It should start with 0x and be 42 characters."); return; }
     setBusy("edit"); setErr("");
-    const signed = await signAction("edit");
-    if (!signed) { setBusy(null); setErr("Cancelled."); return; }
+    const changes = {
+      name, description, category, discount, wallet,
+      ...(editCoords ? { lat: editCoords.lat, lng: editCoords.lng, placeName: editPlaceName ?? spot.placeName ?? "" } : {}),
+    };
+    const signed = await signAction("edit", changes);
+    if (!signed) { setBusy(null); setErr("Signing was cancelled. Nothing was changed."); return; }
     try {
       const res = await fetch(`/api/spots/${spot.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name, description, category, discount, wallet,
-          ...(editCoords ? { lat: editCoords.lat, lng: editCoords.lng, placeName: editPlaceName ?? spot.placeName ?? "" } : {}),
-          ...signed,
-        }),
+        body: JSON.stringify({ ...changes, ...signed }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { setErr(d.error ?? "Couldn't save — try again."); return; }
+      if (!res.ok) { setErr(d.error ?? "Couldn't save. Try again."); return; }
+      announceSessionChanged();
       setEditing(false); setEditCoords(null); setEditPlaceName(null); onChanged();
-    } catch { setErr("Network error — try again."); }
+    } catch { setErr("Network error. Try again."); }
     finally { setBusy(null); }
   }
 
@@ -443,9 +450,11 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <button type="button" onClick={() => setShowPreview(true)} className={PILL}>
             <Eye className="w-4 h-4" strokeWidth={1.75} /> Preview
           </button>
-          <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer" className={PILL}>
-            <Megaphone className="w-4 h-4" strokeWidth={1.75} /> Poster
-          </a>
+          {active && (
+            <a href={`/shop/${spot.id}/poster`} target="_blank" rel="noopener noreferrer" className={PILL}>
+              <Megaphone className="w-4 h-4" strokeWidth={1.75} /> Poster
+            </a>
+          )}
           {active && (
             <button type="button" onClick={() => changeStatus("pause")} disabled={busy === "pause"} className={PILL}>
               {busy === "pause" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" strokeWidth={1.75} />}

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMessage } from "viem";
+import type { Hex } from "viem";
+import { publicClient } from "@/lib/publicClient";
 import { getRedis, keys } from "@/lib/redis";
-import type { Spot } from "@/types";
+import { getSpot } from "@/lib/spotStore";
 import {
   approveMessage, APPROVAL_TTL_S, MERCHANT_DAILY_CAP, type TaskQrRecord,
 } from "@/lib/taskLock";
@@ -31,11 +32,12 @@ export async function POST(req: NextRequest) {
   if (!ADDR_RE.test(merchantWallet)) return NextResponse.json({ error: "Invalid merchant wallet" }, { status: 400 });
 
   // 1. Prove the caller controls the merchant wallet (signed the nonce).
+  // Through the chain client so smart-contract wallets (ERC-1271/6492) verify too.
   try {
-    const ok = await verifyMessage({
-      address: merchantWallet as `0x${string}`,
+    const ok = await publicClient.verifyMessage({
+      address: merchantWallet as Hex,
       message: approveMessage(nonce),
-      signature: signature as `0x${string}`,
+      signature: signature as Hex,
     });
     if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   } catch { return NextResponse.json({ error: "Signature verification failed" }, { status: 401 }); }
@@ -44,10 +46,11 @@ export async function POST(req: NextRequest) {
   const qr = await redis.get<TaskQrRecord>(keys.taskQr(nonce));
   if (!qr) return NextResponse.json({ error: "This code has expired — ask them to show a fresh one." }, { status: 404 });
 
-  // 3. The signer must own the spot bound to the drop.
-  const spot = await redis.get<Spot>(keys.spot(qr.spotId));
+  // 3. The signer must own the spot bound to the drop. Only the owner wallet:
+  //    the payout wallet is just an address the owner typed, never proven.
+  const spot = await getSpot(redis, qr.spotId);
   if (!spot) return NextResponse.json({ error: "Merchant spot not found." }, { status: 404 });
-  const owns = spot.ownerAddress?.toLowerCase() === merchantWallet || spot.wallet?.toLowerCase() === merchantWallet;
+  const owns = spot.ownerAddress?.toLowerCase() === merchantWallet;
   if (!owns) return NextResponse.json({ error: "You don't own this reward drop." }, { status: 403 });
   if (!isSpotActive(spot)) return NextResponse.json({ error: "This business isn't active — can't approve." }, { status: 403 });
 
@@ -61,9 +64,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Daily approval limit reached — try again tomorrow." }, { status: 429 });
   }
 
-  // 5. Approve: unlock the claim, burn the nonce (single-use), log it.
+  // 5. Burn the nonce atomically: of two simultaneous scans, exactly one wins.
+  const burned = await redis.getdel(keys.taskQr(nonce));
+  if (!burned) {
+    await redis.decr(capKey).catch(() => {});
+    return NextResponse.json({ error: "This code was already used. Ask them to show a fresh one." }, { status: 409 });
+  }
+
+  // 6. Approve: unlock the claim, log it.
   await redis.set(keys.taskApproval(qr.dropId, qr.root), { spotId: qr.spotId, at: Math.floor(Date.now() / 1000) }, { ex: APPROVAL_TTL_S });
-  await redis.del(keys.taskQr(nonce));
   redis.lpush(keys.taskApprovalLog(), JSON.stringify({ ts: Math.floor(Date.now() / 1000), dropId: qr.dropId, root: qr.root, spotId: qr.spotId, by: merchantWallet }))
     .then(() => redis.ltrim(keys.taskApprovalLog(), 0, 999)).catch(() => {});
 

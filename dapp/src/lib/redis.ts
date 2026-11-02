@@ -75,7 +75,18 @@ export const keys = {
   spot:             (id: string)      => `gd:spot:${id}`,
   spotsAll:         ()                => `gd:spots:all`,
   spotsByOwner:     (addr: string)    => `gd:spots:owner:${addr.toLowerCase()}`,
-  spotPayments:     (id: string)      => `gd:spot:payments:${id}`,
+  spotPayments:     (id: string)      => `gd:spot:payments:${id}`,              // List: verified payments, newest first (capped)
+  spotPayStats:     (id: string)      => `gd:spot:paystats:${id}`,              // Hash: count, milli (G$ × 1000) — running totals
+  spotPayTx:        (tx: string)      => `gd:spot:paytx:${tx.toLowerCase()}`,   // NX marker: tx already recorded (→ spotId)
+  spotsByStatus:    (status: string)  => `gd:spots:status:${status}`,           // ZSet id → createdAt, one per lifecycle status
+  spotsIndexReady:  ()                => `gd:spots:status:ready`,               // marker: status indexes backfilled from spotsAll
+  spotsIndexLock:   ()                => `gd:spots:status:lock`,                // NX lock while backfilling
+  spotLock:         (id: string)      => `gd:spot:lock:${id}`,                  // NX lock around a read-modify-write
+  spotRegisterRl:   (ip: string)      => `gd:spots:regrl:${ip}`,                // per-IP registrations per day (TTL'd)
+
+  // ── Wallet sessions + one-time signatures (lib/walletSession, lib/walletSig) ──
+  walletSession:    (tokenHash: string) => `gd:wsess:${tokenHash}`,             // → lowercase address (TTL'd)
+  sigUsed:          (sigHash: string)   => `gd:sig:${sigHash}`,                 // NX marker: signature already used (TTL'd)
 
   // ── Merchant task-locked drops (Phase 3) ──────────────────────────────────
   // A task drop is [T:spotId] on-chain; the task text lives here. The hunter mints

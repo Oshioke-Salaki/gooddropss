@@ -3,6 +3,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { getEvent, saveEvent, statsFor } from "@/lib/eventStore";
 import { verifyEventSignature } from "@/lib/eventAuth";
 import { isAdminAuthed } from "@/lib/adminAuth";
+import { sessionAddress, startSessionQuietly } from "@/lib/walletSession";
 import {
   eventPhase, hostsOf, isEventId, publicEvent, statsToJson, validateDraft, type GdEvent,
 } from "@/lib/events";
@@ -28,9 +29,17 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   if (!e) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const viewer = req.nextUrl.searchParams.get("viewer")?.toLowerCase() ?? null;
+  // `viewer` is only a claim. It may decide what controls to SHOW (every host
+  // action is signed separately), but private records (an unapproved event,
+  // review notes, a pending edit) need this browser's session for that wallet.
   const isHost = !!viewer && ADDR_RE.test(viewer) && hostsOf(e).has(viewer);
-  const visible = e.status === "approved" || e.status === "cancelled" || isHost || (await isAdminAuthed());
-  if (!visible) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const verifiedHost = isHost && (await sessionAddress(redis)) === viewer;
+  const isPublic = e.status === "approved" || e.status === "cancelled";
+  const visible = isPublic || verifiedHost || (await isAdminAuthed());
+  if (!visible) {
+    // A host on a new device: say it's theirs to unlock, not that it's missing.
+    return NextResponse.json({ error: "Not found", needsVerify: isHost }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const [stats, interested, mine] = await Promise.all([
@@ -41,12 +50,13 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
   return NextResponse.json(
     {
-      event: publicEvent(e, viewer), stats: statsToJson(stats.get(id)!), interested,
-      viewer: { isHost, isOrganizer: viewer === e.organizer, interested: !!mine },
+      event: publicEvent(e, verifiedHost ? viewer : null), stats: statsToJson(stats.get(id)!), interested,
+      viewer: { isHost, isOrganizer: viewer === e.organizer, interested: !!mine, verified: verifiedHost },
       phase: eventPhase(e, now), at: Date.now(),
     },
-    // Personalised when a viewer is given; otherwise a short shared cache.
-    { headers: { "Cache-Control": viewer ? "private, no-store" : "public, s-maxage=10, stale-while-revalidate=30" } },
+    // A short shared cache only for an anonymous view of a public event. Anything
+    // personalised, or shown only because of an admin cookie, is never cached.
+    { headers: { "Cache-Control": viewer || !isPublic ? "private, no-store" : "public, s-maxage=10, stale-while-revalidate=30" } },
   );
 }
 
@@ -84,6 +94,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     if (sigErr) return NextResponse.json({ error: sigErr }, { status: 401 });
     const next: GdEvent = { ...e, status: "cancelled", cancelledAt: now, updatedAt: now, pendingEdit: null };
     await saveEvent(redis, next, e);
+    await startSessionQuietly(redis, address);
     return NextResponse.json({ event: next });
   }
 
@@ -99,6 +110,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     ? { ...e, pendingEdit: v.value, updatedAt: now }
     : { ...e, ...v.value, status: "pending", rejectReason: undefined, pendingEdit: null, updatedAt: now };
   await saveEvent(redis, next, e);
+  await startSessionQuietly(redis, address);
   return NextResponse.json({ event: next });
 }
 

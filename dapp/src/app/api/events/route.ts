@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import { getEvents, saveEvent, statsFor } from "@/lib/eventStore";
 import { verifyEventSignature } from "@/lib/eventAuth";
+import { isAdminAuthed } from "@/lib/adminAuth";
+import { sessionAddress, startSessionQuietly } from "@/lib/walletSession";
 import {
   LIMITS, eventPhase, newEventId, publicEvent, statsToJson, validateDraft, type GdEvent,
 } from "@/lib/events";
@@ -13,7 +15,9 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /**
  * GET /api/events                → public events: { live, upcoming, past }, each with live stats
- * GET /api/events?host=0x…       → every event that wallet organizes or co-hosts, any status
+ * GET /api/events?host=0x…       → every event that wallet organizes or co-hosts. Every
+ *                                  status (and review notes) only for that wallet's own
+ *                                  session or an admin; otherwise its public events only.
  *
  * The public list is CDN-cached briefly; the host list never is (organizers
  * check it right after submitting).
@@ -28,10 +32,16 @@ export async function GET(req: NextRequest) {
     if (host) {
       if (!ADDR_RE.test(host)) return NextResponse.json({ error: "Invalid address" }, { status: 400 });
       const ids = await redis.smembers(keys.eventsByHost(host));
-      const events = (await getEvents(redis, ids)).sort((a, b) => b.createdAt - a.createdAt);
+      const all = (await getEvents(redis, ids)).sort((a, b) => b.createdAt - a.createdAt);
+      // The address in the URL is just a claim; private records need proof.
+      const verified = (await sessionAddress(redis)) === host || (await isAdminAuthed());
+      const events = verified ? all : all.filter((e) => e.status === "approved" || e.status === "cancelled");
       const stats = await statsFor(events, now);
       return NextResponse.json(
-        { events: events.map((e) => ({ event: publicEvent(e, host), stats: statsToJson(stats.get(e.id)!) })) },
+        {
+          events: events.map((e) => ({ event: publicEvent(e, verified ? host : null), stats: statsToJson(stats.get(e.id)!) })),
+          verified, hidden: all.length - events.length,
+        },
         { headers: { "Cache-Control": "private, no-store" } },
       );
     }
@@ -105,5 +115,7 @@ export async function POST(req: NextRequest) {
     ...v.value, id: newEventId(), organizer, status: "pending", createdAt: now, updatedAt: now, pendingEdit: null,
   };
   await saveEvent(redis, event);
+  // The signature just proved the wallet: let this browser see its pending event.
+  await startSessionQuietly(redis, organizer);
   return NextResponse.json({ event }, { status: 201 });
 }

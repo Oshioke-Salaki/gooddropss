@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useAuth } from "@/hooks/useAuth";
-import { parseUnits } from "viem";
+import { parseUnits, WaitForTransactionReceiptTimeoutError, type Hex } from "viem";
 import {
   Store, Check, Gift, MapPin, Eye, ExternalLink, Loader2, UtensilsCrossed, ShoppingBag,
-  Wrench, Bus, type LucideIcon,
+  Wrench, Bus, Clock, PauseCircle, type LucideIcon,
 } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
@@ -16,6 +16,7 @@ import { Celebration } from "@/components/Celebration";
 import { Sheet } from "@/components/ui/Sheet";
 import type { Spot, LatLng } from "@/types";
 import { track } from "@/lib/analytics";
+import { isSpotActive } from "@/lib/spotStatus";
 
 // How close a customer must be to pay — generous enough for GPS drift indoors,
 // tight enough that payment still guarantees the merchant real foot traffic.
@@ -30,7 +31,11 @@ const CATEGORY_ICON: Record<string, LucideIcon> = {
   food: UtensilsCrossed, retail: ShoppingBag, services: Wrench, transport: Bus, other: Store,
 };
 
-type PayStatus = "idle" | "paying" | "done" | "error";
+// "confirming": the transfer was sent but the network hasn't confirmed it yet.
+// The customer must NOT pay again; we keep waiting in the background.
+type PayStatus = "idle" | "paying" | "confirming" | "done" | "error";
+
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
 interface Props {
   spot: Spot | null;
@@ -74,7 +79,10 @@ function ShopSheetBody({
   try { amountWei = amount ? parseUnits(amount, 18) : 0n; } catch { /* partial input */ }
   const insufficient = amountWei > 0n && amountWei > balance;
 
-  const canPay = isConnected && inRange && amountWei > 0n && !insufficient && status === "idle";
+  // A shop that isn't live (paused, under review, suspended) never takes money,
+  // however the customer got here: an old poster, a shared link, a stale map.
+  const accepting = isSpotActive(spot) && ADDR_RE.test(spot.wallet);
+  const canPay = accepting && isConnected && inRange && amountWei > 0n && !insufficient && status === "idle";
   const usd = amountWei > 0n ? formatUsdApprox(amountWei) : null;
 
   async function handlePay() {
@@ -88,21 +96,45 @@ function ShopSheetBody({
         functionName: "transfer",
         args: [spot.wallet as `0x${string}`, amountWei],
       });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
       setPaidTx(tx);
-      setStatus("done");
-      track("shop_payment_succeeded", { amountG: Math.floor(Number(amountWei / 10n ** 18n)) });
-      // Record for merchant analytics (fire-and-forget)
-      fetch(`/api/spots/${spot.id}/payments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payer: address, amount: amountWei.toString(), tx }),
-      }).catch(() => {});
+      await confirm(tx);
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       const msg = err.shortMessage ?? err.message ?? "";
       setErrMsg(/reject|denied|cancel/i.test(msg) ? "" : (msg || "Payment failed — try again."));
       setStatus(/reject|denied|cancel/i.test(msg) ? "idle" : "error");
+    }
+  }
+
+  // Wait for the network to confirm. A slow confirmation is NOT a failure: the
+  // G$ may still land, so we switch to "confirming" (no retry button) and keep
+  // waiting instead of inviting a second payment.
+  async function confirm(tx: Hex) {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx, timeout: 45_000 });
+        if (receipt.status !== "success") {
+          setStatus("error");
+          setErrMsg("Payment failed. No G$ was sent.");
+          return;
+        }
+        setStatus("done");
+        track("shop_payment_succeeded", { amountG: Math.floor(Number(amountWei / 10n ** 18n)) });
+        // Record it for the merchant's dashboard. The server reads the payment
+        // from the chain itself, so only the tx hash is sent.
+        fetch(`/api/spots/${spot.id}/payments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tx }),
+        }).catch(() => {});
+        return;
+      } catch (e) {
+        if (!(e instanceof WaitForTransactionReceiptTimeoutError)) {
+          // Lost the connection while waiting: the payment may still land.
+          await new Promise((r) => setTimeout(r, 4_000));
+        }
+        setStatus("confirming");
+      }
     }
   }
 
@@ -126,7 +158,26 @@ function ShopSheetBody({
 
   return (
     <Sheet title="Pay with G$" onClose={close} dismissible={status !== "paying"}>
-      {status === "done" ? (
+      {status === "confirming" ? (
+        <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4" role="status" aria-live="polite">
+          <span className="w-16 h-16 rounded-full bg-surface text-heading flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin" strokeWidth={1.75} />
+          </span>
+          <p className="text-xl/none text-heading">Payment sent</p>
+          <p className="text-sm/[140%] text-nav-muted max-w-[320px]">
+            The network is taking longer than usual to confirm it. Please don&apos;t pay again.
+            This screen updates as soon as it&apos;s confirmed.
+          </p>
+          <a
+            href={`https://celoscan.io/tx/${paidTx}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm/none text-brand hover:underline"
+          >
+            Check the transaction <ExternalLink className="w-4 h-4" />
+          </a>
+        </div>
+      ) : status === "done" ? (
         <>
           <Celebration active count={30} />
           <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
@@ -195,64 +246,85 @@ function ShopSheetBody({
             </div>
           )}
 
-          {/* ── Proximity gate ───────────────────────────────────────────── */}
-          <div
-            className={`flex items-center gap-3 rounded-full p-2 pr-5 border ${
-              inRange ? "border-transparent bg-brand-soft" : "border-line bg-white"
-            }`}
-          >
-            <span
-              className={`w-11.5 h-11.5 shrink-0 rounded-full flex items-center justify-center ${
-                inRange ? "bg-white text-brand" : "bg-surface text-heading"
+          {!accepting && (
+            <div className="flex items-start gap-3 rounded-2xl bg-surface px-4 py-3 text-sm/[140%] text-heading" role="status">
+              {spot.status === "pending"
+                ? <Clock className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={1.75} />
+                : <PauseCircle className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={1.75} />}
+              <span>
+                {preview
+                  ? spot.status === "pending"
+                    ? "Customers can pay you once your shop is approved."
+                    : "Your shop isn't live, so customers can't pay you right now."
+                  : spot.status === "pending"
+                    ? "This shop isn't open for G$ payments yet."
+                    : "This shop isn't taking G$ payments right now."}
+              </span>
+            </div>
+          )}
+
+          {(accepting || preview) && (
+            <>
+            {/* ── Proximity gate ───────────────────────────────────────────── */}
+            <div
+              className={`flex items-center gap-3 rounded-full p-2 pr-5 border ${
+                inRange ? "border-transparent bg-brand-soft" : "border-line bg-white"
               }`}
             >
-              <MapPin className="w-5 h-5" strokeWidth={1.75} />
-            </span>
-            <div className="min-w-0 flex flex-col gap-y-1">
-              <p className={`text-base/none ${inRange ? "text-brand" : "text-heading"}`}>
-                {!userLocation ? "Turn on location to pay here"
-                  : inRange ? "You're at the shop"
-                  : `${fmtDistance(distance!)} away`}
-              </p>
-              <p className={`text-sm/[140%] ${inRange ? "text-brand/70" : "text-nav-muted"}`}>
-                {inRange ? "Payment unlocked — pay in person with G$" : `Get within ${PAY_RADIUS_M}m to unlock payment`}
+              <span
+                className={`w-11.5 h-11.5 shrink-0 rounded-full flex items-center justify-center ${
+                  inRange ? "bg-white text-brand" : "bg-surface text-heading"
+                }`}
+              >
+                <MapPin className="w-5 h-5" strokeWidth={1.75} />
+              </span>
+              <div className="min-w-0 flex flex-col gap-y-1">
+                <p className={`text-base/none ${inRange ? "text-brand" : "text-heading"}`}>
+                  {!userLocation ? "Turn on location to pay here"
+                    : inRange ? "You're at the shop"
+                    : `${fmtDistance(distance!)} away`}
+                </p>
+                <p className={`text-sm/[140%] ${inRange ? "text-brand/70" : "text-nav-muted"}`}>
+                  {inRange ? "Payment unlocked — pay in person with G$" : `Get within ${PAY_RADIUS_M}m to unlock payment`}
+                </p>
+              </div>
+            </div>
+
+            {/* ── Amount ───────────────────────────────────────────────────── */}
+            <div>
+              <label className="relative block">
+                <span className="sr-only">Amount to pay in G$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  placeholder="0"
+                  value={amount}
+                  disabled={status === "paying"}
+                  onChange={(e) => { setAmount(e.target.value); if (status === "error") { setStatus("idle"); setErrMsg(""); } }}
+                  className="w-full h-14 rounded-full bg-surface pl-5 pr-14 text-base/none text-heading
+                    placeholder:text-nav-muted border border-transparent outline-none
+                    motion-safe:transition-colors focus:border-brand disabled:opacity-60"
+                />
+                <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">
+                  G$
+                </span>
+              </label>
+              <p
+                role="status"
+                aria-live="polite"
+                className={`h-4 mt-3 px-5 text-sm/none truncate flex justify-between gap-3 ${
+                  errMsg ? "text-danger" : insufficient ? "text-danger" : "text-nav-muted"
+                }`}
+              >
+                <span className="truncate">
+                  {errMsg ? errMsg : insufficient ? "Not enough G$" : `Balance: ${balance === 0n ? "0" : formatG$(balance)} G$`}
+                </span>
+                {!errMsg && usd && <span className="shrink-0">{usd}</span>}
               </p>
             </div>
-          </div>
-
-          {/* ── Amount ───────────────────────────────────────────────────── */}
-          <div>
-            <label className="relative block">
-              <span className="sr-only">Amount to pay in G$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                placeholder="0"
-                value={amount}
-                disabled={status === "paying"}
-                onChange={(e) => { setAmount(e.target.value); if (status === "error") { setStatus("idle"); setErrMsg(""); } }}
-                className="w-full h-14 rounded-full bg-surface pl-5 pr-14 text-base/none text-heading
-                  placeholder:text-nav-muted border border-transparent outline-none
-                  motion-safe:transition-colors focus:border-brand disabled:opacity-60"
-              />
-              <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">
-                G$
-              </span>
-            </label>
-            <p
-              role="status"
-              aria-live="polite"
-              className={`h-4 mt-3 px-5 text-sm/none truncate flex justify-between gap-3 ${
-                errMsg ? "text-danger" : insufficient ? "text-danger" : "text-nav-muted"
-              }`}
-            >
-              <span className="truncate">
-                {errMsg ? errMsg : insufficient ? "Not enough G$" : `Balance: ${balance === 0n ? "0" : formatG$(balance)} G$`}
-              </span>
-              {!errMsg && usd && <span className="shrink-0">{usd}</span>}
-            </p>
-          </div>
+            </>
+          )}
 
           {/* ── CTA ──────────────────────────────────────────────────────── */}
           {preview ? (
@@ -262,6 +334,14 @@ function ShopSheetBody({
               className="w-full h-14 rounded-full bg-[#A4A4A4] text-white text-base/none cursor-not-allowed"
             >
               Preview only
+            </button>
+          ) : !accepting ? (
+            <button
+              type="button"
+              disabled
+              className="w-full h-14 rounded-full bg-[#A4A4A4] text-white text-base/none cursor-not-allowed"
+            >
+              Not taking G$ right now
             </button>
           ) : !isConnected ? (
             <button

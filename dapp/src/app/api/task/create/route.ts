@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMessage } from "viem";
+import type { Hex } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
@@ -7,7 +7,7 @@ import { parseDropHint } from "@/lib/utils";
 import { cleanTask, isValidTask, type TaskDropRecord } from "@/lib/taskLock";
 import { taskCreateMessage } from "@/lib/taskCreateMsg";
 import { isSpotActive } from "@/lib/spotStatus";
-import type { Spot } from "@/types";
+import { getSpot } from "@/lib/spotStore";
 
 export const runtime = "nodejs";
 
@@ -38,14 +38,14 @@ export async function POST(req: NextRequest) {
 
   // 1. Owner signature.
   try {
-    const ok = await verifyMessage({ address: ownerAddress as `0x${string}`, message: taskCreateMessage(dropId, spotId), signature: signature as `0x${string}` });
+    const ok = await publicClient.verifyMessage({ address: ownerAddress as Hex, message: taskCreateMessage(dropId, spotId), signature: signature as Hex });
     if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   } catch { return NextResponse.json({ error: "Signature verification failed" }, { status: 401 }); }
 
   // 2. Caller must own the spot.
-  const spot = await redis.get<Spot>(keys.spot(spotId));
+  const spot = await getSpot(redis, spotId);
   if (!spot) return NextResponse.json({ error: "Spot not found" }, { status: 404 });
-  const owns = spot.ownerAddress?.toLowerCase() === ownerAddress || spot.wallet?.toLowerCase() === ownerAddress;
+  const owns = spot.ownerAddress?.toLowerCase() === ownerAddress;
   if (!owns) return NextResponse.json({ error: "You don't own this spot" }, { status: 403 });
   if (!isSpotActive(spot)) return NextResponse.json({ error: "This business isn't active yet." }, { status: 403 });
 
@@ -67,11 +67,14 @@ export async function POST(req: NextRequest) {
   if (parseDropHint(drop.hint).taskMerchantId !== spotId) {
     return NextResponse.json({ error: "Drop is not tagged for this spot" }, { status: 409 });
   }
+  if (drop.dropper.toLowerCase() !== ownerAddress) {
+    return NextResponse.json({ error: "Only the wallet that funded this reward can set its task." }, { status: 403 });
+  }
 
+  // Written once: replaying the signature can't rewrite the task or list the drop twice.
   const rec: TaskDropRecord = { spotId, task, createdAt: Math.floor(Date.now() / 1000) };
-  await Promise.all([
-    redis.set(keys.taskDrop(dropId), rec),
-    redis.lpush(keys.taskDropsBySpot(spotId), dropId),   // index for the merchant's reward list
-  ]);
+  const fresh = await redis.set(keys.taskDrop(dropId), rec, { nx: true });
+  if (fresh === null) return NextResponse.json({ ok: true, existing: true });
+  await redis.lpush(keys.taskDropsBySpot(spotId), dropId);   // index for the merchant's reward list
   return NextResponse.json({ ok: true });
 }

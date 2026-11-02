@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EventPhase, EventStatsJson, GdEvent } from "@/lib/events";
+import { announceSessionChanged } from "@/hooks/useWalletSession";
 
 export interface EventRow {
   event: GdEvent;
@@ -18,7 +19,7 @@ export interface EventDetail {
   event: GdEvent;
   stats: EventStatsJson;
   interested: number;
-  viewer: { isHost: boolean; isOrganizer: boolean; interested: boolean };
+  viewer: { isHost: boolean; isOrganizer: boolean; interested: boolean; verified?: boolean };
   phase: EventPhase;
 }
 
@@ -32,6 +33,8 @@ function usePolled<T>(url: string | null, intervalMs: number) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  // 404 for a host whose browser hasn't confirmed the wallet yet (unapproved event).
+  const [needsVerify, setNeedsVerify] = useState(false);
   const [loading, setLoading] = useState(!!url);
   const alive = useRef(true);
   const urlRef = useRef(url);
@@ -42,10 +45,14 @@ function usePolled<T>(url: string | null, intervalMs: number) {
     if (!u) return;
     try {
       const res = await fetch(u, { cache: "no-store" });
-      if (res.status === 404) { if (alive.current) { setNotFound(true); setData(null); } return; }
+      if (res.status === 404) {
+        const body = await res.json().catch(() => ({}));
+        if (alive.current) { setNotFound(true); setNeedsVerify(!!body?.needsVerify); setData(null); }
+        return;
+      }
       if (!res.ok) throw new Error(String(res.status));
       const json = (await res.json()) as T;
-      if (alive.current && urlRef.current === u) { setData(json); setError(false); setNotFound(false); }
+      if (alive.current && urlRef.current === u) { setData(json); setError(false); setNotFound(false); setNeedsVerify(false); }
     } catch {
       if (alive.current) setError(true);
     } finally {
@@ -63,16 +70,18 @@ function usePolled<T>(url: string | null, intervalMs: number) {
     document.addEventListener("visibilitychange", tick);
     window.addEventListener("gd:drop-created", load);
     window.addEventListener("gd:events-changed", load);
+    window.addEventListener("gd:session-changed", load);
     return () => {
       alive.current = false;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
       window.removeEventListener("gd:drop-created", load);
       window.removeEventListener("gd:events-changed", load);
+      window.removeEventListener("gd:session-changed", load);
     };
   }, [url, intervalMs, load]);
 
-  return { data, error: error && !data, notFound, loading: loading && !data && !notFound, refresh: load };
+  return { data, error: error && !data, notFound, needsVerify, loading: loading && !data && !notFound, refresh: load };
 }
 
 export function useEventLists() {
@@ -80,7 +89,7 @@ export function useEventLists() {
 }
 
 export function useHostEvents(address: string | undefined) {
-  return usePolled<{ events: EventRow[] }>(address ? `/api/events?host=${address.toLowerCase()}` : null, 30_000);
+  return usePolled<{ events: EventRow[]; verified?: boolean; hidden?: number }>(address ? `/api/events?host=${address.toLowerCase()}` : null, 30_000);
 }
 
 export function useEventDetail(id: string, viewer: string | undefined) {
@@ -91,6 +100,9 @@ export function useEventDetail(id: string, viewer: string | undefined) {
 
 /** Tell every events view on the page to refetch (after create/edit/cancel). */
 export function announceEventsChanged() {
+  // A signed create/edit/cancel also starts a wallet session server-side, so
+  // session-aware views (the verify prompts) re-check too.
+  announceSessionChanged();
   window.dispatchEvent(new CustomEvent("gd:events-changed"));
 }
 

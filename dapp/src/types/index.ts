@@ -104,5 +104,6 @@ export interface SpotPayment {
   payer:  string;
   amount: string;   // G$ wei as string (JSON-safe)
   tx:     string;
-  ts:     number;
+  ts:     number;   // block time for verified payments
+  verified?: boolean; // read from the chain by the server (older rows were client-reported)
 }

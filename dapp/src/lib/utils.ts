@@ -19,6 +19,7 @@ export function formatG$(wei: bigint): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   if (n >= 1) return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
+  if (n === 0) return "0";  // an empty balance reads "0", not "0.0000"
   return n.toFixed(4);
 }
 
