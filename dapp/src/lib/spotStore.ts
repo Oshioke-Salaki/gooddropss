@@ -129,8 +129,8 @@ export function unavailableSpot(s: Spot): Spot {
   };
 }
 
-/** A live shop as the public sees it: no admin note. */
+/** A live shop as the public sees it: no admin note, no owner phone number. */
 export function publicSpot(s: Spot): Spot {
-  const { note: _note, ...rest } = s;
+  const { note: _note, contact: _contact, ...rest } = s;
   return rest;
 }

@@ -113,6 +113,16 @@ export default function AdminBusinesses() {
                             {s.placeName || `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`}
                           </p>
                           {s.description && <p className="text-sm/[140%] text-nav-muted mt-2">{s.description}</p>}
+                          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm/none mt-2">
+                            <a href={`https://www.google.com/maps?q=${s.lat},${s.lng}`} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                              Check the pin on a map
+                            </a>
+                            {s.contact && (
+                              <a href={`https://wa.me/${s.contact.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                                WhatsApp {s.contact}
+                              </a>
+                            )}
+                          </p>
                           {s.note && <p className="text-sm/[140%] text-danger mt-2">Note: {s.note}</p>}
                         </div>
                       </div>

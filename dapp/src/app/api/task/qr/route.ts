@@ -4,7 +4,7 @@ import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contra
 import { getRedis, keys } from "@/lib/redis";
 import { isVerifiedHuman, resolveIdentityRoot } from "@/lib/identityRoot";
 import { parseDropHint, haversineDistance, gpsToDeg } from "@/lib/utils";
-import { newNonce, QR_TTL_S, QR_COOLDOWN_S, type TaskQrRecord, type TaskDropRecord } from "@/lib/taskLock";
+import { newCode, newNonce, QR_TTL_S, QR_COOLDOWN_S, type TaskQrRecord, type TaskDropRecord } from "@/lib/taskLock";
 
 export const runtime = "nodejs";
 
@@ -61,17 +61,32 @@ export async function POST(req: NextRequest) {
 
   const root = (await resolveIdentityRoot(address)).toLowerCase();
 
+  // One reward, one customer at a time: if the shop just approved someone else
+  // for it, don't let this person do the task for nothing.
+  const reservedFor = await redis.get<string>(keys.taskReserved(dropId));
+  if (reservedFor && reservedFor !== root) {
+    return NextResponse.json({ error: "Another customer is claiming this reward right now. Try again in a few minutes." }, { status: 409 });
+  }
+
   // Anti-spam: one nonce mint per hunter per cooldown.
   const cd = await redis.set(keys.taskQrCooldown(root), "1", { nx: true, ex: QR_COOLDOWN_S });
   if (cd === null) return NextResponse.json({ error: "One moment — try again in a few seconds." }, { status: 429 });
 
   const nonce = newNonce();
-  const record: TaskQrRecord = { dropId, root, spotId };
+  // A six-digit code the merchant can type when they can't scan. Retried on the
+  // rare collision with another live code.
+  let code: string | undefined;
+  for (let i = 0; i < 5 && !code; i++) {
+    const c = newCode();
+    if ((await redis.set(keys.taskCode(c), nonce, { nx: true, ex: QR_TTL_S })) !== null) code = c;
+  }
+  const record: TaskQrRecord = { dropId, root, spotId, ...(code ? { code } : {}) };
   await redis.set(keys.taskQr(nonce), record, { ex: QR_TTL_S });
 
   const taskRec = await redis.get<TaskDropRecord>(keys.taskDrop(dropId)).catch(() => null);
   return NextResponse.json({
     nonce,
+    code: code ?? null,
     expiresInS: QR_TTL_S,
     spotId,
     task: taskRec?.task ?? null,

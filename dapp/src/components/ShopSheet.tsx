@@ -4,7 +4,7 @@ import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useAuth } from "@/hooks/useAuth";
 import { parseUnits, WaitForTransactionReceiptTimeoutError, type Hex } from "viem";
 import {
-  Store, Check, Gift, MapPin, Eye, ExternalLink, Loader2, UtensilsCrossed, ShoppingBag,
+  Store, Gift, MapPin, Eye, ExternalLink, Loader2, UtensilsCrossed, ShoppingBag,
   Wrench, Bus, Clock, PauseCircle, type LucideIcon,
 } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
@@ -14,6 +14,7 @@ import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { Celebration } from "@/components/Celebration";
 import { Sheet } from "@/components/ui/Sheet";
+import { ShopReceipt } from "@/components/ShopReceipt";
 import type { Spot, LatLng } from "@/types";
 import { track } from "@/lib/analytics";
 import { isSpotActive } from "@/lib/spotStatus";
@@ -69,6 +70,7 @@ function ShopSheetBody({
   const [status, setStatus] = useState<PayStatus>("idle");
   const [errMsg, setErrMsg] = useState("");
   const [paidTx, setPaidTx] = useState("");
+  const [paidAt, setPaidAt] = useState(0);
 
   const distance = userLocation
     ? Math.round(haversineDistance(userLocation.lat, userLocation.lng, spot.lat, spot.lng))
@@ -118,6 +120,7 @@ function ShopSheetBody({
           setErrMsg("Payment failed. No G$ was sent.");
           return;
         }
+        setPaidAt(Date.now());
         setStatus("done");
         track("shop_payment_succeeded", { amountG: Math.floor(Number(amountWei / 10n ** 18n)) });
         // Record it for the merchant's dashboard. The server reads the payment
@@ -180,31 +183,7 @@ function ShopSheetBody({
       ) : status === "done" ? (
         <>
           <Celebration active count={30} />
-          <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
-            <span className="success-pop w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
-              <Check className="w-9 h-9" strokeWidth={2.25} />
-            </span>
-            <p className="text-xl/none text-heading">Paid with G$</p>
-            <p className="text-sm/[140%] text-nav-muted">
-              {amount} G$ sent to {spot.name}. It&apos;s in their wallet already.
-            </p>
-            <a
-              href={`https://celoscan.io/tx/${paidTx}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm/none text-brand hover:underline"
-            >
-              View transaction <ExternalLink className="w-4 h-4" />
-            </a>
-            <button
-              type="button"
-              onClick={close}
-              className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
-                motion-safe:transition-colors hover:bg-brand/90"
-            >
-              Done
-            </button>
-          </div>
+          <ShopReceipt amount={amount} shop={spot.name} tx={paidTx} paidAt={paidAt} onDone={close} />
         </>
       ) : (
         <div className="flex flex-col gap-y-6 pt-6">

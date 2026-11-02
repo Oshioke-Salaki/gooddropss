@@ -4,7 +4,7 @@ import { useAccount, useSignMessage } from "wagmi";
 import {
   MapPin, Wallet, Gift, Pencil, Eye, Megaphone, Pause, Play, Check, Store,
   Clock, Ban, XCircle, CheckCircle2, RotateCcw, ChevronDown, ChevronRight, Loader2,
-  UtensilsCrossed, ShoppingBag, Wrench, Bus, ExternalLink, type LucideIcon,
+  UtensilsCrossed, ShoppingBag, Wrench, Bus, ExternalLink, Receipt, Send, Bell, Phone, type LucideIcon,
 } from "lucide-react";
 import { formatG$, shortAddr } from "@/lib/utils";
 import { publicClient } from "@/lib/publicClient";
@@ -15,6 +15,8 @@ import { announceSessionChanged } from "@/hooks/useWalletSession";
 import { spotStatus, isSpotActive, merchantCanReactivate, SPOT_STATUS_META } from "@/lib/spotStatus";
 import type { Spot, SpotPayment, SpotStatus } from "@/types";
 import { TaskDropCreator } from "@/components/merchant/TaskDropCreator";
+import { ShopTill } from "@/components/merchant/ShopTill";
+import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { LocationPickerSheet } from "@/components/LocationPickerSheet";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useLandmarks } from "@/hooks/useLandmarks";
@@ -85,6 +87,9 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
   const [category, setCategory] = useState(spot.category);
   const [discount, setDiscount] = useState(spot.discount);
   const [wallet, setWallet]     = useState(spot.wallet);
+  const [contact, setContact]   = useState(spot.contact ?? "");
+  const [showTill, setShowTill] = useState(false);
+  const push = usePushSubscription();
 
   // Re-pin location (edit form) + customer preview.
   const [showPicker, setShowPicker] = useState(false);
@@ -139,7 +144,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
     } catch { return null; }
   }
 
-  async function changeStatus(action: "pause" | "reactivate") {
+  async function changeStatus(action: "pause" | "reactivate" | "resubmit") {
     if (busy) return;
     setBusy(action); setErr("");
     const signed = await signAction(action, null);
@@ -164,6 +169,9 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
     setBusy("edit"); setErr("");
     const changes = {
       name, description, category, discount, wallet,
+      // Only when changed: an unconfirmed browser never received the saved number,
+      // and must not wipe it by sending a blank.
+      ...(contact.trim() !== (spot.contact ?? "") ? { contact: contact.trim() } : {}),
       ...(editCoords ? { lat: editCoords.lat, lng: editCoords.lng, placeName: editPlaceName ?? spot.placeName ?? "" } : {}),
     };
     const signed = await signAction("edit", changes);
@@ -210,19 +218,27 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {status === "pending" && (
         <p className="flex items-start gap-3 rounded-2xl bg-streak-bg px-4 py-3 text-sm/[140%] text-streak">
           <Clock className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={1.75} />
-          <span>An admin will review this shortly. It goes live once approved.</span>
+          <span>
+            We usually review new shops within a day. It goes live on the map once approved
+            {push.status === "subscribed" ? ", and we'll notify you." : "."}
+          </span>
         </p>
+      )}
+      {isOwner && (status === "pending" || status === "rejected") && push.status === "unsubscribed" && (
+        <button type="button" onClick={() => push.subscribe()} className={`${PILL} self-start`}>
+          <Bell className="w-4 h-4" strokeWidth={1.75} /> Notify me when it&apos;s reviewed
+        </button>
       )}
       {status === "suspended" && (
         <p className="flex items-start gap-3 rounded-2xl bg-[#FFF0F0] px-4 py-3 text-sm/[140%] text-danger">
           <Ban className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={1.75} />
-          <span>Suspended by an admin. Contact support to restore it.{spot.note ? ` — ${spot.note}` : ""}</span>
+          <span>Suspended by an admin. Contact support to restore it.{spot.note ? ` Reason: ${spot.note}.` : ""}</span>
         </p>
       )}
       {status === "rejected" && (
         <p className="flex items-start gap-3 rounded-2xl bg-[#FFF0F0] px-4 py-3 text-sm/[140%] text-danger">
           <XCircle className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={1.75} />
-          <span>This business wasn&apos;t approved.{spot.note ? ` — ${spot.note}` : ""}</span>
+          <span>This shop wasn&apos;t approved.{spot.note ? ` Reason: ${spot.note}.` : ""} Fix the details below and resubmit.</span>
         </p>
       )}
 
@@ -240,6 +256,12 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
           <p className="flex items-center gap-2 min-w-0">
             <Gift className="w-4 h-4 shrink-0" strokeWidth={2} />
             <span className="truncate">{spot.discount}</span>
+          </p>
+        )}
+        {isOwner && spot.contact && (
+          <p className="flex items-center gap-2 min-w-0">
+            <Phone className="w-4 h-4 shrink-0" strokeWidth={2} />
+            <span className="truncate">{spot.contact} · only our team sees this</span>
           </p>
         )}
       </div>
@@ -399,6 +421,10 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
             <span className="sr-only">Payout wallet</span>
             <input value={wallet} onChange={(e) => setWallet(e.target.value.trim())} placeholder="Payout wallet 0x…" spellCheck={false} disabled={busy === "edit"} className={`${INPUT} font-mono placeholder:font-sans`} />
           </label>
+          <label className="block">
+            <span className="sr-only">WhatsApp number</span>
+            <input value={contact} onChange={(e) => setContact(e.target.value)} placeholder="WhatsApp number, e.g. +234 803 123 4567" inputMode="tel" autoComplete="tel" disabled={busy === "edit"} className={INPUT} />
+          </label>
 
           {/* Re-pin location */}
           <button
@@ -461,6 +487,18 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
               {busy === "pause" ? "Pausing…" : "Deactivate"}
             </button>
           )}
+          {status === "rejected" && (
+            <button
+              type="button"
+              onClick={() => changeStatus("resubmit")}
+              disabled={busy === "resubmit"}
+              className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-full bg-brand text-white text-sm/none
+                cursor-pointer motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed"
+            >
+              {busy === "resubmit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" strokeWidth={1.75} />}
+              {busy === "resubmit" ? "Resubmitting…" : "Resubmit for review"}
+            </button>
+          )}
           {merchantCanReactivate(spot) && (
             <button
               type="button"
@@ -476,16 +514,32 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
         </div>
       )}
 
-      {/* Reward drops — only when live */}
-      {active && (
-        <button
-          type="button"
-          onClick={() => setShowTask(true)}
-          className="w-full h-12 rounded-full bg-nav-active text-white text-sm/none flex items-center justify-center gap-2
-            cursor-pointer motion-safe:transition-opacity hover:opacity-90"
-        >
-          <Gift className="w-4.5 h-4.5" strokeWidth={1.75} /> Create a reward drop
-        </button>
+      {/* Till + reward drops — only when live */}
+      {active && isOwner && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTill(true)}
+            className="h-12 rounded-full bg-brand text-white text-sm/none flex items-center justify-center gap-2
+              cursor-pointer motion-safe:transition-colors hover:bg-brand/90"
+          >
+            <Receipt className="w-4.5 h-4.5" strokeWidth={1.75} /> Open till
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTask(true)}
+            className="h-12 rounded-full bg-nav-active text-white text-sm/none flex items-center justify-center gap-2
+              cursor-pointer motion-safe:transition-opacity hover:opacity-90"
+          >
+            <Gift className="w-4.5 h-4.5" strokeWidth={1.75} /> Create a reward drop
+          </button>
+        </div>
+      )}
+      {showTill && (
+        <ShopTill spot={spot} onClose={() => {
+          setShowTill(false);
+          fetch(`/api/spots/${spot.id}/payments`).then((r) => r.json()).then(setStats).catch(() => {});
+        }} />
       )}
       {showTask && (
         <TaskDropCreator spot={spot} onClose={() => setShowTask(false)} onCreated={onChanged} />

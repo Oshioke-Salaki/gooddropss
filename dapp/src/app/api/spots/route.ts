@@ -50,6 +50,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid coordinates" }, { status: 400 });
     if (!(SPOT_CATEGORIES as readonly string[]).includes(draft.category))
       return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+    if (typeof body.contact === "string" && body.contact.trim() && !draft.contact)
+      return NextResponse.json({ error: "That phone number doesn't look right. Include the country code, like +234." }, { status: 400 });
 
     const admin = await isAdminAuthed();
 
@@ -95,6 +97,7 @@ export async function POST(req: NextRequest) {
       ownerAddress,
       lat: draft.lat, lng: draft.lng,
       ...(draft.placeName ? { placeName: draft.placeName } : {}),
+      ...(draft.contact ? { contact: draft.contact } : {}),
       createdAt:    now,
       status,
       updatedAt:    now,

@@ -52,21 +52,21 @@ export function HowRewardsWork() {
             Fund some G$ and set a task — e.g. <span className="text-heading">&ldquo;Buy any coffee&rdquo;</span>.
             It drops on the map right at your shop as a reward.
           </Step>
-          <Step n={2} title="A hunter does the task">
-            A verified customer completes it in-store, taps <span className="text-heading">&ldquo;I did it&rdquo;</span>,
-            and shows you a one-time code on their phone.
+          <Step n={2} title="A customer does the task">
+            A GoodDollar-verified customer does it in your shop, taps <span className="text-heading">&ldquo;I did it&rdquo;</span>,
+            and shows you a code on their phone.
           </Step>
-          <Step n={3} title="Scan to pay them">
-            Tap <span className="inline-flex items-center gap-1 text-heading"><Camera className="w-3.5 h-3.5" strokeWidth={2} /> Scan &amp; approve</span>,
-            scan their code (or type it), and sign. The reward G$ lands in their wallet instantly.
+          <Step n={3} title="Approve it">
+            Tap <span className="inline-flex items-center gap-1 text-heading"><Camera className="w-3.5 h-3.5" strokeWidth={2} /> Approve a reward</span>,
+            scan their code or type its 6 digits, check the reward, and sign. They tap Claim and the G$ lands in their wallet.
           </Step>
 
           <div className="flex gap-3 rounded-2xl bg-surface px-4 py-3.5 text-sm/[140%] text-nav-muted">
             <ShieldCheck className="w-4.5 h-4.5 shrink-0 mt-px text-heading" strokeWidth={1.75} />
             <span>
               <span className="text-heading">Safe by design:</span> only you can approve your rewards, the customer must
-              be at your shop, and each code is single-use and expires in about 5 minutes — a screenshot is useless.
-              You never pay gas to approve.
+              be at your shop, and each code works once and expires in about 5 minutes, so a screenshot is useless.
+              Approving costs you nothing.
             </span>
           </div>
         </div>

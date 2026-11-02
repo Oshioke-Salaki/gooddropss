@@ -330,10 +330,13 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // swap the claim button for the task-unlock panel until it's approved.
   const isTaskDrop = !!parsed?.taskMerchantId;
   const [taskUnlocked, setTaskUnlocked] = useState(false);
-  useEffect(() => { setTaskUnlocked(false); }, [drop?.id]);
+  // While a code is on screen, keep it there even if indoor GPS wobbles out of
+  // range: losing the code mid-scan at a busy counter is the worst moment for it.
+  const [taskShowing, setTaskShowing] = useState(false);
+  useEffect(() => { setTaskUnlocked(false); setTaskShowing(false); }, [drop?.id]);
   const showTaskUnlock =
     isTaskDrop && !taskUnlocked &&
-    isConnected && verificationOk && isActive && !isSelfDrop && isClose && !riddleBlocked && status === "idle";
+    isConnected && verificationOk && isActive && !isSelfDrop && (isClose || taskShowing) && !riddleBlocked && status === "idle";
 
   // The claim button is "active" (tappable, styled) when it can claim, when it's
   // offering a retry after an error, or when the verification read failed and the
@@ -632,7 +635,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   {/* Merchant-reward heads-up — set expectations before the
                       hunter arrives, so the on-arrival task isn't a surprise.
                       Once in range, the TaskUnlock panel takes over. */}
-                  {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && (
+                  {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && !taskShowing && (
                     <Notice
                       icon={<Gift className="w-5 h-5" strokeWidth={1.75} />}
                       title="Merchant reward"
@@ -752,6 +755,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       userLocation={userLocation}
                       address={address as string}
                       onApproved={() => setTaskUnlocked(true)}
+                      onShowing={setTaskShowing}
                     />
                   ) : (
                     <button

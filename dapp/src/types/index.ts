@@ -76,6 +76,7 @@ export interface Spot {
   status?:      SpotStatus;    // absent on legacy spots → treated as "active"
   updatedAt?:   number;        // unix seconds of last status/edit change
   note?:        string;        // admin note (e.g. reason for suspension)
+  contact?:     string;        // owner's WhatsApp/phone — private (owner + admins only)
 }
 
 // Admin-curated place labels — the "map skeleton" for areas the base tiles leave

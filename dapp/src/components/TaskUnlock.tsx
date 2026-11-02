@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Check, Gift, Loader2 } from "lucide-react";
-import { QR_TTL_S } from "@/lib/taskShared";
+import { Check, Clock, Gift, Loader2 } from "lucide-react";
+import { QR_TTL_S, formatCode } from "@/lib/taskShared";
 import type { Drop, LatLng } from "@/types";
 
 // Shown inside ClaimSheet for a merchant TASK drop. The hunter does the task,
@@ -15,11 +15,16 @@ type Step = "intro" | "minting" | "showing" | "approved" | "error";
 const REFRESH_AT_S = Math.max(15, QR_TTL_S - 10);
 
 export function TaskUnlock({
-  drop, userLocation, address, onApproved,
-}: { drop: Drop; userLocation: LatLng | null; address: string; onApproved: () => void }) {
+  drop, userLocation, address, onApproved, onShowing,
+}: {
+  drop: Drop; userLocation: LatLng | null; address: string; onApproved: () => void;
+  /** Called while a code is on screen, so the parent keeps this mounted even if GPS wobbles indoors. */
+  onShowing?: (showing: boolean) => void;
+}) {
   const [step, setStep] = useState<Step>("intro");
   const [task, setTask] = useState<string | null>(null);
   const [nonce, setNonce] = useState("");
+  const [code, setCode] = useState<string | null>(null);
   const [secsLeft, setSecsLeft] = useState(0);
   const [err, setErr] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,11 +58,12 @@ export function TaskUnlock({
         body: JSON.stringify({ dropId: drop.id.toString(), address, lat: userLocation.lat, lng: userLocation.lng }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { setErr(d.error ?? "Couldn't create your code — try again."); setStep("error"); return; }
-      setNonce(d.nonce); if (d.task) setTask(d.task); setStep("showing");
+      if (!res.ok) { setErr(d.error ?? "Couldn't create your code. Try again."); setStep("error"); onShowing?.(false); return; }
+      setNonce(d.nonce); setCode(typeof d.code === "string" ? d.code : null);
+      if (d.task) setTask(d.task); setStep("showing"); onShowing?.(true);
       startPolling();
       armExpiry();
-    } catch { setErr("Network error — try again."); setStep("error"); }
+    } catch { setErr("Network error. Try again."); setStep("error"); onShowing?.(false); }
   }
   remintFn.current = iDidIt;
 
@@ -70,6 +76,7 @@ export function TaskUnlock({
         if (d.approved) {
           clearTimers();
           setStep("approved");
+          onShowing?.(false);
           setTimeout(onApproved, 900);
         }
       } catch { /* keep polling */ }
@@ -122,12 +129,16 @@ export function TaskUnlock({
           <div className="inline-block rounded-2xl border border-line bg-white p-3">
             <QRCodeSVG value={nonce} size={172} level="M" />
           </div>
-          <p className="mt-4 text-base/none text-heading">Show this to the merchant to approve</p>
+          {code && (
+            <p className="mt-4 text-[32px]/none tracking-[0.12em] text-heading tabular-nums" aria-label={`Code ${code.split("").join(" ")}`}>
+              {formatCode(code)}
+            </p>
+          )}
+          <p className="mt-4 text-base/[140%] text-heading">Show this to the shop. They can scan it or type the code.</p>
           <p role="status" aria-live="polite" className="mt-2 flex items-center gap-2 text-sm/none text-nav-muted">
-            <span className="w-2 h-2 rounded-full bg-[#4ade80] animate-pulse" aria-hidden />
-            Waiting for approval{secsLeft > 0 ? ` · refreshes in ${secsLeft}s` : " · refreshing…"}
+            <Clock className="w-4 h-4 shrink-0" strokeWidth={1.75} aria-hidden />
+            Waiting for approval{secsLeft > 0 ? ` · new code in ${secsLeft}s` : " · getting a new code…"}
           </p>
-          <p className="mt-2 text-xs/none text-nav-muted/60 font-mono">{nonce.slice(0, 8)}…</p>
         </div>
       )}
 
@@ -136,7 +147,7 @@ export function TaskUnlock({
           <span className="success-pop w-12 h-12 rounded-full bg-brand-soft text-brand flex items-center justify-center">
             <Check className="w-6 h-6" strokeWidth={2} />
           </span>
-          <p className="text-base/none text-heading">Approved, claiming your reward…</p>
+          <p className="text-base/none text-heading">Approved. Tap Claim to get your G$.</p>
         </div>
       )}
 

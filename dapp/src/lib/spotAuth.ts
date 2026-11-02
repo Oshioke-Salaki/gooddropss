@@ -5,7 +5,7 @@ import { keccak256, toBytes } from "viem";
 // shop, a digest of the exact content, and the time, so a signature can't be
 // replayed for another action, another shop, or different details.
 
-export type SpotAction = "register" | "edit" | "pause" | "reactivate";
+export type SpotAction = "register" | "edit" | "pause" | "reactivate" | "resubmit";
 
 export const SPOT_CATEGORIES = ["food", "retail", "services", "transport", "other"] as const;
 
@@ -19,12 +19,26 @@ export interface SpotDraft {
   lat: number;
   lng: number;
   placeName: string;
+  /** WhatsApp / phone so the team can reach the owner. Private: never shown publicly.
+   *  Only present when given, so sign-ups without one sign exactly as before. */
+  contact?: string;
+}
+
+/** "+234 803 123 4567" → "+2348031234567". Empty when it doesn't look like a phone number. */
+export function normalizeContact(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const digits = v.replace(/[^\d+]/g, "");
+  const plus = digits.startsWith("+");
+  const bare = digits.replace(/\+/g, "");
+  if (bare.length < 7 || bare.length > 15) return "";
+  return (plus ? "+" : "") + bare;
 }
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 /** Normalize registration fields exactly as the server stores them. */
 export function normalizeSpotDraft(d: Record<string, unknown>): SpotDraft {
+  const contact = normalizeContact(d.contact);
   return {
     name: str(d.name, 60),
     description: str(d.description, 280),
@@ -34,10 +48,11 @@ export function normalizeSpotDraft(d: Record<string, unknown>): SpotDraft {
     lat: Number(d.lat),
     lng: Number(d.lng),
     placeName: str(d.placeName, 80),
+    ...(contact ? { contact } : {}),
   };
 }
 
-const PATCH_FIELDS = ["name", "description", "category", "discount", "wallet", "lat", "lng", "placeName"] as const;
+const PATCH_FIELDS = ["name", "description", "category", "discount", "wallet", "lat", "lng", "placeName", "contact"] as const;
 
 /**
  * The editable fields present in a PATCH body, normalized the same way the
@@ -51,6 +66,7 @@ export function pickSpotPatch(body: Record<string, unknown>): Partial<SpotDraft>
     if (k === "lat" || k === "lng") out[k] = Number(v);
     else if (k === "wallet") out[k] = String(v).trim().toLowerCase();
     else if (k === "category") out[k] = String(v);
+    else if (k === "contact") out[k] = normalizeContact(v);
     else out[k] = String(v).trim().slice(0, k === "description" ? 280 : k === "name" ? 60 : 80);
   }
   return out as Partial<SpotDraft>;

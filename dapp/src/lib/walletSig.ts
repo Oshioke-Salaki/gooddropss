@@ -1,5 +1,5 @@
 import type { Redis } from "@upstash/redis";
-import { keccak256, toBytes, type Hex } from "viem";
+import { keccak256, toBytes, verifyMessage as verifyOffline, type Hex } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { keys } from "@/lib/redis";
 
@@ -29,13 +29,14 @@ export async function verifyWalletSig(
   if (Math.abs(Date.now() - timestamp) > SIG_WINDOW_MS) return "That signature has expired. Please try again.";
 
   let ok = false;
+  const message = args.message(timestamp);
   try {
-    ok = await publicClient.verifyMessage({
-      address: address as Hex,
-      message: args.message(timestamp),
-      signature: signature as Hex,
-    });
-  } catch { ok = false; }
+    ok = await publicClient.verifyMessage({ address: address as Hex, message, signature: signature as Hex });
+  } catch {
+    // The chain check failed to run (RPC hiccup), which says nothing about the
+    // signature. Plain wallets can still be checked locally.
+    try { ok = await verifyOffline({ address: address as Hex, message, signature: signature as Hex }); } catch { ok = false; }
+  }
   if (!ok) return "The signature doesn't match this wallet.";
 
   const fresh = await redis.set(keys.sigUsed(keccak256(toBytes(signature)).slice(2, 34)), "1", {

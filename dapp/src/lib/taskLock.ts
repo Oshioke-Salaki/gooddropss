@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 
 // ── Merchant task-locked drops (Phase 3) — server helpers ─────────────────────
 // Client-safe constants/types/helpers live in taskShared.ts and are re-exported
@@ -11,4 +11,9 @@ export { approveMessage, taskCreateMessage } from "./taskCreateMsg";
 // Server-only (node:crypto), which is why it's not in taskShared.
 export function newNonce(): string {
   return randomBytes(16).toString("hex");
+}
+
+/** Six random digits for the typed fallback. Only the shop's owner can redeem it. */
+export function newCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }

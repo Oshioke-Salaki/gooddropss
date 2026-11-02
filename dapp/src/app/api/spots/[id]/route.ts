@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { Redis } from "@upstash/redis";
 import { getRedis } from "@/lib/redis";
+import { sendPush } from "@/lib/push";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { verifyWalletSig } from "@/lib/walletSig";
 import { startSessionQuietly } from "@/lib/walletSession";
@@ -35,6 +36,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Name must be 2–60 characters" }, { status: 400 });
   if (patch.category !== undefined && !(SPOT_CATEGORIES as readonly string[]).includes(patch.category))
     return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+  if (typeof body.contact === "string" && body.contact.trim() && !patch.contact)
+    return NextResponse.json({ error: "That phone number doesn't look right. Include the country code, like +234." }, { status: 400 });
   if (patch.wallet !== undefined && !ADDR_RE.test(patch.wallet))
     return NextResponse.json({ error: "Invalid payout wallet" }, { status: 400 });
   if ((patch.lat !== undefined) !== (patch.lng !== undefined))
@@ -63,6 +66,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (patch.placeName !== undefined) {
       if (patch.placeName) next.placeName = patch.placeName; else delete next.placeName;
     }
+    if (patch.contact !== undefined) {
+      if (patch.contact) next.contact = patch.contact; else delete next.contact;
+    }
     next.updatedAt = Math.floor(Date.now() / 1000);
 
     await saveSpot(redis, next);
@@ -73,7 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 // POST /api/spots/[id] — change moderation status.
-//   merchant (signed): pause | reactivate (only from paused)
+//   merchant (signed): pause | reactivate (only from paused) | resubmit (only from rejected)
 //   admin (cookie):    approve | reject | suspend | reactivate
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -104,8 +110,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         default: return NextResponse.json({ error: "Unknown admin action" }, { status: 400 });
       }
     } else {
-      if (action !== "pause" && action !== "reactivate") {
-        return NextResponse.json({ error: "Merchants can only pause or reactivate." }, { status: 403 });
+      if (action !== "pause" && action !== "reactivate" && action !== "resubmit") {
+        return NextResponse.json({ error: "Merchants can only pause, reactivate or resubmit." }, { status: 403 });
       }
       // Merchant must prove ownership of exactly this action.
       const err = await ownerSig(redis, spot, action, body, null);
@@ -114,6 +120,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (cur === "suspended") return NextResponse.json({ error: "This business was suspended by an admin. Contact support." }, { status: 403 });
         if (cur !== "active") return conflict("Only a live business can be paused.");
         nextStatus = "paused";
+      } else if (action === "resubmit") {
+        if (cur !== "rejected") return conflict("Only a shop that wasn't approved can be resubmitted.");
+        nextStatus = "pending";
       } else {
         if (cur === "suspended") return NextResponse.json({ error: "Suspended by an admin. Only an admin can restore it." }, { status: 403 });
         if (cur === "pending") return NextResponse.json({ error: "Still awaiting admin approval." }, { status: 403 });
@@ -124,8 +133,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const next: Spot = { ...spot, status: nextStatus, updatedAt: Math.floor(Date.now() / 1000) };
     if (admin && !hasSig && typeof body.note === "string") next.note = body.note.trim().slice(0, 200);
+    if (action === "resubmit") delete next.note;   // the old rejection reason no longer applies
     await saveSpot(redis, next);
     if (hasSig) await startSessionQuietly(redis, spot.ownerAddress);
+    else await notifyOwner(redis, next, action);
     return NextResponse.json({ spot: next });
   });
   return result ?? BUSY();
@@ -148,6 +159,21 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ ok: true });
   });
   return result ?? BUSY();
+}
+
+/** Tell the owner what the review decided. Best effort: never fails the admin action. */
+async function notifyOwner(redis: Redis, spot: Spot, action: string) {
+  const name = spot.name;
+  const msg =
+    action === "approve"    ? { title: `${name} is live`, body: "Customers near you can now find your shop and pay in G$. Print your poster to get started." }
+    : action === "reject"   ? { title: `${name} wasn't approved`, body: spot.note ? `Reason: ${spot.note}. Fix the details and resubmit.` : "Open your shop to see why, fix the details and resubmit." }
+    : action === "suspend"  ? { title: `${name} was suspended`, body: "Your shop is off the map for now. Contact support to restore it." }
+    : action === "reactivate" ? { title: `${name} is live again`, body: "Your shop is back on the map." }
+    : null;
+  if (!msg || !spot.ownerAddress) return;
+  try {
+    await sendPush(redis, spot.ownerAddress, { ...msg, url: "/merchant", tag: `spot-${spot.id}` });
+  } catch (e) { console.error("[spots/notify]", e); }
 }
 
 function conflict(msg: string) {

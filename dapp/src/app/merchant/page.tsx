@@ -55,6 +55,8 @@ export default function MerchantPage() {
   const [category, setCategory]   = useState("food");
   const [discount, setDiscount]   = useState("");
   const [wallet, setWallet]       = useState("");
+  const [contact, setContact]     = useState("");
+  const [walletOpen, setWalletOpen] = useState(false);
   const [coords, setCoords]       = useState<{ lat: number; lng: number } | null>(null);
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -122,6 +124,7 @@ export default function MerchantPage() {
     setErrMsg("");
     const fields = {
       name, description, category, discount,
+      ...(contact.trim() ? { contact: contact.trim() } : {}),
       wallet: payout,
       lat: coords.lat, lng: coords.lng,
       placeName: placeName ?? "",
@@ -152,9 +155,9 @@ export default function MerchantPage() {
       announceSessionChanged();
       setDone(true);
       setShowForm(false);
-      setName(""); setDesc(""); setDiscount(""); setCoords(null); setPlaceName(null);
+      setName(""); setDesc(""); setDiscount(""); setContact(""); setWalletOpen(false); setCoords(null); setPlaceName(null);
       fetchMySpots();
-      setTimeout(() => setDone(false), 4000);
+      setTimeout(() => setDone(false), 15_000);
     } catch (e: unknown) {
       setErrMsg((e as Error).message);
     } finally {
@@ -184,9 +187,9 @@ export default function MerchantPage() {
           {/* ── Page header ─────────────────────────────────────────────── */}
           <div className="flex items-start lg:items-center justify-between gap-4 mb-6">
             <div className="min-w-0 flex flex-col gap-y-3">
-              <h1 className="text-[32px]/none lg:text-4xl/none text-heading">Spots</h1>
+              <h1 className="text-[32px]/none lg:text-4xl/none text-heading">Accept G$ at your shop</h1>
               <p className="text-sm/[140%] text-nav-muted max-w-[560px]">
-                Accept G$ at your shop. Hunters nearby see you on the map — payment only unlocks when they walk in.
+                Customers nearby find your shop on the GoodDrops map and pay you in G$ when they walk in. No card machine needed.
               </p>
             </div>
             {isConnected && !showForm && registerButton("hidden lg:inline-flex shrink-0")}
@@ -225,7 +228,7 @@ export default function MerchantPage() {
                     className="flex items-start gap-3 rounded-2xl bg-brand-soft px-4 py-3 text-sm/[140%] text-brand"
                   >
                     <Check className="w-4.5 h-4.5 shrink-0 mt-px" strokeWidth={2} />
-                    <span>Submitted. An admin will review it — it goes live once approved.</span>
+                    <span>Submitted. We usually review new shops within a day, and it goes live on the map once approved.</span>
                   </div>
                 )}
 
@@ -239,7 +242,7 @@ export default function MerchantPage() {
                   >
                     <div className="flex items-center justify-between gap-4">
                       <h2 className="text-xl/none text-heading">New shop</h2>
-                      <span className="text-sm/none text-nav-muted">Reviewed by an admin</span>
+                      <span className="text-sm/none text-nav-muted">Reviewed within a day</span>
                     </div>
 
                     <label className="block">
@@ -303,19 +306,53 @@ export default function MerchantPage() {
                     </label>
 
                     <label className="block">
-                      <span className="block text-sm/none text-nav-muted mb-3">Payout wallet</span>
+                      <span className="block text-sm/none text-nav-muted mb-3">WhatsApp number (optional)</span>
                       <input
-                        value={wallet}
-                        onChange={(e) => setWallet(e.target.value)}
-                        placeholder="0x…"
-                        spellCheck={false}
+                        value={contact}
+                        onChange={(e) => setContact(e.target.value)}
+                        placeholder="+234 803 123 4567"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        maxLength={24}
                         disabled={!!submitting}
-                        className={`${INPUT} font-mono text-sm/none placeholder:font-sans`}
+                        className={INPUT}
                       />
-                      <span className="block mt-3 px-5 text-sm/none text-nav-muted">
-                        G$ payments land here. Defaults to your connected wallet.
+                      <span className="block mt-3 px-5 text-sm/[140%] text-nav-muted">
+                        Only our team sees it. We&apos;ll use it to help you get set up.
                       </span>
                     </label>
+
+                    {/* Where payments land. Most owners keep their own wallet, so the
+                        address field stays tucked away unless they ask for it. */}
+                    <div>
+                      <span className="block text-sm/none text-nav-muted mb-3">Where payments go</span>
+                      {walletOpen ? (
+                        <>
+                          <input
+                            value={wallet}
+                            onChange={(e) => setWallet(e.target.value.trim())}
+                            placeholder="0x…"
+                            aria-label="Payout wallet address"
+                            spellCheck={false}
+                            disabled={!!submitting}
+                            className={`${INPUT} font-mono text-sm/none placeholder:font-sans`}
+                          />
+                          <span className="block mt-3 px-5 text-sm/[140%] text-nav-muted">
+                            Double-check it: payments sent to a wrong address can&apos;t be recovered.
+                          </span>
+                        </>
+                      ) : (
+                        <div className="h-14 rounded-full bg-surface px-5 flex items-center justify-between gap-3">
+                          <span className="text-sm/none text-heading truncate">
+                            Your wallet {address ? `${address.slice(0, 6)}…${address.slice(-4)}` : ""}
+                          </span>
+                          <button type="button" onClick={() => setWalletOpen(true)} disabled={!!submitting}
+                            className="shrink-0 text-sm/none text-brand cursor-pointer hover:underline">
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Location — same drag-to-confirm map picker used for G$ drops, so
                         a rough GPS fix can be corrected by hand instead of silently
@@ -377,7 +414,7 @@ export default function MerchantPage() {
 
                 {/* ── Your spots ──────────────────────────────────────────── */}
                 <div className="flex items-center justify-between gap-4">
-                  <h2 className="text-xl/none text-heading">Your spots</h2>
+                  <h2 className="text-xl/none text-heading">Your shops</h2>
                   {!loading && (
                     <span className="rounded-full bg-white px-3 py-2 text-sm/none text-nav-muted">{mySpots.length}</span>
                   )}
@@ -400,9 +437,9 @@ export default function MerchantPage() {
                     <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
                       <Store className="w-6 h-6" strokeWidth={1.75} />
                     </span>
-                    <p className="text-xl/none text-heading">No spots yet</p>
+                    <p className="text-xl/none text-heading">No shops yet</p>
                     <p className="text-sm/[140%] text-nav-muted max-w-[320px]">
-                      Register your shop and start accepting G$ from hunters nearby.
+                      Register your shop and start accepting G$ from customers nearby.
                     </p>
                     {!showForm && registerButton("mt-2 h-12 px-6 text-base/none")}
                   </div>
@@ -427,8 +464,8 @@ export default function MerchantPage() {
                       <Camera className="w-6 h-6" strokeWidth={1.75} />
                     </span>
                     <span className="flex-1 min-w-0 flex flex-col gap-y-2">
-                      <span className="text-base/none text-heading">Scan &amp; approve a reward</span>
-                      <span className="text-sm/none text-nav-muted truncate">A hunter did your task? Scan their code.</span>
+                      <span className="text-base/none text-heading">Approve a reward</span>
+                      <span className="text-sm/none text-nav-muted truncate">A customer did your task? Scan their code.</span>
                     </span>
                     <ArrowRight className="w-5 h-5 shrink-0 text-nav-muted motion-safe:transition-transform group-hover:motion-safe:translate-x-1" strokeWidth={1.75} />
                   </button>

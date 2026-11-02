@@ -23,14 +23,14 @@ const links = [
   { href: "/events", label: "Events", Icon: CalendarDays },
   { href: "/leaderboard", label: "Rankings", Icon: Trophy },
   { href: "/competition", label: "Competition", Icon: Gift },
-  { href: "/merchant", label: "Spots", Icon: Store },
+  { href: "/merchant", label: "For shops", Icon: Store },
 ];
 
 // Nav link styling, kept in one place so the whole bar restyles from here — the
 // desktop row and the mobile rail share it, so the two can never drift apart.
 // Sizes follow the design spec: 16px/400, 12px 24px padding, 8px icon gap.
 const NAV_LINK_BASE =
-  "flex items-center gap-2 rounded-full px-6 py-3 text-sm font-normal leading-none whitespace-nowrap transition-colors";
+  "flex items-center gap-2 rounded-full px-6 lg:px-4 xl:px-6 py-3 text-sm font-normal leading-none whitespace-nowrap transition-colors";
 const NAV_LINK_IDLE = "text-nav-muted hover:bg-nav-active-bg/60";
 const NAV_LINK_ACTIVE = "bg-nav-active-bg text-nav-active";
 

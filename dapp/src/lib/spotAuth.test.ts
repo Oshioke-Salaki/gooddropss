@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSpotDraft, pickSpotPatch, spotDigest, spotMessage } from "./spotAuth";
+import { normalizeContact, normalizeSpotDraft, pickSpotPatch, spotDigest, spotMessage } from "./spotAuth";
+import { CODE_RE, formatCode } from "./taskShared";
 
 const base = {
   name: "  Mama T's Kitchen ", description: "Rice and stew", category: "food", discount: "",
@@ -42,5 +43,33 @@ describe("spot signing", () => {
     expect(m).toContain("Content: none");
     expect(m).toContain("Time: 1700000000000");
     expect(spotMessage("reactivate", "abc-123", 1700000000000, "none")).not.toBe(m);
+  });
+});
+
+describe("owner contact", () => {
+  it("keeps a phone number in one canonical form", () => {
+    expect(normalizeContact("+234 803 123 4567")).toBe("+2348031234567");
+    expect(normalizeContact("0803-123-4567")).toBe("08031234567");
+    expect(normalizeContact("+254 (712) 345 678")).toBe("+254712345678");
+  });
+  it("rejects things that aren't phone numbers", () => {
+    expect(normalizeContact("call me")).toBe("");
+    expect(normalizeContact("123")).toBe("");
+    expect(normalizeContact("1".repeat(16))).toBe("");
+    expect(normalizeContact(undefined)).toBe("");
+  });
+  it("doesn't change the signature for sign-ups without a number", () => {
+    const base = { name: "Shop", description: "", category: "food", discount: "", wallet: "0x" + "a".repeat(40), lat: 1, lng: 2, placeName: "" };
+    expect(spotDigest(normalizeSpotDraft(base))).toBe(spotDigest(normalizeSpotDraft({ ...base, contact: "" })));
+    expect(spotDigest(normalizeSpotDraft(base))).not.toBe(spotDigest(normalizeSpotDraft({ ...base, contact: "+2348031234567" })));
+  });
+});
+
+describe("reward codes", () => {
+  it("formats six digits for reading aloud", () => {
+    expect(formatCode("481205")).toBe("481 205");
+    expect(CODE_RE.test("481205")).toBe(true);
+    expect(CODE_RE.test("48120")).toBe(false);
+    expect(CODE_RE.test("48120a")).toBe(false);
   });
 });

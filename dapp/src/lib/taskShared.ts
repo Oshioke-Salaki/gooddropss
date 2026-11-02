@@ -8,7 +8,13 @@ export const QR_COOLDOWN_S       = 20;    // min gap between a hunter minting no
 export const MERCHANT_DAILY_CAP  = 200;   // max approvals per merchant per day
 export const TASK_MAX_LEN        = 80;    // task text length cap
 
-export interface TaskQrRecord { dropId: string; root: string; spotId: string }
+// A merchant can type this instead of scanning (no camera, iPhone, wallet browser).
+export const CODE_RE  = /^\d{6}$/;
+export const NONCE_RE = /^[0-9a-f]{32}$/;
+/** "481205" → "481 205": easier to read aloud at a busy counter. */
+export const formatCode = (c: string) => (c.length === 6 ? `${c.slice(0, 3)} ${c.slice(3)}` : c);
+
+export interface TaskQrRecord { dropId: string; root: string; spotId: string; code?: string }
 export interface TaskDropRecord { spotId: string; task: string; createdAt: number }
 
 export function cleanTask(raw: string): string {
