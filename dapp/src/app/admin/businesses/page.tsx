@@ -26,13 +26,14 @@ export default function AdminBusinesses() {
   const [showCreate, setShowCreate] = useState(false);
 
   const load = useCallback(() => {
-    fetch("/api/spots?scope=all")
-      .then((r) => r.json())
+    fetch("/api/spots?scope=all", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => {
         setSpots(Array.isArray(d.spots) ? d.spots : []);
         window.dispatchEvent(new CustomEvent("gd:businesses-updated"));
       })
-      .catch(() => setSpots([]));
+      // A failed load must not look like "nothing to review".
+      .catch(() => { setErr("Couldn't load businesses. Refresh the page to try again."); setSpots((s) => s ?? []); });
   }, []);
   useEffect(() => { load(); }, [load]);
 

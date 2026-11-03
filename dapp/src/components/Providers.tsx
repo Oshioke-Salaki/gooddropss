@@ -16,6 +16,7 @@ import { GasTopup } from "@/components/GasTopup";
 import { BadgeCelebration } from "@/components/BadgeCelebration";
 import { ChestReward } from "@/components/ChestReward";
 import { installClientErrorReporter } from "@/lib/clientErrors";
+import { Toaster } from "@/components/ui/Toaster";
 
 // Keep every connected wallet on Celo. Auto-switches once whenever a wrong chain
 // is detected (on connect, or if the user changes networks in their wallet). The
@@ -83,6 +84,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ProfileSetup />
           <UbiPrompt />
           <ProfileDrawerHost />
+          <Toaster />
         </AuthProvider>
       </QueryClientProvider>
     </WagmiProvider>

@@ -13,7 +13,10 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { fetchDropByDropId } from "@/lib/subgraph";
 import { publicClient } from "@/lib/publicClient";
-import { eventLockTitle, friendlyClaimError } from "@/lib/claimErrors";
+import { eventLockTitle } from "@/lib/claimErrors";
+import { confirmTx } from "@/lib/txOutcome";
+import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
+import { TaskUnlock } from "@/components/TaskUnlock";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
@@ -74,6 +77,13 @@ const PILL_LINK =
 
 export default function DropPageClient({ dropId }: { dropId: string }) {
   const [drop,       setDrop]       = useState<Drop | null | undefined>(undefined);
+  // A failed read is not "not found": keep them apart so a bad connection
+  // never tells someone their drop link is invalid.
+  const [loadErr,    setLoadErr]    = useState(false);
+  const [reloadKey,  setReloadKey]  = useState(0);
+  const [gpsDenied,  setGpsDenied]  = useState(false);
+  const [taskUnlocked, setTaskUnlocked] = useState(false);
+  const [taskShowing,  setTaskShowing]  = useState(false);
   const [userLoc,    setUserLoc]    = useState<{ lat: number; lng: number } | null>(null);
   const [status,     setStatus]     = useState<ClaimStatus>("idle");
   const [errMsg,     setErrMsg]     = useState("");
@@ -141,7 +151,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const fromGraph = await fetchDropByDropId(dropId);
+      setLoadErr(false);
+      const fromGraph = await fetchDropByDropId(dropId).catch(() => null);
       if (fromGraph) { if (!cancelled) setDrop(fromGraph); return; }
       try {
         const id = BigInt(dropId);
@@ -166,11 +177,15 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           lng:       Number(r.lng),
           hint:      r.hint,
         });
-      } catch { if (!cancelled) setDrop(null); }
+      } catch {
+        // Unknown ids come back as zeros (handled above), so a throw here is
+        // the connection, not the link.
+        if (!cancelled) setLoadErr(true);
+      }
     }
     load();
     return () => { cancelled = true; };
-  }, [dropId]);
+  }, [dropId, reloadKey]);
 
   // ── Private drop: fetch real coords using token from URL ──────────────────
   useEffect(() => {
@@ -188,23 +203,58 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
 
   // ── GPS watcher ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) { setGpsDenied(true); return; }
     const wid = navigator.geolocation.watchPosition(
-      (p) => setUserLoc({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => {},
+      (p) => { setGpsDenied(false); setUserLoc({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+      (err) => { if (err.code === err.PERMISSION_DENIED) setGpsDenied(true); },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 15_000 }
     );
     return () => navigator.geolocation.clearWatch(wid);
   }, []);
 
   // ── Claim ──────────────────────────────────────────────────────────────────
+  const claimed = useCallback(() => {
+    if (!drop || !address) return;
+    setStatus("done");
+    track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "page" });
+    checkBadgesAfterClaim(address); // fire-and-forget badge award + celebration
+    fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
+    // Track hunting streak (fire-and-forget)
+    fetch("/api/engagement", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    })
+      .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
+      .catch(() => {});
+  }, [drop, address]);
+
+  const failed = useCallback(async (e: unknown) => {
+    if (!drop) return;
+    const f = await settleClaimError(e, drop.id, address);
+    if (f.result === "won") { claimed(); return; }
+    track("claim_failed", { reason: f.result === "pending" ? "pending" : claimFailReason(e), surface: "page" });
+    if (f.result === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+    if (f.result === "pending") { setErrMsg(f.message); setStatus("error"); return; }
+    setEventLocked(f.kind === "event");
+    setErrMsg(f.message);
+    setStatus(f.gone ? "gone" : "error");
+  }, [drop, address, claimed]);
+
   const handleClaim = useCallback(async () => {
     if (!drop || !address) return;
+    const retrying = status === "error";
     track("claim_started", { surface: "page" });
     setStatus("claiming");
     setErrMsg("");
     setEventLocked(false);
     try {
+      // After an unclear ending, look before trying again.
+      if (retrying) {
+        const c = await checkBeforeRetry(drop.id, address);
+        if (c === "won") { claimed(); return; }
+        if (c === "gone") { await failed(new Error("already claimed")); return; }
+      }
       // Sponsored Magic wallets need no CELO, so skip the faucet for them.
       if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
       setStatus("claiming");
@@ -235,46 +285,15 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
         functionName: "claimWithProof",
         args:         [drop.id, BigInt(deadline), sig as `0x${string}`],
       }, { onToppingUp: () => setStatus("gassing") });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      setStatus("done");
-      track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "page" });
-      checkBadgesAfterClaim(address); // fire-and-forget badge award + celebration
-      fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
-      // Track hunting streak (fire-and-forget)
-      if (address) {
-        fetch("/api/engagement", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address }),
-        })
-          .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
-          .catch(() => {});
-      }
+      await confirmTx(tx);
+      claimed();
     } catch (e: unknown) {
-      track("claim_failed", { reason: claimFailReason(e), surface: "page" });
-      const fe = friendlyClaimError(e);
-      if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
-      setEventLocked(fe.kind === "event");
-      let gone = fe.terminal;
-      let msg  = fe.message;
-      if (!gone && drop) {
-        try {
-          const oc = await publicClient.readContract({
-            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [drop.id],
-          }) as { status: number; expiry: number };
-          const nowS = Math.floor(Date.now() / 1000);
-          if (oc.status === DROP_STATUS.Claimed)        { gone = true; msg = "Someone beat you to it — this drop has already been claimed."; }
-          else if (oc.status === DROP_STATUS.Reclaimed) { gone = true; msg = "The dropper took this one back — it's no longer available."; }
-          else if (Number(oc.expiry) <= nowS)           { gone = true; msg = "This drop has expired and can no longer be claimed."; }
-        } catch { /* fall back to mapped message */ }
-      }
-      setErrMsg(msg);
-      setStatus(gone ? "gone" : "error");
+      await failed(e);
     }
     // userLoc and privateToken were missing here: GPS resolves asynchronously, so
     // a callback frozen before the first fix would post userLat: undefined and the
     // claim would fail with "Invalid request" for no visible reason.
-  }, [drop, address, writeContractAsync, sponsored, userLoc, privateToken, answer, riddle?.lockedByMe]);
+  }, [drop, address, status, claimed, failed, writeContractAsync, sponsored, userLoc, privateToken, answer, riddle?.lockedByMe]);
 
   // ── Share helpers ──────────────────────────────────────────────────────────
   const pageUrl = typeof window !== "undefined"
@@ -288,7 +307,27 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     });
   }
 
-  // ── Loading / not found ────────────────────────────────────────────────────
+  // ── Loading / couldn't load / not found ───────────────────────────────────
+  if (drop === undefined && loadErr) return (
+    <Shell {...shellVerifyProps} dropId={dropId}>
+      <div className={`${CARD} mx-auto w-full max-w-[440px] flex flex-col items-center text-center gap-y-4`} role="alert">
+        <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
+          <RefreshCw className="w-6 h-6" strokeWidth={1.75} />
+        </span>
+        <p className="text-xl/none text-heading">Couldn&apos;t load this drop</p>
+        <p className="text-sm/[140%] text-nav-muted">
+          Your connection may be slow. The drop is still there, so try again.
+        </p>
+        <button type="button" onClick={() => setReloadKey((k) => k + 1)} className={`${PRIMARY} mt-2`}>
+          Try again
+        </button>
+        <Link href="/" className="inline-flex items-center gap-2 h-11 px-5 rounded-full text-sm/none text-nav-muted hover:text-heading">
+          <ArrowLeft className="w-4 h-4" /> Back to map
+        </Link>
+      </div>
+    </Shell>
+  );
+
   if (drop === undefined) return (
     <Shell {...shellVerifyProps} dropId={dropId}>
       <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-6 lg:gap-12 items-start">
@@ -356,9 +395,19 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   // can't help, so the button sends them back to the map.
   const terminal = status === "gone" || riddleBlocked || isClaimed;
 
-  const canClaim =
+  // Everything needed to claim except the screen state, so "Try again" retries
+  // in one tap.
+  const claimReady =
     isConnected && verificationOk && isActive && !isSelf && isClose &&
-    answerFilled && !riddleBlocked && status === "idle";
+    answerFilled && !riddleBlocked;
+  const canClaim = claimReady && status === "idle";
+
+  // Shop task drops: do the task and get scanned before the claim will sign
+  // (same rule as the map's sheet).
+  const isTaskDrop = !!parsedHint?.taskMerchantId;
+  const showTaskUnlock =
+    isTaskDrop && !taskUnlocked && isConnected && verificationOk && isActive && !isSelf &&
+    (isClose || taskShowing) && !riddleBlocked && status === "idle";
 
   // "Active" button: can claim, retry an error, re-run a failed verification read,
   // or navigate back to the map when the drop is gone.
@@ -371,7 +420,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const usd    = formatUsdApprox(drop.amount);
 
   function claimLabel() {
-    if (status === "gassing")  return "Topping up gas…";
+    if (status === "gassing")  return "Getting things ready…";
     if (status === "claiming") return "Claiming…";
     if (terminal)              return "Back to the map";
     if (status === "error")    return "Try again";
@@ -384,7 +433,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     if (isLapsed)              return "Re-verify to claim";
     if (!verificationOk)       return "Verification required";
     if (isSelf)                return "This is your own drop";
-    if (!userLoc)              return "Enable GPS to claim";
+    if (!userLoc)              return gpsDenied ? "Turn on location to claim" : "Finding your location…";
     if (!isClose)              return `Get closer — ${Math.round(distance ?? 0)}m away`;
     if (!answerFilled)         return "Answer the riddle to claim";
     return `Claim ${formatG$(drop!.amount)} G$`;
@@ -444,7 +493,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             </p>
             {target && !isForMe && isConnected && (
               <p className="text-xs/[140%] text-nav-muted mt-1">
-                You can still attempt to claim it from the contract.
+                You can still try to claim it if you find it.
               </p>
             )}
           </div>
@@ -620,7 +669,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           <MapPin className="w-4 h-4" strokeWidth={2} /> Distance
         </span>
         <span className={isClose ? "text-brand" : "text-nav-muted"}>
-          {!userLoc ? "Enable GPS"
+          {!userLoc ? (gpsDenied ? "Location off" : "Locating…")
             : distance === null ? "…"
             : isClose ? `${Math.round(distance)}m — in range`
             : `${Math.round(distance)}m away`}
@@ -749,8 +798,22 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
               </div>
             ) : null}
 
-            {/* Claim CTA */}
-            {!isConnected ? (
+            {gpsDenied && !userLoc && (
+              <div role="status" className="rounded-2xl bg-surface p-4 text-sm/[140%] text-nav-muted">
+                Location is blocked for this site. Allow it in your browser or app settings, then come back to this page.
+              </div>
+            )}
+
+            {/* Claim CTA (task drops swap in the unlock panel) */}
+            {showTaskUnlock && address ? (
+              <TaskUnlock
+                drop={drop}
+                userLocation={userLoc}
+                address={address}
+                onApproved={() => setTaskUnlocked(true)}
+                onShowing={setTaskShowing}
+              />
+            ) : !isConnected ? (
               <button type="button" onClick={login} className={PRIMARY}>
                 Sign in to claim
               </button>
@@ -759,7 +822,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
                 type="button"
                 onClick={
                   terminal ? () => { window.location.href = "/"; }
-                  : status === "error" ? () => { setStatus("idle"); setErrMsg(""); }
+                  : status === "error" ? (claimReady ? handleClaim : () => { setStatus("idle"); setErrMsg(""); })
                   : identityCheckFailed ? () => refreshIdentity()
                   : handleClaim
                 }
@@ -891,7 +954,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
           dropCoords={isPrivate && privateCoords ? privateCoords : undefined}
           privateToken={privateToken}
           onClose={() => setIsHunting(false)}
-          onSuccess={() => { setIsHunting(false); setStatus("done"); }}
+          onHandOff={() => setIsHunting(false)}
+          onSuccess={() => { setIsHunting(false); setStatus("done"); if (address) checkBadgesAfterClaim(address); }}
         />
       )}
 

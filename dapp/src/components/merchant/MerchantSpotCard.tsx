@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import {
   MapPin, Wallet, Gift, Pencil, Eye, Megaphone, Pause, Play, Check, Store,
@@ -106,9 +106,17 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
 
   const [rewards, setRewards] = useState<RewardRow[]>([]);
 
-  useEffect(() => {
-    fetch(`/api/spots/${spot.id}/payments`).then((r) => r.json()).then(setStats).catch(() => {});
+  // A failed refresh keeps the last numbers; a failed first load says so
+  // instead of leaving skeletons up forever.
+  const [statsErr, setStatsErr] = useState(false);
+  const loadStats = useCallback(() => {
+    setStatsErr(false);
+    fetch(`/api/spots/${spot.id}/payments`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: SpotStats) => { if (Array.isArray(d.payments)) setStats(d); else throw new Error("bad"); })
+      .catch(() => setStatsErr(true));
   }, [spot.id]);
+  useEffect(() => { loadStats(); }, [loadStats]);
 
   // Reward drops for this spot + their live claim status (one batched multicall).
   useEffect(() => {
@@ -148,7 +156,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
     if (busy) return;
     setBusy(action); setErr("");
     const signed = await signAction(action, null);
-    if (!signed) { setBusy(null); setErr("Signing was cancelled."); return; }
+    if (!signed) { setBusy(null); setErr("You didn't confirm in your wallet. Nothing was changed."); return; }
     try {
       const res = await fetch(`/api/spots/${spot.id}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -175,7 +183,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       ...(editCoords ? { lat: editCoords.lat, lng: editCoords.lng, placeName: editPlaceName ?? spot.placeName ?? "" } : {}),
     };
     const signed = await signAction("edit", changes);
-    if (!signed) { setBusy(null); setErr("Signing was cancelled. Nothing was changed."); return; }
+    if (!signed) { setBusy(null); setErr("You didn't confirm in your wallet. Nothing was changed."); return; }
     try {
       const res = await fetch(`/api/spots/${spot.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -294,6 +302,8 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
         <div className="rounded-2xl bg-surface p-4 flex flex-col gap-y-2 min-w-0">
           {stats ? (
             <span className="text-2xl/none text-heading">{stats.count}</span>
+          ) : statsErr ? (
+            <span className="text-2xl/none text-nav-muted">–</span>
           ) : (
             <Skeleton className="h-6 w-10 bg-white" />
           )}
@@ -304,12 +314,20 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
             <span className="text-2xl/none text-heading truncate">
               {formatG$(BigInt(stats.totalWei))} <span className="text-sm/none text-nav-muted">G$</span>
             </span>
+          ) : statsErr ? (
+            <span className="text-2xl/none text-nav-muted">–</span>
           ) : (
             <Skeleton className="h-6 w-16 bg-white" />
           )}
           <span className="text-sm/[140%] text-nav-muted">Total earned</span>
         </div>
       </div>
+      {statsErr && !stats && (
+        <p className="-mt-2 text-xs/[140%] text-nav-muted" role="status">
+          Couldn&apos;t load your numbers.{" "}
+          <button type="button" onClick={loadStats} className="text-brand cursor-pointer hover:underline">Try again</button>
+        </p>
+      )}
 
       {stats && stats.payments.length > 0 && (
         <div className="flex flex-col gap-y-3">
@@ -538,7 +556,7 @@ export function MerchantSpotCard({ spot, onChanged }: { spot: Spot; onChanged: (
       {showTill && (
         <ShopTill spot={spot} onClose={() => {
           setShowTill(false);
-          fetch(`/api/spots/${spot.id}/payments`).then((r) => r.json()).then(setStats).catch(() => {});
+          loadStats();
         }} />
       )}
       {showTask && (

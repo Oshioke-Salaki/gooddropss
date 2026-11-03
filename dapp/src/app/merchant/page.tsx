@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSignMessage } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { announceSessionChanged } from "@/hooks/useWalletSession";
@@ -7,7 +7,7 @@ import { VerifyWalletCard } from "@/components/VerifyWalletCard";
 import { normalizeSpotDraft, spotDigest, spotMessage } from "@/lib/spotAuth";
 import {
   Store, MapPin, Check, UtensilsCrossed, ShoppingBag, Wrench, Bus, Camera,
-  Megaphone, ArrowRight, Loader2, Plus, type LucideIcon,
+  Megaphone, ArrowRight, Loader2, Plus, RefreshCw, type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { Nav } from "@/components/Nav";
@@ -65,20 +65,34 @@ export default function MerchantPage() {
   const [errMsg, setErrMsg]       = useState("");
   const [done, setDone]           = useState(false);
 
+  // Skeletons only on the first load. Refreshes after an action happen in the
+  // background: swapping the cards for skeletons would unmount whatever the
+  // merchant is looking at (a till, a "reward is live" screen).
+  const [listErr, setListErr] = useState(false);
+  const loadedFor = useRef<string | null>(null);
+  const listSeq = useRef(0);
   const fetchMySpots = useCallback(() => {
-    if (!address) { setMySpots([]); setLoading(false); return; }
-    setLoading(true);
+    if (!address) { setMySpots([]); setLoading(false); loadedFor.current = null; return; }
+    const first = loadedFor.current !== address;
+    if (first) setLoading(true);
+    setListErr(false);
+    const mine = ++listSeq.current;
     // no-store: a merchant must always see the live status of their own shop.
     // A cached "active" response is exactly what made a paused spot still show
     // "Live" and then reject the next pause ("Only a live business can be paused").
     fetch(`/api/spots?owner=${address}`, { cache: "no-store" })
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => {
+        if (mine !== listSeq.current) return; // a newer refresh already answered
         setMySpots(Array.isArray(d.spots) ? d.spots : []);
         setHiddenCount(typeof d.hidden === "number" ? d.hidden : 0);
+        loadedFor.current = address;
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(() => {
+        // A failed refresh keeps what's on screen; a failed first load says so.
+        if (mine === listSeq.current && first) setListErr(true);
+      })
+      .finally(() => { if (mine === listSeq.current) setLoading(false); });
   }, [address]);
 
   useEffect(() => { fetchMySpots(); }, [fetchMySpots]);
@@ -140,7 +154,7 @@ export default function MerchantPage() {
       });
     } catch {
       setSubmitting(false);
-      setErrMsg("Signing was cancelled. Your shop wasn't submitted.");
+      setErrMsg("You didn't confirm in your wallet, so your shop wasn't submitted.");
       return;
     }
     setSubmitting("sending");
@@ -431,6 +445,20 @@ export default function MerchantPage() {
                 {loading ? (
                   <div className="flex flex-col gap-y-6">
                     {[1, 2].map((i) => <Skeleton key={i} className="h-56 rounded-3xl bg-white" />)}
+                  </div>
+                ) : listErr ? (
+                  <div className={`${CARD} p-6 flex flex-col items-center text-center gap-y-4`} role="alert">
+                    <span className="w-14 h-14 rounded-full bg-surface flex items-center justify-center text-heading">
+                      <RefreshCw className="w-6 h-6" strokeWidth={1.75} />
+                    </span>
+                    <p className="text-xl/none text-heading">Couldn&apos;t load your shops</p>
+                    <p className="text-sm/[140%] text-nav-muted max-w-[320px]">
+                      Your shops are safe. Check your connection and try again.
+                    </p>
+                    <button type="button" onClick={fetchMySpots}
+                      className="mt-2 h-12 px-6 rounded-full bg-brand text-white text-base/none cursor-pointer hover:bg-brand/90">
+                      Try again
+                    </button>
                   </div>
                 ) : mySpots.length === 0 && hiddenCount === 0 ? (
                   <div className={`${CARD} p-6 flex flex-col items-center text-center gap-y-4`}>

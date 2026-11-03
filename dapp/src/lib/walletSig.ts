@@ -26,7 +26,7 @@ export async function verifyWalletSig(
   if (typeof address !== "string" || !ADDR_RE.test(address)) return "Sign in first.";
   if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature)) return "This page is out of date. Refresh it and try again.";
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return "Missing timestamp.";
-  if (Math.abs(Date.now() - timestamp) > SIG_WINDOW_MS) return "That signature has expired. Please try again.";
+  if (Math.abs(Date.now() - timestamp) > SIG_WINDOW_MS) return "That took too long. Please try again.";
 
   let ok = false;
   const message = args.message(timestamp);
@@ -37,7 +37,7 @@ export async function verifyWalletSig(
     // signature. Plain wallets can still be checked locally.
     try { ok = await verifyOffline({ address: address as Hex, message, signature: signature as Hex }); } catch { ok = false; }
   }
-  if (!ok) return "The signature doesn't match this wallet.";
+  if (!ok) return "Couldn't confirm it's you. Please try again.";
 
   const fresh = await redis.set(keys.sigUsed(keccak256(toBytes(signature)).slice(2, 34)), "1", {
     nx: true, ex: Math.ceil((SIG_WINDOW_MS * 2) / 1000),

@@ -359,10 +359,10 @@ export function EventForm({ address, event, trusted = false, onClose, onSaved }:
               <button type="submit" disabled={busy}
                 className="w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2 cursor-pointer
                   motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-wait">
-                {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> Waiting for signature…</> : editing ? "Save changes" : "Submit for review"}
+                {busy ? <><Loader2 className="w-5 h-5 animate-spin" /> {editing ? "Saving…" : "Submitting…"}</> : editing ? "Save changes" : "Submit for review"}
               </button>
               <p className="text-xs/[145%] text-nav-muted text-center">
-                {instant ? "This change goes live as soon as you sign. " : ""}You&apos;ll sign a message to prove it&apos;s you. Free, no gas.
+                {instant ? "This change goes live as soon as you confirm. " : ""}You&apos;ll confirm it&apos;s you in your wallet. It&apos;s free and moves no money.
               </p>
             </div>
           </form>

@@ -26,7 +26,7 @@ export function HunterProfileClient({ address }: { address: string }) {
 }
 
 function PublicProfile({ address }: { address: string }) {
-  const { data, badges } = useHunterProfile(address, false);
+  const { data, badges, error: profileError, retry: retryProfile } = useHunterProfile(address, false);
   const [badge, setBadge] = useState<WallBadge | null>(null);
 
   return (
@@ -34,6 +34,8 @@ function PublicProfile({ address }: { address: string }) {
       <div className="mx-auto w-full max-w-[683px] bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden">
         <ProfileContent
           address={address}
+          error={profileError}
+          onRetry={retryProfile}
           data={data}
           badges={badges}
           selectedBadgeId={badge?.id ?? null}

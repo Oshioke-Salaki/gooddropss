@@ -49,7 +49,8 @@ export function DropGDrawer({
     campaignId, eventId, eventEndsAt, claimPoints, onClose,
     defaultLocation: eventVenue ? { lat: eventVenue.lat, lng: eventVenue.lng, placeName: eventVenue.name } : null,
   });
-  const sheet = useSheetDrag({ onDismiss: d.handleClose });
+  const sheet = useSheetDrag({ onDismiss: d.handleClose }); // handleClose ignores closes mid-drop
+  const [confirmAbandon, setConfirmAbandon] = useState(false);
   const { sheetRef, sheetStyle, handleProps } = sheet;
 
   // Closing has to be animated, not just unmounted. On mobile the sheet hook
@@ -57,11 +58,11 @@ export function DropGDrawer({
   // so the drawer plays a CSS exit and unmounts when that finishes.
   const [exiting, setExiting] = useState(false);
   const requestClose = useCallback(() => {
-    if (exiting) return;
+    if (exiting || d.busy) return;
     if (sheet.enabled) { sheet.close(); return; }
     setExiting(true);
     window.setTimeout(d.handleClose, 240);
-  }, [exiting, sheet, d.handleClose]);
+  }, [exiting, sheet, d.handleClose, d.busy]);
 
   // Tell the map to refetch once, the moment a drop lands.
   useEffect(() => {
@@ -158,8 +159,9 @@ export function DropGDrawer({
               <button
                 type="button"
                 onClick={requestClose}
+                disabled={d.busy}
                 aria-label="Close"
-                className="shrink-0 cursor-pointer rounded-full bg-surface p-1.5 text-nav-muted motion-safe:transition-colors hover:bg-nav-controls hover:text-heading"
+                className="shrink-0 cursor-pointer rounded-full bg-surface p-1.5 text-nav-muted motion-safe:transition-colors hover:bg-nav-controls hover:text-heading disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <X size={14} />
               </button>
@@ -176,7 +178,7 @@ export function DropGDrawer({
                     <h3 className="text-base/none text-heading">Finish your riddle drop</h3>
                     <p className="text-sm/[150%] text-nav-muted">
                       A drop is already hidden but its riddle never attached, so nobody can
-                      claim it yet. Finishing needs no signature and costs nothing.
+                      claim it yet. Finishing is free and takes a second.
                     </p>
                     {d.errMsg && <p className="text-sm/[150%] text-danger">{d.errMsg}</p>}
                     <button
@@ -187,14 +189,38 @@ export function DropGDrawer({
                     >
                       {d.busy ? "Finishing…" : "Finish it"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={d.discardPending}
-                      disabled={d.busy}
-                      className="w-full cursor-pointer py-2 text-sm/none text-nav-muted hover:text-heading"
-                    >
-                      Abandon this drop
-                    </button>
+                    {confirmAbandon ? (
+                      <div className="rounded-2xl bg-surface p-4 space-y-3" role="alert">
+                        <p className="text-sm/[150%] text-heading">
+                          Nobody will be able to claim it. Your G$ comes back only once it expires, from My Drops.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => { setConfirmAbandon(false); d.discardPending(); }}
+                            className="h-10 flex-1 cursor-pointer rounded-full bg-danger text-sm/none text-white hover:opacity-90"
+                          >
+                            Abandon it
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmAbandon(false)}
+                            className="h-10 flex-1 cursor-pointer rounded-full border border-line bg-white text-sm/none text-heading hover:bg-surface"
+                          >
+                            Keep it
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmAbandon(true)}
+                        disabled={d.busy}
+                        className="w-full cursor-pointer py-2 text-sm/none text-nav-muted hover:text-heading"
+                      >
+                        Abandon this drop
+                      </button>
+                    )}
                   </Card>
                 </div>
               ) : (
@@ -364,6 +390,11 @@ export function DropGDrawer({
                           aria-label="Recipient address"
                           onChange={(e) => d.setTargetAddress(e.target.value)}
                         />
+                        {d.targetInvalid && (
+                          <p className="mt-2 px-5 text-xs/[140%] text-danger" role="alert">
+                            That doesn&apos;t look like a wallet address. It starts with 0x and is 42 characters long.
+                          </p>
+                        )}
                       </div>
                     </FeatureCard>
                     )}

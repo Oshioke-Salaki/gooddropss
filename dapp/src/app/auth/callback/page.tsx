@@ -30,19 +30,24 @@ type MagicSdk = {
 // Magic rejects with its own codes here (invalid_grant, unauthorized_client…).
 // Keep the code visible: it's the difference between a user saying "it didn't
 // work" and us knowing exactly which handshake failed.
-function describe(e: unknown): string {
+// The code goes on its own small line, so the message itself stays plain.
+function describe(e: unknown): { message: string; code: string } {
   const code = (e as { code?: string } | null)?.code;
-  return code
-    ? `Google sign-in didn't complete (${code}). Please try again.`
-    : "Google sign-in didn't complete. Please try again.";
+  return { message: "Google sign-in didn't finish. Please try again.", code: typeof code === "string" ? code : "" };
 }
+
+/** If connecting hangs (a stalled wallet iframe), stop spinning and say so. */
+const STALL_MS = 25_000;
 
 export default function AuthCallbackPage() {
   const router = useRouter();
   const { isConnected } = useAccount();
   const { connectAsync, connectors } = useConnect();
   const [err, setErr] = useState("");
+  const [code, setCode] = useState("");
+  const [dest, setDest] = useState("/");
   const ranRef = useRef(false);
+  const fail = (d: { message: string; code: string }) => { setErr(d.message); setCode(d.code); };
 
   useEffect(() => {
     if (ranRef.current) return;
@@ -50,11 +55,17 @@ export default function AuthCallbackPage() {
 
     // Grab these synchronously — getRedirectResult wipes the query string.
     const search = window.location.search;
-    const dest = sessionStorage.getItem("gd:returnTo") || "/";
+    const saved = sessionStorage.getItem("gd:returnTo");
+    // Only ever go back to a page on this site.
+    const back = saved && saved.startsWith("/") && !saved.startsWith("//") ? saved : "/";
+    setDest(back);
     const finish = () => {
       sessionStorage.removeItem("gd:returnTo");
-      router.replace(dest);
+      router.replace(back);
     };
+    const stall = window.setTimeout(() => {
+      setErr((e) => e || "Signing in is taking longer than it should. Check your connection and try again.");
+    }, STALL_MS);
 
     (async () => {
       if (isConnected) { finish(); return; }
@@ -85,7 +96,7 @@ export default function AuthCallbackPage() {
           // last two rounds of this bug impossible to diagnose.
           console.error("[auth/callback] getRedirectResult failed", e);
           if (!(await sdk.user.isLoggedIn().catch(() => false))) {
-            setErr(describe(e));
+            fail(describe(e));
             return;
           }
         }
@@ -99,7 +110,9 @@ export default function AuthCallbackPage() {
         finish();
       } catch (e) {
         console.error("[auth/callback] connect failed", e);
-        setErr(describe(e));
+        fail(describe(e));
+      } finally {
+        window.clearTimeout(stall);
       }
     })();
   }, [isConnected, connectors, connectAsync, router]);
@@ -120,9 +133,10 @@ export default function AuthCallbackPage() {
               <AlertCircle className="w-7 h-7" strokeWidth={1.75} />
             </span>
             <p className="text-base/[140%] text-heading">{err}</p>
+            {code && <p className="-mt-2 text-xs/none text-nav-muted">Error code: {code}</p>}
             <button
               type="button"
-              onClick={() => router.replace("/")}
+              onClick={() => router.replace(dest)}
               className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
                 motion-safe:transition-colors hover:bg-brand/90"
             >

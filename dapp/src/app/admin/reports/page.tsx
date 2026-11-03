@@ -27,9 +27,10 @@ export default function AdminReportsPage() {
     try {
       const res = await fetch("/api/moderation");
       if (res.status === 403) { setErr("Not authorised."); setReported([]); return; }
+      if (!res.ok) throw new Error(String(res.status));
       const d = await res.json();
       if (Array.isArray(d.reported)) setReported(d.reported);
-    } catch { /* keep what we had */ }
+    } catch { setErr("Couldn't load reports. Refresh the page to try again."); }
     finally { setLoading(false); }
   }, []);
 

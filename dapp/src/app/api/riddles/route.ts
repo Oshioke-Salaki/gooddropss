@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         signature: signature as `0x${string}`,
       })).toLowerCase();
     } catch {
-      return NextResponse.json({ error: "Bad signature" }, { status: 401 });
+      return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
     }
 
     const salt = crypto.randomUUID();

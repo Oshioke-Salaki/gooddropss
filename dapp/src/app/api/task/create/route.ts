@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
   // 1. Owner signature.
   try {
     const ok = await publicClient.verifyMessage({ address: ownerAddress as Hex, message: taskCreateMessage(dropId, spotId), signature: signature as Hex });
-    if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  } catch { return NextResponse.json({ error: "Signature verification failed" }, { status: 401 }); }
+    if (!ok) return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
+  } catch { return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 }); }
 
   // 2. Caller must own the spot.
   const spot = await getSpot(redis, spotId);

@@ -22,9 +22,9 @@ export async function verifyEventSignature(
 ): Promise<string | null> {
   const { address, signature, timestamp } = args;
   if (typeof address !== "string" || !ADDR_RE.test(address)) return "Sign in first.";
-  if (typeof signature !== "string" || !signature.startsWith("0x")) return "Missing signature.";
+  if (typeof signature !== "string" || !signature.startsWith("0x")) return "Couldn't confirm it's you. Please try again.";
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return "Missing timestamp.";
-  if (Math.abs(Date.now() - timestamp) > LIMITS.sigWindowMs) return "That signature has expired — please try again.";
+  if (Math.abs(Date.now() - timestamp) > LIMITS.sigWindowMs) return "That took too long. Please try again.";
 
   let ok = false;
   try {
@@ -34,7 +34,7 @@ export async function verifyEventSignature(
       signature: signature as Hex,
     });
   } catch { ok = false; }
-  if (!ok) return "The signature doesn't match this wallet.";
+  if (!ok) return "Couldn't confirm it's you. Please try again.";
 
   const used = await redis.set(keys.eventSigUsed(keccak256(toBytes(signature)).slice(2, 34)), "1", {
     nx: true, ex: Math.ceil((LIMITS.sigWindowMs * 2) / 1000),

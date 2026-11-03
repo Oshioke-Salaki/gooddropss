@@ -21,7 +21,7 @@ const whole = (wei: string) => Number(BigInt(wei || "0") / G);
  * can join. Refreshes itself and keeps the screen awake.
  */
 export default function ScreenClient({ id }: { id: string }) {
-  const { data, notFound } = useEventDetail(id, undefined, 10_000);
+  const { data, notFound, error, stale, lastOk, refresh, refreshing } = useEventDetail(id, undefined, 10_000);
   const now = useNowSec(5_000);
   const [origin, setOrigin] = useState("https://www.gooddrops.xyz");
   const [full, setFull] = useState(false);
@@ -53,6 +53,20 @@ export default function ScreenClient({ id }: { id: string }) {
   }
 
   if (notFound) return <Frame><p className="m-auto text-3xl text-heading">Event not found</p></Frame>;
+  // Offline at the venue: say so (it keeps retrying on its own) instead of a
+  // spinner that never ends.
+  if (!data && error) return (
+    <Frame>
+      <div className="m-auto flex flex-col items-center text-center gap-5" role="alert">
+        <p className="text-[clamp(24px,2.6vw,44px)]/none text-heading">Can&apos;t reach GoodDrops</p>
+        <p className="text-[clamp(14px,1.2vw,22px)]/[1.3] text-nav-muted">Check this screen&apos;s internet connection. It will keep trying on its own.</p>
+        <button type="button" onClick={refresh} disabled={refreshing}
+          className="h-14 px-8 rounded-full bg-brand text-white text-lg/none cursor-pointer hover:bg-brand/90 disabled:opacity-70">
+          {refreshing ? "Trying…" : "Try now"}
+        </button>
+      </div>
+    </Frame>
+  );
   if (!data) return <Frame><div className="m-auto w-16 h-16 rounded-full border-4 border-brand/20 border-t-brand animate-spin" aria-label="Loading" /></Frame>;
 
   const e = data.event;
@@ -95,7 +109,10 @@ export default function ScreenClient({ id }: { id: string }) {
         </aside>
       </div>
       <p className="mt-6 text-[clamp(12px,0.9vw,16px)]/none text-nav-muted">
-        {formatRange(e.startsAt, e.endsAt, e.tz)} · Numbers come straight from the Celo blockchain · gooddrops.xyz
+        {formatRange(e.startsAt, e.endsAt, e.tz)} · gooddrops.xyz
+        {stale && lastOk && (
+          <span className="text-danger" role="status"> · Reconnecting, last update {ago(Math.floor(lastOk / 1000), now)}</span>
+        )}
       </p>
     </Frame>
   );

@@ -70,10 +70,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const redis = getRedis();
-    if (!redis) return NextResponse.json({ payments: [], count: 0, totalWei: "0" });
+    // An outage must never look like "no payments": the till would take the
+    // next good answer as a day's worth of new ones.
+    if (!redis) return NextResponse.json({ error: "Storage unavailable" }, { status: 503, headers: { "Cache-Control": "no-store" } });
     // Never create counters for ids that aren't shops.
     const spot = id.length <= 64 ? await getSpot(redis, id) : null;
-    if (!spot) return NextResponse.json({ payments: [], count: 0, totalWei: "0" });
+    if (!spot) return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
 
     if (req.nextUrl.searchParams.get("sync") === "1") {
       await syncSpotPayments(redis, spot).catch((e) => console.error("[spots/payments/sync]", e));
@@ -91,6 +93,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     );
   } catch (e) {
     console.error("[spots/payments/get]", e);
-    return NextResponse.json({ payments: [], count: 0, totalWei: "0" });
+    return NextResponse.json({ error: "Internal error" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

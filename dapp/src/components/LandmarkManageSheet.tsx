@@ -155,7 +155,7 @@ export function LandmarkManageSheet({ landmark, onClose, onChanged }: Props) {
             disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
         >
           {busy === "save"
-            ? <><Loader2 className="w-5 h-5 animate-spin" /> Signing…</>
+            ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</>
             : "Save changes"}
         </button>
 
@@ -203,7 +203,7 @@ export function LandmarkManageSheet({ landmark, onClose, onChanged }: Props) {
         </div>
 
         <p className="mt-4 text-xs/[140%] text-nav-muted text-center">
-          You sign to confirm — free, no gas.
+          You&apos;ll confirm it&apos;s you in your wallet. It&apos;s free and moves no money.
         </p>
       </form>
     </Sheet>

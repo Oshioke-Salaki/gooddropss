@@ -250,7 +250,8 @@ export default function HomePage() {
           drop={huntingDrop}
           userLocation={userLoc}
           onClose={() => setHuntingDrop(null)}
-          onSuccess={() => { setHuntingDrop(null); fetchDrops(); checkBadgesAfterClaim(address); }}
+          onHandOff={() => { const d = huntingDrop; setHuntingDrop(null); setSelectedDrop(d); }}
+          onSuccess={() => { markClaimed(huntingDrop.id); setHuntingDrop(null); fetchDrops(); checkBadgesAfterClaim(address); }}
         />
       )}
 

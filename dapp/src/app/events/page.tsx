@@ -29,13 +29,14 @@ export default function EventsPage() {
 
   // Distance only after the person asks — never an unprompted location prompt.
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
-  const [locating, setLocating] = useState<"idle" | "busy" | "denied">("idle");
+  const [locating, setLocating] = useState<"idle" | "busy" | "denied" | "failed">("idle");
   function locate() {
     if (!navigator.geolocation) { setLocating("denied"); return; }
     setLocating("busy");
     navigator.geolocation.getCurrentPosition(
       (p) => { setHere({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocating("idle"); },
-      () => setLocating("denied"),
+      // Blocked and "couldn't get a fix" need different advice.
+      (err) => setLocating(err.code === err.PERMISSION_DENIED ? "denied" : "failed"),
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 5 * 60_000 },
     );
   }
@@ -82,7 +83,13 @@ export default function EventsPage() {
             </div>
           </div>
           {locating === "denied" && (
-            <p className="-mt-4 mb-6 text-sm/[145%] text-nav-muted">Location is off, so events are sorted by time. Turn it on in your browser to see distances.</p>
+            <p className="-mt-4 mb-6 text-sm/[145%] text-nav-muted" role="status">Location is blocked, so events are sorted by time. Allow it in your browser settings to see distances.</p>
+          )}
+          {locating === "failed" && (
+            <p className="-mt-4 mb-6 text-sm/[145%] text-nav-muted" role="status">
+              Couldn&apos;t find your location just now, so events are sorted by time.{" "}
+              <button type="button" onClick={locate} className="text-brand cursor-pointer hover:underline">Try again</button>
+            </p>
           )}
 
           {/* Your events */}
@@ -97,7 +104,7 @@ export default function EventsPage() {
                   body="Confirm it's your wallet to see events in review and any notes from our team. It's free and moves no funds."
                 />
               )}
-              {myRows.length > 0 && <HostEvents rows={myRows} now={now} onEdit={setEditing} onCancel={setCancelling} />}
+              {myRows.length > 0 && <HostEvents rows={myRows} now={now} address={address} onEdit={setEditing} onCancel={setCancelling} />}
             </section>
           )}
 
@@ -111,9 +118,9 @@ export default function EventsPage() {
             <div className="bg-white rounded-3xl p-8 text-center flex flex-col items-center gap-4 shadow-[0px_0px_12px_0px_#0000000A]" role="alert">
               <p className="text-lg/none text-heading">Couldn&apos;t load events</p>
               <p className="text-sm/[145%] text-nav-muted">Check your connection and try again.</p>
-              <button type="button" onClick={lists.refresh}
-                className="h-11 px-6 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer hover:bg-brand/90">
-                <RefreshCw className="w-4 h-4" /> Try again
+              <button type="button" onClick={lists.refresh} disabled={lists.refreshing}
+                className="h-11 px-6 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer hover:bg-brand/90 disabled:opacity-70 disabled:cursor-wait">
+                <RefreshCw className={`w-4 h-4 ${lists.refreshing ? "animate-spin" : ""}`} /> {lists.refreshing ? "Trying…" : "Try again"}
               </button>
             </div>
           )}

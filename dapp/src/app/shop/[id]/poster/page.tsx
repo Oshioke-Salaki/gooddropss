@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState, use } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -22,13 +23,17 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const [spot, setSpot] = useState<Spot | null | undefined>(undefined);
   const [copied, setCopied] = useState(false);
+  // A dropped connection is not "this shop doesn't exist".
+  const [loadErr, setLoadErr] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setLoadErr(false);
     fetch(`/api/spots?id=${encodeURIComponent(id)}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok || r.status === 404 ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d) => setSpot(d.spot ?? null))
-      .catch(() => setSpot(null));
-  }, [id]);
+      .catch(() => setLoadErr(true));
+  }, [id, attempt]);
 
   const payUrl = `https://gooddrops.xyz/?spot=${id}`;
 
@@ -40,6 +45,17 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
     navigator.clipboard?.writeText(payUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }).catch(() => {});
   }
 
+  if (spot === undefined && loadErr) return (
+    <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-[420px] bg-white rounded-3xl p-7 flex flex-col items-center text-center gap-4" role="alert">
+        <p className="text-xl/none text-heading">Couldn&apos;t load the poster</p>
+        <p className="text-sm/[140%] text-nav-muted">Check your connection and try again.</p>
+        <button type="button" onClick={() => setAttempt((n) => n + 1)}
+          className="h-12 px-6 rounded-full bg-brand text-white text-base/none cursor-pointer hover:bg-brand/90">Try again</button>
+        <Link href="/merchant" className="text-sm/none text-nav-muted hover:text-heading">Back to your shops</Link>
+      </div>
+    </div>
+  );
   if (spot === undefined) return (
     <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
       <div className="w-full max-w-[420px] bg-white rounded-3xl p-7 flex flex-col items-center gap-4">
@@ -52,7 +68,11 @@ export default function ShopPosterPage({ params }: { params: Promise<{ id: strin
   );
   if (!spot) return (
     <div className="min-h-screen bg-surface font-sans flex items-center justify-center p-4">
-      <p className="text-base/none text-heading">Shop not found</p>
+      <div className="w-full max-w-[420px] bg-white rounded-3xl p-7 flex flex-col items-center text-center gap-4">
+        <p className="text-xl/none text-heading">Shop not found</p>
+        <p className="text-sm/[140%] text-nav-muted">This link may be old, or the shop was removed.</p>
+        <Link href="/merchant" className="h-12 px-6 rounded-full border border-line text-base/none text-heading flex items-center hover:bg-surface">Back to your shops</Link>
+      </div>
     </div>
   );
   // A poster only exists for a live shop: a QR that leads to a shop that can't

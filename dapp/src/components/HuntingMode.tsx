@@ -3,9 +3,11 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
-import { ArrowLeft, Check, Loader2, Lock, Navigation } from "lucide-react";
-import { publicClient } from "@/lib/publicClient";
-import { friendlyClaimError } from "@/lib/claimErrors";
+import { ArrowLeft, Check, Loader2, Lock, Navigation, Puzzle } from "lucide-react";
+import { confirmTx } from "@/lib/txOutcome";
+import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
+import { parseDropHint } from "@/lib/utils";
+import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
@@ -28,28 +30,37 @@ interface Props {
   onSuccess: () => void;
   privateToken?: string;
   dropCoords?: { lat: number; lng: number };
+  /** Riddle and shop-task drops are claimed on the full claim screen (answer
+   *  field, shop unlock). Called in range to hand over; falls back to onClose. */
+  onHandOff?: () => void;
 }
 
-type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error";
+type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
 
 const MAX_RANGE = 800;
 const BRAND = "#2727E2";
 
-export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords }: Props) {
+export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords, onHandOff }: Props) {
   const { address } = useAccount();
   const { writeContractAsync, sponsored } = useSponsoredWrite();
 
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("idle");
   const [errMsg, setErrMsg]           = useState("");
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(userLocation);
+  const [gpsDenied, setGpsDenied] = useState(false);
   const watchRef = useRef<number | null>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+
+  // A riddle answer or a shop scan can't be done from here.
+  const parsed = parseDropHint(drop.hint);
+  const needsFullScreen = parsed.hasRiddle || !!parsed.taskMerchantId;
 
   // High-accuracy GPS watch while in hunting mode
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) { setGpsDenied(true); return; }
     watchRef.current = navigator.geolocation.watchPosition(
-      (pos) => setLiveLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
+      (pos) => { setGpsDenied(false); setLiveLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      (err) => { if (err.code === err.PERMISSION_DENIED) setGpsDenied(true); },
       { enableHighAccuracy: true, maximumAge: 1_500, timeout: 10_000 }
     );
     return () => {
@@ -82,7 +93,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
   const strokeDash    = (proximityPct / 100) * circumference;
 
   function statusText() {
-    if (distance === null) return "Acquiring GPS…";
+    if (distance === null) return gpsDenied ? "Location is off. Allow it in your settings to hunt" : "Finding your location…";
     if (distance <= 15)    return "Right on it. Claim now";
     if (distance <= CLAIM_RADIUS_M) return "You're here. Claim it";
     if (distance <= 200)   return "Almost there";
@@ -90,13 +101,36 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
     return "Head towards the arrow";
   }
 
+  function claimed() {
+    setClaimStatus("done");
+    track("claim_succeeded", { rarity, surface: "hunt" });
+    fireChestReward(formatG$(drop.amount), rarity);
+    if (address) {
+      fetch("/api/engagement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      })
+        .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
+        .catch(() => {});
+    }
+  }
+
   async function handleClaim() {
-    if (!address || !isClose || claimStatus !== "idle") return;
+    if (!address || !isClose || (claimStatus !== "idle" && claimStatus !== "error")) return;
+    const retrying = claimStatus === "error";
     track("claim_started", { surface: "hunt" });
     setClaimStatus("claiming");
+    setErrMsg("");
     try {
-      // Guarantee gas before the claim so a low wallet never dead-ends mid-tx.
-      // Sponsored Magic wallets need no CELO, so skip the faucet for them.
+      // After an unclear ending, look before trying again.
+      if (retrying) {
+        const c = await checkBeforeRetry(drop.id, address);
+        if (c === "won") { claimed(); return; }
+        if (c === "gone") throw new Error("already claimed");
+      }
+      // Make sure claiming is covered first, so it never dead-ends halfway.
+      // Sponsored email wallets need nothing, so skip it for them.
       if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setClaimStatus("gassing"));
       setClaimStatus("claiming");
 
@@ -125,21 +159,29 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
         args: [drop.id, BigInt(deadline), sig as `0x${string}`],
       }, { onToppingUp: () => setClaimStatus("gassing") });
 
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      setClaimStatus("done");
-      track("claim_succeeded", { rarity, surface: "hunt" });
-      fireChestReward(formatG$(drop.amount), rarity);
+      await confirmTx(tx);
+      claimed();
     } catch (e: unknown) {
-      track("claim_failed", { reason: claimFailReason(e), surface: "hunt" });
-      const fe = friendlyClaimError(e);
-      if (fe.kind === "rejected") { setClaimStatus("idle"); setErrMsg(""); return; }
-      setErrMsg(fe.message);
-      setClaimStatus("error");
+      const f = await settleClaimError(e, drop.id, address);
+      if (f.result === "won") { claimed(); return; }
+      track("claim_failed", { reason: f.result === "pending" ? "pending" : claimFailReason(e), surface: "hunt" });
+      if (f.result === "rejected") { setClaimStatus("idle"); setErrMsg(""); return; }
+      // Verifying, answering a riddle or a shop scan all live on the full screen.
+      if (f.result === "failed" && (f.kind === "verify" || f.kind === "answer" || f.kind === "task")) {
+        (onHandOff ?? onClose)();
+        return;
+      }
+      setErrMsg(f.message);
+      setClaimStatus(f.result === "failed" && f.gone ? "gone" : "error");
     }
   }
 
   const busy = claimStatus === "claiming" || claimStatus === "gassing";
-  const claimable = isClose || claimStatus === "error";
+  const claimable = isClose || claimStatus === "error" || claimStatus === "gone";
+  // Leaving after a win takes the success path, so the drop leaves the map.
+  const leave = () => { if (busy) return; if (claimStatus === "done") onSuccess(); else onClose(); };
+  useEscapeLayer(true, () => { leave(); });
+  useFocusReturn(true, backRef);
 
   return (
     <motion.div
@@ -158,11 +200,13 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 16px)" }}
       >
         <button
+          ref={backRef}
           type="button"
-          onClick={onClose}
+          onClick={leave}
+          disabled={busy}
           aria-label="Back to map"
           className="w-10 h-10 shrink-0 rounded-full bg-surface text-heading flex items-center justify-center
-            cursor-pointer motion-safe:transition-colors hover:bg-nav-controls"
+            cursor-pointer motion-safe:transition-colors hover:bg-nav-controls disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <ArrowLeft className="w-5 h-5" strokeWidth={1.75} />
         </button>
@@ -313,23 +357,28 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
 
           {/* Claim */}
           <div className="w-full">
-            <p role="alert" className="h-4 mb-3 px-5 text-sm/none text-danger text-center truncate">
-              {claimStatus === "error" ? errMsg : ""}
+            <p role="alert" className="min-h-4 mb-3 px-2 text-sm/[140%] text-danger text-center">
+              {claimStatus === "error" || claimStatus === "gone" ? errMsg : ""}
             </p>
             <button
               type="button"
-              onClick={claimStatus === "error"
-                ? () => { setClaimStatus("idle"); setErrMsg(""); }
-                : handleClaim}
+              onClick={
+                claimStatus === "gone" ? onClose
+                : needsFullScreen && isClose && claimStatus === "idle" ? (onHandOff ?? onClose)
+                : claimStatus === "error" ? (isClose ? handleClaim : () => { setClaimStatus("idle"); setErrMsg(""); })
+                : handleClaim
+              }
               disabled={busy || !claimable}
               className="w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2
                 cursor-pointer motion-safe:transition-colors hover:bg-brand/90
                 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
               style={isClose && !busy ? { boxShadow: "0 8px 24px rgba(39,39,226,0.3)" } : undefined}
             >
-              {claimStatus === "gassing"  ? <><Loader2 className="w-5 h-5 animate-spin" /> Topping up gas…</> :
+              {claimStatus === "gassing"  ? <><Loader2 className="w-5 h-5 animate-spin" /> Getting things ready…</> :
                claimStatus === "claiming" ? <><Loader2 className="w-5 h-5 animate-spin" /> Claiming…</> :
+               claimStatus === "gone"     ? <><ArrowLeft className="w-5 h-5" strokeWidth={2} /> Back to the map</> :
                claimStatus === "error"    ? "Try again" :
+               needsFullScreen && isClose ? <><Puzzle className="w-5 h-5" strokeWidth={2} /> {parsed.hasRiddle ? "Answer the riddle to claim" : "Unlock at the shop"}</> :
                isClose ? `Claim ${formatG$(drop.amount)} G$` :
                <><Lock className="w-[18px] h-[18px]" strokeWidth={2} /> Get closer to unlock</>}
             </button>

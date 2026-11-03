@@ -149,7 +149,7 @@ export function TaskScanner({ onClose }: { onClose: () => void }) {
     } catch (e: unknown) {
       const m = (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message ?? "";
       setStep("confirm");
-      setMsg(/reject|denied|cancel/i.test(m) ? "You cancelled the signature. Nothing was approved." : "Couldn't approve. Try again.");
+      setMsg(/reject|denied|cancel/i.test(m) ? "You didn't confirm in your wallet. Nothing was approved." : "Couldn't approve. Try again.");
     }
   }
 

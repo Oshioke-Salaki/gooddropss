@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import { useReadContract } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
-import { parseUnits, maxUint256 } from "viem";
+import { parseUnits, maxUint256, type Hex } from "viem";
 import { X, Trash2, Loader2, ChevronUp, ChevronDown, MousePointerClick } from "lucide-react";
 import { publicClient } from "@/lib/publicClient";
 import {
@@ -28,6 +28,8 @@ import { dropTier, esc } from "@/components/map/markers";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { CampaignDisc } from "@/components/CampaignDisc";
 import type { Campaign } from "@/types";
+import { confirmTx, StillPendingError, TxFailedError } from "@/lib/txOutcome";
+import { friendlyClaimError } from "@/lib/claimErrors";
 
 interface FlyTarget { lat: number; lng: number; seq: number; }
 
@@ -297,11 +299,25 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
     );
   }
 
+  // A deploy in progress. Each drop is its own write, so after a failure
+  // "Continue" resumes at the first drop not yet hidden, from the list as it
+  // was when the deploy began, and never pays for a hidden one twice.
+  const run = useRef<{
+    drops: { lat: number; lng: number; amount: string; hint: string }[]; next: number; expiry: number; pendingHash: Hex | null;
+  } | null>(null);
+  // Map taps mustn't change the list while it's being hidden.
+  const locked = useRef(false);
+  locked.current = status === "approving" || status === "deploying" || run.current !== null;
+
   const handleAdd    = useCallback((lat: number, lng: number) => {
+    if (locked.current) return;
     setDrops((prev) => [...prev, { id: String(++idRef.current), lat, lng, amount: defaultAmount, hint: defaultHint }]);
   }, [defaultAmount, defaultHint]);
 
-  const handleRemove = useCallback((id: string) => setDrops((prev) => prev.filter((d) => d.id !== id)), []);
+  const handleRemove = useCallback((id: string) => {
+    if (locked.current) return;
+    setDrops((prev) => prev.filter((d) => d.id !== id));
+  }, []);
 
   const updateDrop = (id: string, field: "amount" | "hint", value: string) =>
     setDrops((prev) => prev.map((d) => d.id === id ? { ...d, [field]: value } : d));
@@ -332,45 +348,80 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
       return;
     }
     if (!canDeploy) return;
+    // Keep expiry safely inside the contract window [now+minExpiryDuration,
+    // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
+    // lower bound (the "1h" option sits on the floor) and cap under the ceiling.
+    // See drop/useCreateDrop for the full rationale (a naive "+120" overflowed 30d).
+    const SKEW = 300;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
+    const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
+    run.current = {
+      drops: drops.map((d) => ({ lat: d.lat, lng: d.lng, amount: d.amount, hint: buildCampaignHint(d.hint || defaultHint, campaign.id) })),
+      next: 0, expiry, pendingHash: null,
+    };
+    await deploy();
+  }
+
+  async function deploy() {
+    const r = run.current;
+    if (!r || !address) return;
+    const total = r.drops.length;
     setStatus("approving");
     setErrMsg("");
     try {
+      const remaining = r.drops.slice(r.next).reduce((sum, d) => sum + toWei(d.amount), 0n);
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance", args: [address, GOOD_DROPS_ADDRESS],
       });
-      if (allowance < totalWei) {
+      if (allowance < remaining) {
         const approveTx = await writeContractAsync({ address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve", args: [GOOD_DROPS_ADDRESS, maxUint256] });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        await confirmTx(approveTx);
       }
       setStatus("deploying");
-      setProgress({ current: 0, total: drops.length });
-      // Keep expiry safely inside the contract window [now+minExpiryDuration,
-      // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
-      // lower bound (the "1h" option sits on the floor) and cap under the ceiling.
-      // See drop/useCreateDrop for the full rationale (a naive "+120" overflowed 30d).
-      const SKEW = 300;
-      const nowSec = Math.floor(Date.now() / 1000);
-      const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
-      const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
-      for (let i = 0; i < drops.length; i++) {
-        const drop = drops[i];
-        setProgress({ current: i + 1, total: drops.length });
-        const tx = await writeContractAsync({
-          address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
-          args: [degToGps(drop.lat), degToGps(drop.lng), toWei(drop.amount), expiry, buildCampaignHint(drop.hint || defaultHint, campaign.id)],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: tx });
+      for (let i = r.next; i < total; i++) {
+        const d = r.drops[i];
+        setProgress({ current: i + 1, total });
+        // Sent last time but its ending wasn't seen: wait on it, don't resend.
+        if (!r.pendingHash) {
+          r.pendingHash = await writeContractAsync({
+            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
+            args: [degToGps(d.lat), degToGps(d.lng), toWei(d.amount), r.expiry, d.hint],
+          });
+        }
+        try {
+          await confirmTx(r.pendingHash);
+        } catch (e) {
+          if (e instanceof TxFailedError) r.pendingHash = null; // it did nothing: safe to send again
+          throw e;
+        }
+        r.pendingHash = null;
+        r.next = i + 1;
       }
+      run.current = null;
       window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("done");
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong");
+      const done = r.next;
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected" && done === 0 && !r.pendingHash) {
+        run.current = null; // closed the first prompt: nothing happened
+        setStatus("idle");
+        setErrMsg("");
+        return;
+      }
+      const why = e instanceof StillPendingError
+        ? "The last drop is still going through."
+        : fe.kind === "rejected" ? "You stopped before the rest were hidden." : fe.message;
+      setErrMsg(done > 0 || r.pendingHash
+        ? `${why} ${done} of ${total} drops are hidden. Tap Continue to finish the rest. You won't pay for the hidden ones again.`
+        : why);
+      if (done > 0) window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("error");
     }
   }
 
-  function handleReset() { setDrops([]); setStatus("idle"); setErrMsg(""); setProgress({ current: 0, total: 0 }); }
+  function handleReset() { run.current = null; setDrops([]); setStatus("idle"); setErrMsg(""); setProgress({ current: 0, total: 0 }); }
 
   const shareOnX = () => {
     const text = [
@@ -415,9 +466,9 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
     : `${drops.length} drop${drops.length !== 1 ? "s" : ""} queued`;
 
   const ctaLabel =
-    status === "approving" ? "Approving G$…" :
+    status === "approving" ? "Getting ready…" :
     status === "deploying" ? `Hiding ${progress.current} of ${progress.total}…` :
-    status === "error"     ? "Try again" :
+    status === "error"     ? (run.current ? `Continue: ${run.current.drops.length - run.current.next} left to hide` : "Try again") :
     drops.length === 0     ? "Place drops on the map first" :
     `Deploy ${drops.length} drop${drops.length !== 1 ? "s" : ""} — ${formatG$(totalWei)} G$`;
 
@@ -647,7 +698,9 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
               )}
               <button
                 type="button"
-                onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleDeploy}
+                onClick={status === "error"
+                  ? (run.current ? deploy : () => { setStatus("idle"); setErrMsg(""); })
+                  : handleDeploy}
                 disabled={busy || (status !== "error" && !canDeploy)}
                 className={CTA}
               >
@@ -656,7 +709,7 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
               </button>
               {isConnected && !isFetching && (
                 <p className="text-center text-xs/[150%] text-nav-muted">
-                  Balance: {formatG$(balance)} G$ · each drop is its own transaction
+                  Balance: {formatG$(balance)} G$ · each drop is hidden one at a time
                 </p>
               )}
             </div>

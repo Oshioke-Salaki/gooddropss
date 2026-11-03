@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
       message: approveMessage(token),
       signature: signature as Hex,
     });
-    if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-  } catch { return NextResponse.json({ error: "Signature verification failed" }, { status: 401 }); }
+    if (!ok) return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
+  } catch { return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 }); }
 
   // 2. Resolve the code → its drop / hunter / spot.
   const nonce = isCode ? await redis.get<string>(keys.taskCode(token)) : token;

@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Check, Clock, Loader2, Undo2 } from "lucide-react";
+import { Check, Clock, Loader2, RefreshCw, Undo2 } from "lucide-react";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
-import { publicClient } from "@/lib/publicClient";
+import { confirmTx } from "@/lib/txOutcome";
+import { toast } from "@/lib/toast";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { formatG$ } from "@/lib/utils";
@@ -26,6 +27,9 @@ export function Leftovers({ eventId, address, now }: { eventId: string; address:
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // Failing to load must never look like "nothing left to take back".
+  const [loadErr, setLoadErr] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -33,10 +37,24 @@ export function Leftovers({ eventId, address, now }: { eventId: string; address:
       if (!r.ok) throw new Error(String(r.status));
       const d = (await r.json()) as { mine: Mine[] };
       setMine(d.mine);
-    } catch { setMine((m) => m ?? []); }
+      setLoadErr(false);
+    } catch { setLoadErr(true); }
   }, [eventId, address]);
   useEffect(() => { load(); }, [load]);
 
+  if (!mine && loadErr) {
+    return (
+      <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 flex flex-col gap-3" role="alert">
+        <h2 className="text-lg/none text-heading">Your unclaimed G$</h2>
+        <p className="text-sm/[145%] text-nav-muted">Couldn&apos;t check for drops nobody found. Your G$ is safe.</p>
+        <button type="button" disabled={retrying}
+          onClick={async () => { setRetrying(true); await load(); setRetrying(false); }}
+          className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-2 cursor-pointer hover:bg-surface disabled:opacity-60">
+          <RefreshCw className={`w-4 h-4 ${retrying ? "animate-spin" : ""}`} /> {retrying ? "Checking…" : "Try again"}
+        </button>
+      </section>
+    );
+  }
   if (!mine || (mine.length === 0 && !done)) return null;
 
   const ready = mine.filter((d) => d.expiry <= now);
@@ -54,9 +72,10 @@ export function Leftovers({ eventId, address, now }: { eventId: string; address:
         const tx = await writeContractAsync({
           address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "reclaimManyExpired", args: [ids.slice(i, i + CHUNK)],
         });
-        await publicClient.waitForTransactionReceipt({ hash: tx });
+        await confirmTx(tx);
       }
       setDone(formatG$(total));
+      toast.success(`${formatG$(total)} G$ is back in your wallet`);
       track("event_leftovers_reclaimed");
       // The indexer catches up a few seconds behind the chain.
       setMine((m) => m?.filter((d) => d.expiry > now) ?? m);
@@ -64,6 +83,7 @@ export function Leftovers({ eventId, address, now }: { eventId: string; address:
     } catch (e) {
       const fe = friendlyClaimError(e);
       if (fe.kind !== "rejected") setError(fe.kind === "network" || fe.kind === "gas" ? fe.message : "Couldn't take them back. Try again.");
+      load(); // some may have come back before the failure: show what's left
     } finally {
       setBusy(false);
     }

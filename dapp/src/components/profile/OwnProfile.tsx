@@ -48,7 +48,7 @@ function roughCount(n: number): string {
  */
 export function OwnProfile({ address }: { address: string }) {
   const profile = useProfile(address);
-  const { data, badges } = useHunterProfile(address, true);
+  const { data, badges, error: profileError, retry: retryProfile } = useHunterProfile(address, true);
   const streak = useHunterStreak(address);
   const { isVerified, isLoading: verifying } = useVerification();
   const board = useLeaderboard();
@@ -95,7 +95,8 @@ export function OwnProfile({ address }: { address: string }) {
     if ((await shareOrCopy({ title, url: profileUrl })) === "copied") flash("share");
   }, [profile?.username, profileUrl, flash]);
 
-  const loading = data === null;
+  // A failed load stops the skeletons; the retry strip explains why.
+  const loading = data === null && !profileError;
   const earned = badges?.filter((b) => b.earned).length ?? 0;
   const hasMedal = !!rank && rank <= 3;
 
@@ -200,6 +201,16 @@ export function OwnProfile({ address }: { address: string }) {
               </div>
             </div>
 
+            {profileError && data === null && (
+              <div className="mt-6 rounded-2xl bg-surface p-4 flex items-center gap-3" role="alert">
+                <p className="flex-1 min-w-0 text-sm/[140%] text-nav-muted">Couldn&apos;t load your stats. Check your connection.</p>
+                <button type="button" onClick={retryProfile}
+                  className="shrink-0 h-10 px-4 rounded-full bg-white text-sm/none text-heading cursor-pointer hover:bg-nav-controls">
+                  Try again
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-3 mt-6">
               <Chip
                 icon={<Flame className="text-streak" strokeWidth={2} />}
@@ -215,13 +226,13 @@ export function OwnProfile({ address }: { address: string }) {
               />
               <Chip
                 icon={<Users className="text-brand" strokeWidth={2} />}
-                value={String(data?.referralCount ?? 0)}
+                value={data ? String(data.referralCount) : "–"}
                 label="Referred"
                 loading={loading}
               />
-              <Chip value={compact(data?.created ?? 0)} label="Drops created" loading={loading} />
-              <Chip value={data ? formatG$(BigInt(data.totalClaimedWei)) : "0"} label="G$ claimed" loading={loading} />
-              <Chip value={data ? formatG$(BigInt(data.totalDroppedWei)) : "0"} label="G$ dropped" loading={loading} />
+              <Chip value={data ? compact(data.created) : "–"} label="Drops created" loading={loading} />
+              <Chip value={data ? formatG$(BigInt(data.totalClaimedWei)) : "–"} label="G$ claimed" loading={loading} />
+              <Chip value={data ? formatG$(BigInt(data.totalDroppedWei)) : "–"} label="G$ dropped" loading={loading} />
             </div>
           </div>
 
@@ -256,6 +267,8 @@ export function OwnProfile({ address }: { address: string }) {
                 <div className="text-sm/[140%] text-nav-muted min-w-0">
                   {loading ? (
                     <Skeleton className="h-4 w-40 bg-white/60" />
+                  ) : !data ? (
+                    <>Invite friends with your link</>
                   ) : (
                     <>
                       <span className="text-heading">{data.referralCount}</span>

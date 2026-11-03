@@ -245,12 +245,15 @@ export default function SponsorPage() {
   const [creating,  setCreating]  = useState(false);
   const [createErr, setCreateErr] = useState("");
 
+  // A failed load must never look like "No campaigns yet".
+  const [loadErr, setLoadErr] = useState(false);
   const fetchData = useCallback(async () => {
     if (!address) return;
     setLoadingData(true);
+    setLoadErr(false);
     try {
       const [campRes, drops] = await Promise.all([
-        fetch(`/api/campaigns?owner=${address}`).then((r) => r.json()),
+        fetch(`/api/campaigns?owner=${address}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))),
         fetchAllDrops(),
       ]);
       const fetched: Campaign[] = campRes.campaigns ?? [];
@@ -268,7 +271,7 @@ export default function SponsorPage() {
         results.forEach(({ id, claims }) => { map[id] = claims; });
         setCampaignClaims(map);
       }
-    } catch (e) { console.error("[sponsor] fetchData failed", e); }
+    } catch (e) { console.error("[sponsor] fetchData failed", e); setLoadErr(true); }
     finally { setLoadingData(false); }
   }, [address]);
 
@@ -283,7 +286,7 @@ export default function SponsorPage() {
         body: JSON.stringify({ name: formName.trim(), description: formDesc.trim(), color: formColor, logo: formLogo.trim() || undefined, ownerAddress: address, goodcollectivePool: formPool.trim() || undefined }),
       });
       const json = await res.json();
-      if (!res.ok) { setCreateErr(json.error ?? "Failed to create campaign"); return; }
+      if (!res.ok) { setCreateErr(typeof json.error === "string" && json.error.length < 120 ? json.error : "Couldn't create the campaign. Try again."); return; }
       setCampaigns((prev) => [json.campaign, ...prev]);
       setSelected(json.campaign);
       setView("list");
@@ -489,6 +492,12 @@ export default function SponsorPage() {
         <div className="flex min-w-0 flex-col gap-3 lg:order-1">
           {loadingData && campaigns.length === 0 ? (
             Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-36 rounded-3xl" />)
+          ) : loadErr && campaigns.length === 0 ? (
+            <div className={`${CARD} flex flex-col items-center gap-y-4 p-8 text-center`} role="alert">
+              <p className="text-xl/none text-heading">Couldn&apos;t load your campaigns</p>
+              <p className="max-w-[300px] text-sm/[140%] text-nav-muted">They&apos;re safe. Check your connection and try again.</p>
+              <button type="button" onClick={() => fetchData()} className={`${PRIMARY} mt-2`}>Try again</button>
+            </div>
           ) : campaigns.length === 0 ? (
             <div className={`${CARD} flex flex-col items-center gap-y-4 p-8 text-center`}>
               <span className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-soft text-brand">

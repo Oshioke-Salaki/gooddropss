@@ -177,7 +177,7 @@ function ShopSheetBody({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-sm/none text-brand hover:underline"
           >
-            Check the transaction <ExternalLink className="w-4 h-4" />
+            View the receipt <ExternalLink className="w-4 h-4" />
           </a>
         </div>
       ) : status === "done" ? (

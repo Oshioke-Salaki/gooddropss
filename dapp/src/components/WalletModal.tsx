@@ -460,7 +460,7 @@ export function WalletModal({
                 <div className="flex flex-col gap-y-3 min-w-0">
                   <div className="text-heading text-base/[100%]">Celo</div>
                   <div className="text-nav-muted text-sm/[100%]">
-                    For transaction fees
+                    Covers tiny sending costs
                   </div>
                 </div>
               </div>

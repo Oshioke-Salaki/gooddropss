@@ -67,7 +67,7 @@ function ProfileDrawer({
   const { address: connected } = useAccount();
   const isOwn =
     !!connected && connected.toLowerCase() === address.toLowerCase();
-  const { data, badges } = useHunterProfile(address, isOwn);
+  const { data, badges, error: profileError, retry: retryProfile } = useHunterProfile(address, isOwn);
   const [badge, setBadge] = useState<WallBadge | null>(null);
   const [shared, setShared] = useState(false);
 
@@ -128,6 +128,8 @@ function ProfileDrawer({
       >
         <ProfileContent
           address={address}
+          error={profileError}
+          onRetry={retryProfile}
           rank={rank}
           data={data}
           badges={badges}

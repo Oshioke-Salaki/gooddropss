@@ -19,6 +19,7 @@ import { usePushSubscription } from "@/hooks/usePushSubscription";
 import { useProfiles } from "@/hooks/useProfile";
 import { shareOrCopy } from "@/lib/share";
 import { track } from "@/lib/analytics";
+import { toast } from "@/lib/toast";
 import { formatG$ } from "@/lib/utils";
 import { perPersonCap, type GdEvent } from "@/lib/events";
 import { CategoryChip, PhasePill, BudgetBar } from "@/components/events/Pieces";
@@ -26,7 +27,7 @@ import { EventForm } from "@/components/events/EventForm";
 import { CancelEventSheet } from "@/components/events/CancelEventSheet";
 import { Leftovers } from "@/components/events/Leftovers";
 import { JoinSteps } from "@/components/events/JoinSteps";
-import { ago, differsFromViewer, formatRange, relativeLine } from "@/components/events/format";
+import { ago, differsFromViewer, formatRange, formatWhen, relativeLine, span } from "@/components/events/format";
 import { useEventDetail, useNowSec } from "@/components/events/useEvents";
 import type { EventMapDrop } from "@/components/events/EventMap";
 
@@ -43,7 +44,7 @@ export default function EventPageClient({ id }: { id: string }) {
   const { login } = useAuth();
   const { address } = useSignedInAccount();
   const now = useNowSec(15_000);
-  const { data, loading, error, notFound, needsVerify, refresh } = useEventDetail(id, address);
+  const { data, loading, error, stale, notFound, needsVerify, refresh, refreshing } = useEventDetail(id, address);
 
   const [editing, setEditing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -75,8 +76,8 @@ export default function EventPageClient({ id }: { id: string }) {
         <div className={`${CARD} p-8 flex flex-col items-center text-center gap-4`} role="alert">
           <p className="text-lg/none text-heading">Couldn&apos;t load this event</p>
           <p className="text-sm/[145%] text-nav-muted">Check your connection and try again.</p>
-          <button type="button" onClick={refresh} className="h-11 px-6 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer hover:bg-brand/90">
-            <RefreshCw className="w-4 h-4" /> Try again
+          <button type="button" onClick={refresh} disabled={refreshing} className="h-11 px-6 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer hover:bg-brand/90 disabled:opacity-70 disabled:cursor-wait">
+            <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} /> {refreshing ? "Trying…" : "Try again"}
           </button>
         </div>
       </Shell>
@@ -155,11 +156,16 @@ export default function EventPageClient({ id }: { id: string }) {
         </div>
 
         <div className="flex flex-col gap-5 min-w-0 lg:col-start-1 lg:row-start-2">
-          <LiveStats event={e} stats={s} interested={data.interested} phase={phase} cancelled={cancelled} />
+          {phase === "upcoming" && !cancelled ? (
+            <BeforeStart event={e} stats={s} interested={data.interested} now={now} />
+          ) : (
+            <LiveStats event={e} stats={s} interested={data.interested} phase={phase} cancelled={cancelled} stale={stale} />
+          )}
 
           <MapSection event={e} phase={phase} live={s.live} cancelled={cancelled} />
 
-          <Activity stats={s} now={now} />
+          {/* Finds only exist once the hunt has begun. */}
+          {(phase !== "upcoming" || s.claims > 0) && <Activity stats={s} now={now} />}
         </div>
 
         {/* ── Side column ─────────────────────────────────────────────── */}
@@ -329,8 +335,29 @@ function Hosts({ event: e }: { event: GdEvent }) {
   );
 }
 
-function LiveStats({ event: e, stats: s, interested, phase, cancelled }: {
-  event: GdEvent; stats: import("@/lib/events").EventStatsJson; interested: number; phase: "upcoming" | "live" | "ended"; cancelled: boolean;
+/** Before the start there's nothing to count yet: say when, and who's coming.
+ *  (The money card beside this already shows what's planned and placed.) */
+function BeforeStart({ event: e, interested, now }: {
+  event: GdEvent; stats: import("@/lib/events").EventStatsJson; interested: number; now: number;
+}) {
+  return (
+    <section className={`${CARD} p-6`} aria-labelledby="stats-h">
+      <h2 id="stats-h" className="text-lg/none text-heading">Drops unlock when it starts</h2>
+      <p className="mt-2 text-sm/[145%] text-nav-muted">
+        The G$ is hidden around {e.venueName} and unlocks {formatWhen(e.startsAt, e.tz).replace(" · ", " at ")}. Finds and numbers show up here once the hunt begins.
+      </p>
+      <div className={`mt-5 grid gap-3 ${interested > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
+        <Tile value={span(e.startsAt - now)} label="until the drops unlock" accent />
+        {interested > 0 && (
+          <Tile value={interested.toLocaleString()} label={interested === 1 ? "person interested" : "people interested"} />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function LiveStats({ event: e, stats: s, interested, phase, cancelled, stale }: {
+  event: GdEvent; stats: import("@/lib/events").EventStatsJson; interested: number; phase: "upcoming" | "live" | "ended"; cancelled: boolean; stale: boolean;
 }) {
   const dropped = g(s.droppedWei), claimed = g(s.claimedWei), hidden = g(s.liveWei);
   const usedPct = e.budgetG > 0 ? Math.min(999, Math.round((dropped / e.budgetG) * 100)) : 0;
@@ -344,22 +371,23 @@ function LiveStats({ event: e, stats: s, interested, phase, cancelled }: {
       <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <h2 id="stats-h" className="text-lg/none text-heading">{headline}</h2>
         {phase === "live" && !cancelled && (
-          <span className="inline-flex items-center gap-1.5 text-xs/none text-nav-muted">
-            <RefreshCw aria-hidden className="w-3.5 h-3.5 text-brand" strokeWidth={2} /> Updates live
+          <span className="inline-flex items-center gap-1.5 text-xs/none text-nav-muted" role="status">
+            <RefreshCw aria-hidden className={`w-3.5 h-3.5 ${stale ? "text-danger animate-spin" : "text-brand"}`} strokeWidth={2} />
+            {stale ? "Reconnecting…" : "Updates live"}
           </span>
         )}
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <Tile value={s.hunters.toLocaleString()} label={s.hunters === 1 ? "person found G$" : "people found G$"} accent />
         <Tile value={`${s.claims.toLocaleString()}`} label={`of ${s.drops.toLocaleString()} drops claimed`} />
-        <Tile value={`${claimed.toLocaleString()} G$`} label="G$ circulated" />
+        <Tile value={`${claimed.toLocaleString()} G$`} label="G$ found" />
         <Tile value={`${hidden.toLocaleString()} G$`} label={cancelled ? "locked by the cancellation" : phase === "upcoming" ? "waiting to unlock" : phase === "live" ? "still hidden" : "left unclaimed"} />
         <Tile value={`${dropped.toLocaleString()} G$`} label={`placed of ${e.budgetG.toLocaleString()} planned (${usedPct}%)`} />
         <Tile value={interested.toLocaleString()} label="interested" />
       </div>
       <BudgetBar className="mt-5" budgetG={e.budgetG} droppedG={dropped} claimedG={claimed} />
       <p className="mt-2 text-xs/[145%] text-nav-muted">
-        {dropped.toLocaleString()} of {e.budgetG.toLocaleString()} G$ placed · {claimed.toLocaleString()} found. Numbers come straight from the chain.
+        {dropped.toLocaleString()} of {e.budgetG.toLocaleString()} G$ placed · {claimed.toLocaleString()} found.
       </p>
       {phase === "ended" && !cancelled && (
         <Link href={`/events/${e.id}/report`} className="mt-4 inline-flex items-center gap-2 h-11 px-5 rounded-full border border-line text-sm/none text-heading hover:bg-surface">
@@ -449,6 +477,10 @@ function ActionsCard({ event: e, stats, phase, cancelled, interestedCount, viewe
       if (!res.ok) { setMsg(body.error ?? "Couldn't update. Try again."); return; }
       setOn(body.on); setCount(body.interested);
       if (body.on) track("event_reminder_on");
+      toast.success(body.on ? "Reminder on" : "Reminder off", {
+        id: `remind-${e.id}`,
+        description: body.on ? "We'll remind you about an hour before it starts." : undefined,
+      });
       onChanged();
     } catch { setMsg("Couldn't update. Try again."); }
     finally { setBusy(false); }
@@ -498,9 +530,13 @@ function ActionsCard({ event: e, stats, phase, cancelled, interestedCount, viewe
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : on ? <BellRing className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
             {!address ? "Sign in to get a reminder" : on ? "Reminder on" : "Remind me"}
           </button>
-          <p className="text-xs/[145%] text-nav-muted text-center">
-            {count.toLocaleString()} interested{on ? " · we'll ping you about an hour before it starts" : ""}
-          </p>
+          {(count > 0 || on) && (
+            <p className="text-xs/[145%] text-nav-muted text-center">
+              {on
+                ? `We'll remind you about an hour before it starts${count > 1 ? ` · ${count.toLocaleString()} people interested` : ""}`
+                : `${count.toLocaleString()} ${count === 1 ? "person" : "people"} interested`}
+            </p>
+          )}
           {pushOff && push.status !== "unsupported" && push.status !== "denied" && (
             <button type="button" onClick={() => push.subscribe()}
               className="h-11 rounded-full border border-line text-sm/none text-heading flex items-center justify-center gap-2 cursor-pointer hover:bg-surface">

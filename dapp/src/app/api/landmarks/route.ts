@@ -68,11 +68,11 @@ export async function POST(req: NextRequest) {
   // ── Structural validation ──────────────────────────────────────────────────
   if (!id || !LANDMARK_ID_RE.test(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   if (!signature || typeof signature !== "string" || !signature.startsWith("0x"))
-    return NextResponse.json({ error: "Missing signature" }, { status: 400 });
+    return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 400 });
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp))
     return NextResponse.json({ error: "Missing timestamp" }, { status: 400 });
   if (Math.abs(Date.now() - timestamp) > SIG_WINDOW)
-    return NextResponse.json({ error: "Signature expired — try again" }, { status: 400 });
+    return NextResponse.json({ error: "That took too long. Please try again." }, { status: 400 });
 
   const name = cleanLandmarkName(typeof body.name === "string" ? body.name : "");
   if (name.length < LANDMARK_NAME_MIN || name.length > LANDMARK_NAME_MAX)
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       signature: signature as `0x${string}`,
     })).toLowerCase();
   } catch {
-    return NextResponse.json({ error: "Bad signature" }, { status: 401 });
+    return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
   }
 
   const redis = getRedis();

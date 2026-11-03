@@ -29,7 +29,7 @@ type Events = {
 };
 
 export type ClaimFailReason =
-  | "rejected" | "too_far" | "not_verified" | "already_claimed" | "expired" | "gas" | "network" | "other";
+  | "rejected" | "too_far" | "not_verified" | "already_claimed" | "expired" | "gas" | "network" | "pending" | "other";
 
 /** Sort a raw claim error into a handful of buckets — never send the message itself. */
 export function claimFailReason(e: unknown): ClaimFailReason {

@@ -87,7 +87,7 @@ export function LandmarkEditSheet({
         <div className="flex gap-3 mt-3">
           <Button type="button" onClick={onClose} disabled={saving} className="h-14!">Cancel</Button>
           <Button type="submit" variant="primary" busy={saving} disabled={!nameOk} className="flex-1 h-14! text-base/none!">
-            {saving ? "Signing…" : "Save changes"}
+            {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
       </form>

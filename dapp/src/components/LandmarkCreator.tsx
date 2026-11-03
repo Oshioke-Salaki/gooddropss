@@ -256,13 +256,13 @@ export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", on
                   disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
               >
                 {saving
-                  ? <><Loader2 className="w-5 h-5 animate-spin" /> Signing…</>
+                  ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</>
                   : (isSuggest ? "Suggest place" : "Add place")}
               </button>
               <p className="mt-4 text-xs/[140%] text-nav-muted text-center">
                 {isSuggest
-                  ? "You sign to confirm — free, no gas. An admin reviews before it appears."
-                  : "You sign to confirm — free, no gas."}
+                  ? "You'll confirm it's you in your wallet. It's free. An admin reviews it before it appears."
+                  : "You'll confirm it's you in your wallet. It's free."}
               </p>
             </form>
           )}

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DropRarity } from "@/lib/utils";
 
 export interface HunterFind { lat: number; lng: number; amount: string; color: string }
@@ -42,6 +42,8 @@ export function useHunterProfile(address: string | null, isOwn: boolean) {
   const [data, setData] = useState<HunterProfileData | null>(null);
   const [badges, setBadges] = useState<WallBadge[] | null>(null);
   const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   useEffect(() => {
     if (!address) { setData(null); setBadges(null); setError(false); return; }
@@ -57,12 +59,12 @@ export function useHunterProfile(address: string | null, isOwn: boolean) {
     // hitting this endpoint also lazily awards anything newly eligible.
     const url = `/api/badges?address=${address.toLowerCase()}${isOwn ? "&fresh=1" : ""}`;
     fetch(url, isOwn ? { cache: "no-store" } : undefined)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("failed"))))
       .then((d) => { if (!cancelled) setBadges(Array.isArray(d.badges) ? d.badges : []); })
       .catch(() => { if (!cancelled) setBadges([]); });
 
     return () => { cancelled = true; };
-  }, [address, isOwn]);
+  }, [address, isOwn, attempt]);
 
-  return { data, badges, error };
+  return { data, badges, error, retry };
 }

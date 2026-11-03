@@ -11,9 +11,11 @@ import type { EventRow } from "./useEvents";
  * outcome is the first thing they need, so the status pill leads and a
  * reviewer's note is shown in full.
  */
-export function HostEvents({ rows, now, onEdit, onCancel }: {
+export function HostEvents({ rows, now, address, onEdit, onCancel }: {
   rows: EventRow[];
   now: number;
+  /** The signed-in wallet: only the organizer may edit or cancel, not co-hosts. */
+  address: string | undefined;
   onEdit: (e: GdEvent) => void;
   onCancel: (e: GdEvent) => void;
 }) {
@@ -21,13 +23,15 @@ export function HostEvents({ rows, now, onEdit, onCancel }: {
     <ul className="flex flex-col gap-2.5">
       {rows.map(({ event: e }) => {
         const ended = e.status === "approved" && eventPhase(e, now) === "ended";
-        const editable = e.status !== "cancelled" && !ended;
+        const organizer = !!address && e.organizer.toLowerCase() === address.toLowerCase();
+        const editable = organizer && e.status !== "cancelled" && !ended;
         return (
           <li key={e.id} className="bg-white rounded-3xl p-4 shadow-[0px_0px_12px_0px_#0000000A] flex flex-col gap-3">
             <div className="flex items-start gap-3">
               <Link href={`/events/${e.id}`} className="min-w-0 flex-1 group">
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusPill event={e} />
+                  {!organizer && <span className="rounded-full bg-surface px-2.5 py-1.5 text-xs/none text-nav-muted">Co-host</span>}
                   <span className="text-xs/none text-nav-muted">{formatWhen(e.startsAt, e.tz)}</span>
                 </div>
                 <p className="mt-2 text-base/[1.3] text-heading truncate group-hover:text-brand">{e.title}</p>

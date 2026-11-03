@@ -57,7 +57,7 @@ export function useWalletSession(address: string | undefined) {
       try {
         signature = await signMessageAsync({ message: walletSessionMessage(address, timestamp) });
       } catch {
-        setError("Signing was cancelled.");
+        setError("You didn't confirm in your wallet. Tap to try again.");
         return false;
       }
       const res = await fetch("/api/session", {
@@ -65,8 +65,8 @@ export function useWalletSession(address: string | undefined) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address, signature, timestamp }),
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) { setError(d.error ?? "Couldn't confirm your wallet. Try again."); return false; }
+      await res.json().catch(() => ({}));
+      if (!res.ok) { setError(res.status === 429 ? "Too many tries. Wait a minute, then try again." : "Couldn't confirm your wallet. Try again."); return false; }
       announceSessionChanged();
       return true;
     } catch {

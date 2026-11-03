@@ -29,6 +29,9 @@ interface Props {
   onSelectBadge: (b: WallBadge) => void;
   /** Rendered by the shell so it can sit in the sheet's grab area. */
   header?: React.ReactNode;
+  /** The stats failed to load: show a retry instead of skeletons forever. */
+  error?: boolean;
+  onRetry?: () => void;
 }
 
 /**
@@ -39,12 +42,13 @@ interface Props {
  * endpoints, and neither should hold up the other.
  */
 export function ProfileContent({
-  address, rank, data, badges, selectedBadgeId, onSelectBadge, header,
+  address, rank, data, badges, selectedBadgeId, onSelectBadge, header, error = false, onRetry,
 }: Props) {
   const profile = useProfile(address);
   const streak = useHunterStreak(address);
   const [copied, setCopied] = useState(false);
-  const loading = data === null;
+  // A failed load stops the skeletons; the retry strip above explains why.
+  const loading = data === null && !error;
 
   const earnedCount = badges?.filter((b) => b.earned).length ?? 0;
   const coreTotal = badges?.length ?? 0;
@@ -98,7 +102,7 @@ export function ProfileContent({
               />
               <MetaChip
                 icon={<Users className="w-[18px] h-[18px]" />}
-                value={String(data?.referralCount ?? 0)}
+                value={data ? String(data.referralCount) : "–"}
                 label="Referred"
                 loading={loading}
               />
@@ -119,29 +123,41 @@ export function ProfileContent({
         </div>
       </div>
 
+      {error && data === null && (
+        <div className="mx-6 mt-6 rounded-2xl bg-surface p-4 flex items-center gap-3" role="alert">
+          <p className="flex-1 min-w-0 text-sm/[140%] text-nav-muted">Couldn&apos;t load these stats. Check your connection.</p>
+          {onRetry && (
+            <button type="button" onClick={onRetry}
+              className="shrink-0 h-10 px-4 rounded-full bg-white text-sm/none text-heading cursor-pointer hover:bg-nav-controls">
+              Try again
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Core stats ───────────────────────────────────────────────────── */}
       <div className="pt-6 px-6 pb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <StatPill
           icon={<Target className="w-5 h-5" />}
-          value={String(data?.claims ?? 0)}
+          value={data ? String(data.claims) : "–"}
           label="Drops claimed"
           loading={loading}
         />
         <StatPill
           icon={<MapPin className="w-5 h-5" />}
-          value={String(data?.created ?? 0)}
+          value={data ? String(data.created) : "–"}
           label="Drops created"
           loading={loading}
         />
         <StatPill
           icon={<Coins className="w-5 h-5" />}
-          value={data ? formatG$(BigInt(data.totalClaimedWei)) : "0"}
+          value={data ? formatG$(BigInt(data.totalClaimedWei)) : "–"}
           label="G$ claimed"
           loading={loading}
         />
         <StatPill
           icon={<Coins className="w-5 h-5" />}
-          value={data ? formatG$(BigInt(data.totalDroppedWei)) : "0"}
+          value={data ? formatG$(BigInt(data.totalDroppedWei)) : "–"}
           label="G$ dropped"
           loading={loading}
         />
@@ -218,7 +234,7 @@ export function ProfileContent({
             {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-16 rounded-2xl" />)}
           </div>
         </DrawerSection>
-      ) : data.recentClaims.length > 0 ? (
+      ) : data && data.recentClaims.length > 0 ? (
         <DrawerSection title="Recent claims">
           <div className="flex flex-col gap-2">
             {data.recentClaims.map((c) => (

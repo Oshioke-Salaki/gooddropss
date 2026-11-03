@@ -12,6 +12,8 @@ export type ClaimErrorKind =
   | "verify"     // GoodDollar verification needed
   | "location"   // not close enough
   | "event"      // an event drop that hasn't unlocked yet (terminal for now)
+  | "answer"     // riddle answer missing or wrong (fix the answer, then retry)
+  | "task"       // merchant task drop not unlocked yet
   | "unknown";
 
 export interface FriendlyError {
@@ -48,6 +50,28 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
   const eventLock = /(this drop unlocks when .+? starts\.|.+? was (?:cancelled|taken down), so its drops stay locked\.|the hunt at .+? has ended\.|you've reached the limit of \d+ drops? per person at .+?\. leave the rest for others\.)/i.exec(text);
   if (eventLock) return { message: eventLock[1], terminal: true, kind: "event" };
 
+  // The server's own claim sentences (see /api/claim-proof). Matched before the
+  // fuzzy rules below so, e.g., a wrong riddle answer never reads as a generic
+  // failure and our own outage never reads as "get closer".
+  if (/not quite|that's not the answer|wrong answer/.test(m) && !/too many/.test(m))
+    return { message: "Not quite. That's not the answer. Have another go.", terminal: false, kind: "answer" };
+  if (/answer the riddle/.test(m))
+    return { message: "Answer the riddle to claim this drop.", terminal: false, kind: "answer" };
+  if (/too many wrong answers/.test(m))
+    return { message: "Too many wrong answers. Wait a minute, then try again.", terminal: false, kind: "answer" };
+  if (/riddle is missing/.test(m))
+    return { message: "This drop's riddle is missing, so it can't be claimed.", terminal: true, kind: "expired" };
+  if (/do the task|merchant scan/.test(m))
+    return { message: "Do the task first, then ask the shop to scan your code to unlock this drop.", terminal: false, kind: "task" };
+  if (/private drop token/.test(m))
+    return { message: "This is a private drop. Open it from the link you were sent to claim it.", terminal: true, kind: "expired" };
+  if (/impossible travel/.test(m))
+    return { message: "Your location jumped too far, too fast. Wait a moment where you are, then try again.", terminal: false, kind: "location" };
+  if (/spoof/.test(m))
+    return { message: "We couldn't confirm your location. Move a little closer and try again.", terminal: false, kind: "location" };
+  if (/temporarily unavailable|not configured|storage unavailable|internal error|couldn't check this drop's event/.test(m))
+    return { message: "Something's not working on our side. Give it a minute and try again.", terminal: false, kind: "network" };
+
   // The contract's own revert reason is the most reliable signal there is, so
   // read it first. viem's message also carries the call's signature and args
   // ("…uint256 deadline…", hex addresses), which the fuzzy rules below would
@@ -81,7 +105,7 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
   // Gas / faucet — the big one behind the reported errors. Not enough CELO for the
   // network fee, or GoodDollar's gas faucet couldn't top the wallet up.
   if (/insufficient funds|insufficient balance|gas \* price|gas required exceeds|balance threshold|after faucet|faucet|out of gas|not enough celo|funds for gas/.test(m))
-    return { message: "You don't have enough CELO for the tiny network fee, and the gas faucet is busy right now. Give it a minute, then tap Try again.", terminal: false, kind: "gas" };
+    return { message: "We couldn't cover the small cost of this just now. Give it a minute, then tap Try again.", terminal: false, kind: "gas" };
 
   // Server proof expired / already used → just retry to mint a fresh one.
   if (/proofexpired|proof expired|proofalreadyused|proof (has )?(already )?(been )?(used|expired)|deadline (passed|exceeded|expired)|signature expired/.test(m))
@@ -98,7 +122,7 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
     return { message: "You're not close enough to this drop — get nearer and try again.", terminal: false, kind: "location" };
 
   // Anything else: stay human, never leak the raw string.
-  return { message: "Couldn't complete the claim — please try again.", terminal: false, kind: "unknown" };
+  return { message: "That didn't go through. Please try again.", terminal: false, kind: "unknown" };
 }
 
 // Same idea for the daily UBI claim (GoodDollar Citizen SDK), which mostly fails
@@ -107,7 +131,7 @@ export function friendlyUbiError(raw: unknown): string {
   const fe = friendlyClaimError(raw);
   if (fe.kind === "rejected") return "";
   if (fe.kind === "gas")
-    return "GoodDollar's gas faucet is busy — it couldn't cover the fee to send your UBI. Try again in a minute.";
+    return "We couldn't cover the small cost of collecting your UBI just now. Try again in a minute.";
   if (fe.kind === "unknown") return "Couldn't claim your UBI right now — please try again.";
   return fe.message;
 }

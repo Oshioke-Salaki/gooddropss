@@ -93,10 +93,10 @@ export default function OgImage() {
               padding: "12px 22px", borderRadius: 100,
               fontSize: 22, fontWeight: 600, display: "flex",
             }}>
-              Real G$, locked on-chain
+              Real G$, held until found
             </div>
             <div style={{ color: MUTED, fontSize: 22, display: "flex" }}>
-              Real-world GPS · Celo network
+              Real places · verified people
             </div>
           </div>
         </div>

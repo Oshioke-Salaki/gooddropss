@@ -85,7 +85,7 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
         <div>
           <h1 className="text-[32px]/none lg:text-4xl/none text-heading">GoodDrops in numbers</h1>
           <p className="text-sm/[140%] text-nav-muted mt-3 max-w-[560px]">
-            Real G$ hidden at real places and found by face-verified people. Straight from the chain, updated every minute.
+            Real G$ hidden at real places and found by face-verified people. Public and checkable, updated every minute.
           </p>
         </div>
         <div className="flex items-center gap-2">

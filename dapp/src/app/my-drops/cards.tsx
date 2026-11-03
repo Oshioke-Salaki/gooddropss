@@ -74,6 +74,7 @@ export function DropCard({
   onReactivate,
   isReclaiming,
   isReactivating,
+  locked,
   onShare,
 }: {
   drop: Drop;
@@ -81,6 +82,8 @@ export function DropCard({
   onReactivate: (id: bigint) => void;
   isReclaiming: boolean;
   isReactivating: boolean;
+  /** Another action on the page is running: one money action at a time. */
+  locked?: boolean;
   onShare: (drop: Drop) => void;
 }) {
   const isExpiredActive =
@@ -88,7 +91,7 @@ export function DropCard({
     drop.expiry < Math.floor(Date.now() / 1000);
   const isActive =
     drop.status === DROP_STATUS.Active && !isExpiredActive;
-  const busy = isReclaiming || isReactivating;
+  const busy = isReclaiming || isReactivating || !!locked;
   const { isPrivate, hint: cleanHint, chainNextId, isChainLast } = parseDropHint(drop.hint);
   const isChain = chainNextId !== null || isChainLast;
 
@@ -140,7 +143,7 @@ export function DropCard({
         )}
         {isExpiredActive && (
           <p className="flex items-center gap-2 text-sm/none text-nav-muted">
-            <Clock className="w-4 h-4 shrink-0" strokeWidth={2} /> Reactivate it, or reclaim your G$
+            <Clock className="w-4 h-4 shrink-0" strokeWidth={2} /> Reactivate it, or take your G$ back
           </p>
         )}
       </div>
@@ -164,7 +167,7 @@ export function DropCard({
             className={`${PILL} sm:flex-1 h-12`}
           >
             {isReclaiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" strokeWidth={1.75} />}
-            {isReclaiming ? "Reclaiming…" : `Reclaim ${formatG$(drop.amount)} G$`}
+            {isReclaiming ? "Taking it back…" : `Take back ${formatG$(drop.amount)} G$`}
           </button>
         </div>
       )}

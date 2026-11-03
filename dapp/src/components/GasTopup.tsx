@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAccount } from "wagmi";
-import { Fuel } from "lucide-react";
+import { Zap } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { publicClient } from "@/lib/publicClient";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { parseEther } from "viem";
@@ -19,10 +20,9 @@ const ASK_GAP_MS  = 6 * 60 * 60 * 1000; // at most one ask per 6h per device
 export function GasTopup({ preview = false }: { preview?: boolean } = {}) {
   const { address } = useAccount();
   const { isVerified } = useIdentityStatus();
-  const [notice, setNotice] = useState(preview);
 
   useEffect(() => {
-    if (preview) return;
+    if (preview) { notify(); return; }
     if (!address || !isVerified) return;
     try {
       const last = Number(localStorage.getItem(ASK_KEY) ?? 0);
@@ -41,28 +41,19 @@ export function GasTopup({ preview = false }: { preview?: boolean } = {}) {
           body: JSON.stringify({ address }),
         });
         const d = await res.json().catch(() => ({}));
-        if (!cancelled && d.ok) {
-          setNotice(true);
-          setTimeout(() => setNotice(false), 5000);
-        }
+        if (!cancelled && d.ok) notify();
       } catch { /* silent — this is a background nicety */ }
     })();
     return () => { cancelled = true; };
   }, [address, isVerified, preview]);
 
-  if (!notice) return null;
-  return (
-    <div
-      role="status"
-      className="modal-fade-in fixed left-1/2 -translate-x-1/2 z-[1300] pointer-events-none font-sans
-        flex items-center gap-2.5 rounded-full bg-nav-active text-white p-1.5 pr-5
-        shadow-[0px_4px_16px_0px_#00000029] max-w-[calc(100vw-24px)]"
-      style={{ bottom: "calc(140px + env(safe-area-inset-bottom, 0px))" }}
-    >
-      <span className="w-8 h-8 shrink-0 rounded-full bg-white/10 flex items-center justify-center">
-        <Fuel className="w-4 h-4" strokeWidth={2} />
-      </span>
-      <span className="text-sm/none truncate">Gas topped up — you&apos;re covered for claims</span>
-    </div>
-  );
+  return null;
+}
+
+function notify() {
+  toast("You're topped up for claiming", {
+    id: "gas-topup",
+    description: "GoodDollar covered the small cost of claiming, so it stays free for you.",
+    icon: <Zap className="w-4 h-4" strokeWidth={2} />,
+  });
 }

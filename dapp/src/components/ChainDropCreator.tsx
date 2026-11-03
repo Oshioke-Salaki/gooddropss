@@ -1,9 +1,9 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useReadContract } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
-import { parseUnits, maxUint256 } from "viem";
+import { parseUnits, maxUint256, type Hex } from "viem";
 import { decodeEventLog } from "viem";
 import { Plus, Trash2, Loader2, Copy, Check, Trophy } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -27,6 +27,8 @@ import { useProfile } from "@/hooks/useProfile";
 import { addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
 import type { ChainStop, Landmark } from "@/types";
 import { track } from "@/lib/analytics";
+import { confirmTx, StillPendingError, TxFailedError } from "@/lib/txOutcome";
+import { friendlyClaimError } from "@/lib/claimErrors";
 
 const CHAIN_CLUE_MAX = 120;
 
@@ -119,7 +121,15 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   // Which stop is currently picking a location
   const [pickingIdx, setPickingIdx]   = useState<number | null>(null);
 
+  // A deploy in progress. Every stop is its own write, so if one fails the
+  // ones already hidden must never be paid for again: "Continue" picks up at
+  // the first stop not yet placed, from the stops as they were when it began.
+  const run = useRef<{
+    stops: ChainStop[]; next: number; nextDropId: string | null; expiry: number; pendingHash: Hex | null;
+  } | null>(null);
+
   const reset = useCallback(() => {
+    run.current = null;
     setStops([makeEmptyStop(), makeEmptyStop()]);
     setDuration(86_400);
     setStatus("idle");
@@ -174,6 +184,7 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
 
   async function handleDeploy() {
     if (!address) return;
+    if (run.current) { await deploy(); return; } // resuming: the stops are fixed
     if (!hasUsername) {
       setErrMsg("Set a username before dropping.");
       window.dispatchEvent(new CustomEvent("gd:setName"));
@@ -185,91 +196,115 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
       return;
     }
     if (!canDeploy) return;
+
+    // Keep expiry safely inside the contract window [now+minExpiryDuration,
+    // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
+    // lower bound (the "1h" option sits on the floor) and cap under the ceiling.
+    // See drop/useCreateDrop for the full rationale (a naive "+120" overflowed 30d).
+    const SKEW = 300;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
+    const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
+    run.current = { stops: stops.map((x) => ({ ...x })), next: stops.length - 1, nextDropId: null, expiry, pendingHash: null };
+    await deploy();
+  }
+
+  async function deploy() {
+    const r = run.current;
+    if (!r || !address) return;
+    const total = r.stops.length;
     setStatus("approving");
     setErrMsg("");
 
     try {
-      // Single approval for total amount
+      // One approval covers every stop.
+      const remaining = r.stops.slice(0, r.next + 1).reduce((sum, x) => sum + toWei(x.amount), 0n);
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI,
         functionName: "allowance", args: [address, GOOD_DROPS_ADDRESS],
       });
-
-      if (allowance < totalWei) {
+      if (allowance < remaining) {
         const approveTx = await writeContractAsync({
           address: G_TOKEN_ADDRESS, abi: ERC20_ABI,
           functionName: "approve", args: [GOOD_DROPS_ADDRESS, maxUint256],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        await confirmTx(approveTx);
       }
 
       setStatus("deploying");
-      setProgress({ current: 0, total: stops.length });
-
-      // Keep expiry safely inside the contract window [now+minExpiryDuration,
-      // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
-      // lower bound (the "1h" option sits on the floor) and cap under the ceiling.
-      // See drop/useCreateDrop for the full rationale (a naive "+120" overflowed 30d).
-      const SKEW = 300;
-      const nowSec = Math.floor(Date.now() / 1000);
-      const maxDuration = Math.max(...DURATIONS.map((d) => d.seconds));
-      const expiry = Math.min(nowSec + duration + SKEW, nowSec + maxDuration - SKEW);
-      let nextDropId: string | null = null;
 
       // Deploy REVERSE: last stop first → get its ID → use it in the previous stop's hint
-      for (let i = stops.length - 1; i >= 0; i--) {
-        const stop     = stops[i];
-        const isFirst  = i === 0;
-        const isLast   = i === stops.length - 1;
-        setProgress({ current: stops.length - i, total: stops.length });
+      for (let i = r.next; i >= 0; i--) {
+        const stop    = r.stops[i];
+        const isFirst = i === 0;
+        const isLast  = i === total - 1;
+        setProgress({ current: total - i, total });
 
-        // Build hint based on position in chain
         let storedHint: string;
         if (isLast) {
           storedHint = buildChainLastHint(stop.clue);
         } else if (isFirst) {
           // First stop is PUBLIC — shows on the map as entry point
-          storedHint = buildChainHint(stop.clue, nextDropId!);
+          storedHint = buildChainHint(stop.clue, r.nextDropId!);
         } else {
           // Middle stops are PRIVATE
-          storedHint = buildPrivateChainHint(stop.clue, nextDropId!);
+          storedHint = buildPrivateChainHint(stop.clue, r.nextDropId!);
         }
 
-        const amountWei = toWei(stop.amount);
-        const tx = await writeContractAsync({
-          address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI,
-          functionName: "createDrop",
-          args: [
-            degToGps(stop.lat!),
-            degToGps(stop.lng!),
-            amountWei,
-            expiry,
-            storedHint,
-          ],
-        });
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx });
+        // A stop sent last time whose ending we didn't see: finish waiting on
+        // it instead of hiding it a second time.
+        if (!r.pendingHash) {
+          r.pendingHash = await writeContractAsync({
+            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI,
+            functionName: "createDrop",
+            args: [degToGps(stop.lat!), degToGps(stop.lng!), toWei(stop.amount), r.expiry, storedHint],
+          });
+        }
+        let receipt;
+        try {
+          receipt = await confirmTx(r.pendingHash);
+        } catch (e) {
+          if (e instanceof TxFailedError) r.pendingHash = null; // it did nothing: safe to send again
+          throw e;
+        }
+        r.pendingHash = null;
 
-        // Extract drop ID from DropCreated event
+        let id: string | null = null;
         for (const log of receipt.logs) {
           try {
             const decoded = decodeEventLog({
               abi: GOOD_DROPS_ABI, data: log.data, topics: log.topics, eventName: "DropCreated",
             });
-            if (decoded.args.dropId !== undefined) {
-              nextDropId = String(decoded.args.dropId);
-              break;
-            }
-          } catch {}
+            if (decoded.args.dropId !== undefined) { id = String(decoded.args.dropId); break; }
+          } catch { /* not this log */ }
         }
+        if (id === null) throw new Error("Couldn't read the new stop");
+        r.nextDropId = id;
+        r.next = i - 1;
       }
 
-      setFirstDropId(nextDropId); // last created = first stop (entry point)
+      setFirstDropId(r.nextDropId); // last created = first stop (entry point)
+      run.current = null;
       window.dispatchEvent(new CustomEvent("gd:drop-created"));
-      track("drop_created", { kind: "chain", count: stops.length });
+      track("drop_created", { kind: "chain", count: total });
       setStatus("done");
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong");
+      const done = total - 1 - r.next;
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected" && done === 0 && !r.pendingHash) {
+        // Closed the first prompt: nothing happened, start over cleanly.
+        run.current = null;
+        setStatus("idle");
+        setErrMsg("");
+        return;
+      }
+      const why = e instanceof StillPendingError
+        ? "The last stop is still going through."
+        : fe.kind === "rejected" ? "You stopped before the rest were hidden." : fe.message;
+      setErrMsg(done > 0 || r.pendingHash
+        ? `${why} ${done} of ${total} stops are hidden. Tap Continue to finish the rest. You won't pay for the hidden ones again.`
+        : why);
+      if (done > 0) window.dispatchEvent(new CustomEvent("gd:drop-created"));
       setStatus("error");
     }
   }
@@ -293,9 +328,9 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
   const missingLocation = stops.some((s) => s.lat === null);
 
   const ctaLabel =
-    status === "approving"  ? "Approving G$…" :
-    status === "deploying"  ? `Creating stop ${progress.current} of ${progress.total}…` :
-    status === "error"      ? "Try again" :
+    status === "approving"  ? "Getting ready…" :
+    status === "deploying"  ? `Hiding stop ${progress.current} of ${progress.total}…` :
+    status === "error"      ? (run.current ? `Continue: ${run.current.next + 1} ${run.current.next === 0 ? "stop" : "stops"} left` : "Try again") :
     canDeploy               ? `Deploy ${stops.length}-stop hunt — ${formatG$(totalWei)} G$` :
     missingLocation         ? "Choose every location first" :
     "Complete every stop to deploy";
@@ -546,7 +581,9 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
 
               <button
                 type="button"
-                onClick={status === "error" ? () => { setStatus("idle"); setErrMsg(""); } : handleDeploy}
+                onClick={status === "error"
+                  ? (run.current ? deploy : () => { setStatus("idle"); setErrMsg(""); })
+                  : handleDeploy}
                 disabled={busy || (status !== "error" && !canDeploy)}
                 className={CTA}
               >

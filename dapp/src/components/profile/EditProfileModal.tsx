@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSignMessage } from "wagmi";
 import { AtSign } from "lucide-react";
+import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
 import { Avatar } from "@/components/Avatar";
 import { AvatarGrid } from "./ProfileSetup";
@@ -9,7 +10,15 @@ import { useProfile, invalidateProfile, refreshProfile } from "@/hooks/useProfil
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,24}$/;
 
-type Check = "idle" | "same" | "invalid" | "checking" | "available" | "taken";
+type Check = "idle" | "same" | "invalid" | "checking" | "available" | "taken" | "unknown";
+
+/** Server and wallet errors in plain words; never a raw "Invalid signature". */
+function plainSaveError(raw: unknown, fallback: string): string {
+  const m = typeof raw === "string" ? raw : "";
+  if (!m) return fallback;
+  if (/signature|expired|0x|nonce|rpc/i.test(m)) return "Couldn't confirm it's you. Please try again.";
+  return m.length <= 120 ? m : fallback;
+}
 
 interface Props {
   address: string;
@@ -51,19 +60,24 @@ export function EditProfileModal({ address, onClose }: Props) {
     if (val === currentName.toLowerCase())  { setCheck("same");    return; }
     if (!USERNAME_RE.test(val))             { setCheck("invalid"); return; }
     setCheck("checking");
+    // Only the latest check may answer: a slow reply for an older name must
+    // never mark the current one "Available".
+    let stale = false;
     const t = setTimeout(async () => {
       try {
         const res  = await fetch(`/api/profile/check?username=${encodeURIComponent(val)}`);
+        if (!res.ok) throw new Error(String(res.status));
         const data = await res.json();
-        setCheck(data.available ? "available" : "taken");
+        if (!stale) setCheck(data.available ? "available" : "taken");
       } catch {
-        setCheck("idle");
+        // Couldn't check: let them try saving anyway (the server decides).
+        if (!stale) setCheck("unknown");
       }
     }, 400);
-    return () => clearTimeout(t);
+    return () => { stale = true; clearTimeout(t); };
   }, [input, currentName]);
 
-  const nameChanged   = check === "available";
+  const nameChanged   = check === "available" || check === "unknown";
   const nameBlocking  = check === "invalid" || check === "taken" || check === "checking";
   const avatarChanged = avatar !== null && avatar !== currentAvatar;
   const canSave = (nameChanged || avatarChanged) && !nameBlocking && !saving;
@@ -83,7 +97,7 @@ export function EditProfileModal({ address, onClose }: Props) {
           body: JSON.stringify({ address, avatar, signature, timestamp }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) { setError(data.error ?? "Couldn't save your avatar. Try again."); return; }
+        if (!res.ok) { setError(plainSaveError(data.error, "Couldn't save your avatar. Try again.")); return; }
       }
 
       if (nameChanged) {
@@ -100,19 +114,20 @@ export function EditProfileModal({ address, onClose }: Props) {
         if (!res.ok) {
           // The avatar (if any) is already saved — reflect that before bailing.
           refreshProfile(address);
-          setError(data.error ?? "Couldn't save that name. Try another.");
+          setError(plainSaveError(data.error, "Couldn't save that name. Try another."));
           return;
         }
       }
 
       invalidateProfile(address);
       refreshProfile(address);
+      toast.success("Profile updated");
       onClose();
     } catch (e: unknown) {
       const err = e as { shortMessage?: string; message?: string };
       const msg = err.shortMessage ?? err.message ?? "";
-      // Declining the signature isn't an error worth shouting about.
-      setError(/reject|denied|cancel/i.test(msg) ? "" : (msg || "Something went wrong."));
+      // Declining in the wallet isn't an error worth shouting about.
+      setError(/reject|denied|cancel/i.test(msg) ? "" : "Couldn't save. Check your connection and try again.");
       refreshProfile(address);
     } finally {
       setSaving(false);
@@ -125,6 +140,7 @@ export function EditProfileModal({ address, onClose }: Props) {
     : check === "checking"  ? { text: "Checking…", tone: "muted" }
     : check === "taken"     ? { text: "That name is taken", tone: "bad" }
     : check === "available" ? { text: "Available", tone: "ok" }
+    : check === "unknown"   ? { text: "Couldn't check this name right now. You can still try saving.", tone: "muted" }
     : null;
 
   const selected = avatar ?? currentAvatar;

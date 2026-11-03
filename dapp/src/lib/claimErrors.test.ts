@@ -9,7 +9,8 @@ describe("friendlyClaimError — the real reported errors", () => {
     expect(r.kind).toBe("gas");
     expect(r.terminal).toBe(false);
     expect(r.message).not.toMatch(/0x|have 111|gas \* price/);
-    expect(r.message.toLowerCase()).toContain("celo");
+    expect(r.message).not.toMatch(/celo|gas|faucet|fee/i); // plain words, no jargon
+    expect(r.message.toLowerCase()).toContain("try again");
   });
 
   it("maps 'Magic RPC Error [-32603] Load failed' to a network hiccup", () => {
@@ -47,7 +48,8 @@ describe("friendlyClaimError — the real reported errors", () => {
 describe("friendlyUbiError — the faucet threshold error", () => {
   it("maps 'Failed to meet balance threshold after faucet request' to a faucet message", () => {
     const msg = friendlyUbiError(new Error("Failed to meet balance threshold after faucet request."));
-    expect(msg.toLowerCase()).toContain("faucet");
+    expect(msg).not.toMatch(/celo|gas|faucet/i);
+    expect(msg.toLowerCase()).toContain("try again");
     expect(msg).not.toMatch(/threshold after faucet request/i);
   });
   it("stays silent on user rejection", () => {
@@ -102,3 +104,31 @@ describe("friendlyClaimError — event drops", () => {
   });
 });
 
+
+describe("friendlyClaimError — the server's own claim sentences", () => {
+  it("tells a hunter their riddle answer was wrong, and lets them retry", () => {
+    const fe = friendlyClaimError(new Error("Not quite — that's not the answer."));
+    expect(fe.kind).toBe("answer");
+    expect(fe.terminal).toBe(false);
+    expect(fe.message).toMatch(/not the answer/i);
+  });
+  it("too many wrong answers asks them to wait", () => {
+    const fe = friendlyClaimError(new Error("Too many wrong answers — wait a minute and try again."));
+    expect(fe.kind).toBe("answer");
+    expect(fe.message).toMatch(/wait a minute/i);
+  });
+  it("a task drop explains the shop scan", () => {
+    expect(friendlyClaimError(new Error("Do the task, then have the merchant scan your QR to unlock this drop.")).kind).toBe("task");
+  });
+  it("our own outage never reads as 'get closer'", () => {
+    const fe = friendlyClaimError(new Error("GPS signing not configured"));
+    expect(fe.kind).toBe("network");
+    expect(fe.message).not.toMatch(/closer/i);
+  });
+  it("too far still reads as distance", () => {
+    expect(friendlyClaimError(new Error("Too far from drop")).kind).toBe("location");
+  });
+  it("the unknown fallback fits any action, not only claims", () => {
+    expect(friendlyClaimError(new Error("weird")).message).not.toMatch(/claim/i);
+  });
+});

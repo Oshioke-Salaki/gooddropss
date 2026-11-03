@@ -47,6 +47,7 @@ const PAGE = 25;
 // threshold, paid first-come-first-served until the pot is exhausted.
 export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Props) {
   const [data, setData] = useState<Data | null>(null);
+  const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
@@ -58,7 +59,10 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
     if (force) p.set("_", String(Date.now()));
     const q = p.toString() ? `?${p}` : "";
     return fetch(`/api/comp/referrals${q}`, force ? { cache: "reload" } : undefined)
-      .then((r) => r.json()).then(setData).catch(() => {});
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => { setData(d); setFailed(false); })
+      // A failed refresh keeps the board; a failed first load says so.
+      .catch(() => setFailed(true));
   }, [address]);
   useEffect(() => { load(); }, [load]);
 
@@ -141,6 +145,19 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
       details={details(byRoot.get(e.root)!)}
     />
   );
+
+  if (failed && !data) {
+    return (
+      <div className="bg-white rounded-3xl p-8 flex flex-col items-center text-center gap-4 shadow-[0px_0px_12px_0px_#0000000A]" role="alert">
+        <p className="text-lg/none text-heading">Couldn&apos;t load the board</p>
+        <p className="text-sm/[145%] text-nav-muted">Check your connection and try again.</p>
+        <button type="button" onClick={() => { void refresh(); }} disabled={refreshing}
+          className="h-11 px-6 rounded-full bg-brand text-white text-sm/none cursor-pointer hover:bg-brand/90 disabled:opacity-70">
+          {refreshing ? "Trying…" : "Try again"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>

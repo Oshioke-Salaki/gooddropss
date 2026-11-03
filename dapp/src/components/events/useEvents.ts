@@ -27,7 +27,12 @@ export interface EventDetail {
  * Fetch JSON on mount and keep it fresh while the tab is visible.
  * Refetches immediately when the tab comes back and after any drop is created
  * in the app (gd:drop-created). A failed refresh keeps the last good data;
- * `error` only shows when there's nothing to show.
+ * `error` only shows when there's nothing to show, and `stale` says the data
+ * on screen is from the last good fetch (`lastOk`), so views never claim to be
+ * live while frozen.
+ *
+ * One request at a time: a burst of triggers (a cancel fires session + events
+ * changes, and the page refreshes too) collapses into at most one follow-up.
  */
 function usePolled<T>(url: string | null, intervalMs: number) {
   const [data, setData] = useState<T | null>(null);
@@ -36,29 +41,50 @@ function usePolled<T>(url: string | null, intervalMs: number) {
   // 404 for a host whose browser hasn't confirmed the wallet yet (unapproved event).
   const [needsVerify, setNeedsVerify] = useState(false);
   const [loading, setLoading] = useState(!!url);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastOk, setLastOk] = useState<number | null>(null);
   const alive = useRef(true);
   const urlRef = useRef(url);
   urlRef.current = url;
+  const inFlight = useRef<Promise<void> | null>(null);
+  const again = useRef(false);
 
-  const load = useCallback(async () => {
+  const fetchOnce = useCallback(async () => {
     const u = urlRef.current;
     if (!u) return;
     try {
       const res = await fetch(u, { cache: "no-store" });
       if (res.status === 404) {
         const body = await res.json().catch(() => ({}));
-        if (alive.current) { setNotFound(true); setNeedsVerify(!!body?.needsVerify); setData(null); }
+        if (alive.current && urlRef.current === u) { setNotFound(true); setNeedsVerify(!!body?.needsVerify); setData(null); }
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
       const json = (await res.json()) as T;
-      if (alive.current && urlRef.current === u) { setData(json); setError(false); setNotFound(false); setNeedsVerify(false); }
+      if (alive.current && urlRef.current === u) {
+        setData(json); setError(false); setNotFound(false); setNeedsVerify(false); setLastOk(Date.now());
+      }
     } catch {
       if (alive.current) setError(true);
     } finally {
       if (alive.current) setLoading(false);
     }
   }, []);
+
+  const load = useCallback((): Promise<void> => {
+    if (inFlight.current) { again.current = true; return inFlight.current; }
+    const run = (async () => {
+      do { again.current = false; await fetchOnce(); } while (again.current && alive.current);
+    })();
+    inFlight.current = run.finally(() => { inFlight.current = null; });
+    return inFlight.current;
+  }, [fetchOnce]);
+
+  /** For "Try again" buttons: shows progress while it runs. */
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await load(); } finally { if (alive.current) setRefreshing(false); }
+  }, [load]);
 
   useEffect(() => {
     alive.current = true;
@@ -68,20 +94,23 @@ function usePolled<T>(url: string | null, intervalMs: number) {
     const tick = () => { if (document.visibilityState === "visible") load(); };
     const id = window.setInterval(tick, intervalMs);
     document.addEventListener("visibilitychange", tick);
-    window.addEventListener("gd:drop-created", load);
-    window.addEventListener("gd:events-changed", load);
-    window.addEventListener("gd:session-changed", load);
+    window.addEventListener("gd:drop-created", tick);
+    window.addEventListener("gd:events-changed", tick);
+    window.addEventListener("gd:session-changed", tick);
     return () => {
       alive.current = false;
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
-      window.removeEventListener("gd:drop-created", load);
-      window.removeEventListener("gd:events-changed", load);
-      window.removeEventListener("gd:session-changed", load);
+      window.removeEventListener("gd:drop-created", tick);
+      window.removeEventListener("gd:events-changed", tick);
+      window.removeEventListener("gd:session-changed", tick);
     };
   }, [url, intervalMs, load]);
 
-  return { data, error: error && !data, notFound, needsVerify, loading: loading && !data && !notFound, refresh: load };
+  return {
+    data, error: error && !data, stale: error && !!data, lastOk, notFound, needsVerify,
+    loading: loading && !data && !notFound, refreshing, refresh,
+  };
 }
 
 export function useEventLists() {

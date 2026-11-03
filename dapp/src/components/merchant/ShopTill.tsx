@@ -68,11 +68,19 @@ export function ShopTill({ spot, onClose }: { spot: Spot; onClose: () => void })
     return () => { audio.current?.close().catch(() => {}); };
   }, []);
 
+  // One poll at a time, and only the newest answer counts: a slow reply that
+  // lands after a newer one must not make a payment vanish and "arrive" again.
+  const inFlight = useRef(false);
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    const mine = ++seq.current;
     try {
       const r = await fetch(`/api/spots/${spot.id}/payments?sync=1`, { cache: "no-store" });
       if (!r.ok) throw new Error(String(r.status));
       const d = await r.json();
+      if (mine !== seq.current) return;
       const list: SpotPayment[] = (Array.isArray(d.payments) ? d.payments : [])
         .slice().sort((a: SpotPayment, b: SpotPayment) => b.ts - a.ts);
       // The first load is history; anything new after that is a live payment.
@@ -86,11 +94,15 @@ export function ShopTill({ spot, onClose }: { spot: Spot; onClose: () => void })
           }
         }
       }
-      seen.current = new Set(list.map((p) => p.tx));
+      // Remember every payment ever shown, so none can chime twice.
+      if (!seen.current) seen.current = new Set();
+      for (const p of list) seen.current.add(p.tx);
       setPayments(list);
       setError(false);
     } catch {
       setError(true);
+    } finally {
+      inFlight.current = false;
     }
   }, [spot.id]);
 

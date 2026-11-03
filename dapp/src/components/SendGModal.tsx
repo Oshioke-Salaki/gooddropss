@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   useAccount,
   usePublicClient,
@@ -11,6 +11,9 @@ import { parseUnits, isAddress, getAddress } from "viem";
 import { X, Loader2, Check, ExternalLink, SendHorizontal } from "lucide-react";
 import { G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
+import { confirmTx, StillPendingError } from "@/lib/txOutcome";
+import { friendlyClaimError } from "@/lib/claimErrors";
+import { toast } from "@/lib/toast";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 
@@ -31,13 +34,17 @@ interface Props {
 export function SendGModal({ address, balance, onClose }: Props) {
   // Below lg this is a bottom sheet: it slides up on open and can be thumbed
   // down from the header to dismiss. At lg and up the hook is inert.
+  // Never closable mid-send: the result would be lost from view.
+  const busyRef = useRef(false);
   const { sheetRef, sheetStyle, handleProps } = useSheetDrag({
-    onDismiss: onClose,
+    onDismiss: () => { if (!busyRef.current) onClose(); },
   });
 
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">(
+  // "pending": sent, but we couldn't see it finish (slow network). The G$ may
+  // already be on its way, so we check on it instead of offering to send again.
+  const [status, setStatus] = useState<"idle" | "sending" | "checking" | "pending" | "done" | "error">(
     "idle",
   );
   const [err, setErr] = useState("");
@@ -48,14 +55,15 @@ export function SendGModal({ address, balance, onClose }: Props) {
   const { chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
 
-  const sending = status === "sending";
+  const sending = status === "sending" || status === "checking";
+  busyRef.current = sending;
 
   // Docked beside the wallet card on desktop (so not a Sheet), but a layer of
   // its own: Escape closes Send and leaves the wallet open, and focus goes back
   // to the "Send G$" row afterwards. The wallet already holds the scroll lock.
   // Not while a transfer is in flight — closing mid-send would hide the result.
   useEscapeLayer(true, () => {
-    if (status !== "sending") onClose();
+    if (!sending) onClose();
   });
   useFocusReturn(true, sheetRef);
 
@@ -105,7 +113,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
           await switchChainAsync({ chainId: celo.id });
         } catch {
           setStatus("error");
-          setErr("Switch your wallet to the Celo network, then try again.");
+          setErr("Your wallet needs to switch to Celo first. Approve the switch in your wallet, then try again.");
           return;
         }
       }
@@ -121,13 +129,11 @@ export function SendGModal({ address, balance, onClose }: Props) {
             args: [to, amountWei],
           });
         } catch (e: unknown) {
-          const m = (e as { shortMessage?: string }).shortMessage ?? "";
+          const fe = friendlyClaimError(e);
           setStatus("error");
-          setErr(
-            m
-              ? `This transfer would fail: ${m}`
-              : "This transfer would fail on-chain.",
-          );
+          setErr(fe.kind === "network"
+            ? fe.message
+            : "This send wouldn't go through. Check the address and amount, then try again. Nothing was sent.");
           return;
         }
       }
@@ -140,25 +146,37 @@ export function SendGModal({ address, balance, onClose }: Props) {
         args: [to, amountWei],
       });
       setTxHash(hash);
-      const rc = await publicClient?.waitForTransactionReceipt({ hash });
-      if (rc && rc.status === "reverted") {
-        setStatus("error");
-        setErr("Transfer reverted on-chain.");
-        return;
-      }
+      await finish(hash);
+    } catch (e: unknown) {
+      const fe = friendlyClaimError(e);
+      // Closed the wallet prompt: nothing was sent, nothing to say.
+      if (fe.kind === "rejected") { setStatus("idle"); return; }
+      setStatus("error");
+      setErr(fe.kind === "gas"
+        ? "Sending needs a tiny amount of CELO to cover the cost, and this wallet doesn't have enough. Add a little, then try again."
+        : fe.kind === "unknown" ? "That send didn't go through. Nothing left your wallet. Please try again." : fe.message);
+    }
+  }
+
+  // Wait for a sent transfer to land. Throws nothing: every ending gets a screen.
+  async function finish(hash: `0x${string}`) {
+    try {
+      await confirmTx(hash);
       setStatus("done");
+      toast.success(`Sent ${amount} G$`);
       // Nudge every balance instance to refetch immediately.
       window.dispatchEvent(new Event("gd:verified"));
-    } catch (e: unknown) {
-      const error = e as { shortMessage?: string; message?: string };
-      const msg = error.shortMessage ?? error.message ?? "Transfer failed.";
+    } catch (e) {
+      if (e instanceof StillPendingError) { setStatus("pending"); setErr(""); return; }
       setStatus("error");
-      if (/User rejected|denied|rejected the request/i.test(msg))
-        setErr("You cancelled the transaction.");
-      else if (/insufficient funds/i.test(msg))
-        setErr("Not enough CELO for gas — top up a little CELO first.");
-      else setErr(msg);
+      setErr("That send didn't go through. Nothing left your wallet. Please try again.");
     }
+  }
+
+  async function checkAgain() {
+    if (!txHash) return;
+    setStatus("checking");
+    await finish(txHash);
   }
 
   const inputCls =
@@ -194,8 +212,9 @@ export function SendGModal({ address, balance, onClose }: Props) {
           <h2 className="text-base/[100%] text-heading">Send G$</h2>
           <button
             onClick={onClose}
+            disabled={sending}
             aria-label="Close"
-            className="p-1.5 text-black rounded-full bg-surface cursor-pointer hover:opacity-80 transition-opacity"
+            className="p-1.5 text-black rounded-full bg-surface cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <X className="w-5 h-5" />
           </button>
@@ -221,7 +240,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 text-sm/[100%] text-brand hover:underline"
             >
-              View on Celoscan <ExternalLink className="w-3.5 h-3.5" />
+              View receipt <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
           <button
@@ -229,6 +248,26 @@ export function SendGModal({ address, balance, onClose }: Props) {
             className="w-full bg-nav-active py-[22px] flex justify-center items-center rounded-full text-white cursor-pointer hover:opacity-90 transition-opacity"
           >
             Send more
+          </button>
+        </div>
+      ) : status === "pending" || (status === "checking" && txHash) ? (
+        /* Sent, but we couldn't see it land: never offer to send again here. */
+        <div className="flex flex-col gap-y-4 items-center text-center py-2" role="status">
+          <div className="w-12 h-12 rounded-full bg-surface flex items-center justify-center">
+            <Loader2 className={`w-6 h-6 text-heading ${status === "checking" ? "animate-spin" : ""}`} />
+          </div>
+          <div>
+            <p className="text-lg/[100%] text-heading mb-2">Still on its way</p>
+            <p className="text-sm/[140%] text-nav-muted">
+              Your {amount} G$ was sent, but the network is slow to confirm it. Check again in a moment instead of sending a second time.
+            </p>
+          </div>
+          <button
+            onClick={checkAgain}
+            disabled={status === "checking"}
+            className="w-full bg-nav-active py-4 flex justify-center items-center gap-2 rounded-full text-white cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-wait"
+          >
+            {status === "checking" ? <><Loader2 className="w-4 h-4 animate-spin" /> Checking…</> : "Check again"}
           </button>
         </div>
       ) : (
@@ -310,7 +349,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
               {sending ? "Sending…" : "Send G$"}
             </button>
             <h5 className="text-center text-xs/[100%] text-nav-muted">
-              Sends on Celo · a tiny bit of CELO covers gas
+              G$ arrives in seconds. Double-check the address: sends can&apos;t be undone.
             </h5>
           </div>
         </>

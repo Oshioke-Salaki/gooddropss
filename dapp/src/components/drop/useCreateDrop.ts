@@ -1,9 +1,10 @@
 "use client";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSignMessage, useReadContract } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
-import { parseUnits, maxUint256, decodeEventLog } from "viem";
+import { parseUnits, maxUint256, decodeEventLog, isAddress, type Hex } from "viem";
+import { confirmTx, StillPendingError } from "@/lib/txOutcome";
 import { publicClient } from "@/lib/publicClient";
 import {
   GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, G_TOKEN_ADDRESS, ERC20_ABI, CLAIM_RADIUS_M,
@@ -36,6 +37,14 @@ export const DURATIONS = [
   { label: "7d",  seconds: 604_800 },
   { label: "30d", seconds: 2_592_000 },
 ];
+
+/** Plain words for a failed drop, never the wallet's raw text. */
+function dropErrorMessage(e: unknown): string {
+  const fe = friendlyClaimError(e);
+  if (fe.kind === "gas") return "We couldn't cover the small cost of hiding this just now. Give it a minute, then try again. Nothing was spent.";
+  if (fe.kind === "network") return fe.message;
+  return "That drop didn't go through, and none of your G$ was spent. Please try again.";
+}
 
 // Multi-drop: scatter up to this many identical drops around one spot. Capped
 // because the batch is one transaction and the gas grows with it.
@@ -188,11 +197,13 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
   const answerLeaked = hasRiddle && answerNorm.length > 2 && normalizeAnswer(hint).includes(answerNorm);
 
   const busy = status === "approving" || status === "dropping" || status === "riddle" || status === "multi";
+  // A typo here would make a private drop unclaimable by the person it's for.
+  const targetInvalid = isPrivate && !campaignId && targetAddress.trim() !== "" && !isAddress(targetAddress.trim());
 
   const canDrop =
     isConnected && lat !== null && lng !== null &&
     !isNaN(amountNum) && amountNum > 0 && hint.length <= hintMaxLen &&
-    (!hasRiddle || riddleReady) &&
+    (!hasRiddle || riddleReady) && !targetInvalid &&
     !busy && !insufficientBalance && !overMax && !underMin;
 
   const btnLabel =
@@ -249,6 +260,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
   useEffect(() => { if (eventId) setIsPrivate(false); }, [eventId, isPrivate]);
 
   const reset = useCallback(() => {
+    sent.current = null;
     setStatus("idle"); setErrMsg(""); setHint(""); setAmount("10");
     setQuantity(1); setMultiProgress(null); setDuration(86_400);
     setLat(defaultLocation?.lat ?? null); setLng(defaultLocation?.lng ?? null); setPlaceName(defaultLocation?.placeName ?? null);
@@ -258,7 +270,15 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
     setPending(null); setResuming(false);
   }, [defaultLocation?.lat, defaultLocation?.lng, defaultLocation?.placeName]);
 
-  const handleClose = useCallback(() => { reset(); onClose(); }, [reset, onClose]);
+  // One drop at a time (see handleDrop). Declared here so closing can respect it.
+  const inFlight = useRef(false);
+  // A drop that was sent but whose ending we haven't seen yet. While this is
+  // set, "Try again" finishes THIS drop rather than hiding (and paying for) a
+  // second one.
+  const sent = useRef<{ hash: Hex; kind: "single" | "multi"; token: string | null; riddleToken: string | null } | null>(null);
+  // Never close mid-drop: the flow would keep running out of sight, and the
+  // person couldn't tell whether their G$ moved.
+  const handleClose = useCallback(() => { if (inFlight.current) return; reset(); onClose(); }, [reset, onClose]);
 
   const handleLocationConfirm = useCallback((pickedLat: number, pickedLng: number, name: string | null) => {
     setLat(pickedLat); setLng(pickedLng); setPlaceName(name); setPickerOpen(false);
@@ -374,6 +394,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
 
     setErrMsg("");
     setMultiProgress({ done: 0, failed: 0, total: qty });
+    setStatus("approving"); // busy from the first tap, before any network wait
     try {
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
@@ -385,7 +406,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
           address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve",
           args: [GOOD_DROPS_ADDRESS, maxUint256],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        await confirmTx(approveTx);
       }
 
       setStatus("multi");
@@ -393,28 +414,31 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
         address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createManyDrops",
         args: [lats, lngs, amountWei as bigint, expiry, eventId ? buildEventHint(hint, eventId) : hint],
       });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      setMultiProgress({ done: qty, failed: 0, total: qty });
-      window.dispatchEvent(new CustomEvent("gd:drop-created"));
-      track("drop_created", { kind: "multi", count: qty });
-      setStatus("done");
+      sent.current = { hash: tx, kind: "multi", token: null, riddleToken: null };
     } catch (e: unknown) {
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); setMultiProgress(null); return; }
-      setErrMsg(fe.message);
+      setErrMsg(dropErrorMessage(e));
       setStatus("error");
+      return;
     }
+    await finishSent();
+  // finishSent is declared below and stable for this purpose (it reads refs/state setters).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, lat, lng, amountWei, maxDrop, minDrop, totalWei, balance, qty, hint, hintMaxLen,
       dropExpiry, writeContractAsync, eventId]);
 
   // ── Single drop ─────────────────────────────────────────────────────────────
-  const handleDrop = useCallback(async () => {
+  const runDrop = useCallback(async () => {
+    // A drop already sent whose ending we didn't see: check on it, don't resend.
+    if (sent.current) { await finishSent(); return; }
     if (!guard()) return;
-    if (multiActive) { handleMultiDrop(); return; }
+    if (multiActive) { await handleMultiDrop(); return; }
     // Never create a second drop while one is stranded — that escrows twice.
     if (pending) return;
     if (isNaN(amountNum) || amountNum <= 0) { setErrMsg("Enter a valid amount."); return; }
     if (hint.length > hintMaxLen) { setErrMsg(`Clue is too long (max ${hintMaxLen} chars).`); return; }
+    if (targetInvalid) { setErrMsg("That recipient address doesn't look right. Check it, or leave it empty."); return; }
 
     const amountBig = amountWei;
     if (amountBig <= 0n) { setErrMsg("Enter a valid amount."); return; }
@@ -436,13 +460,21 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
     let token: string | null = null;
 
     if (isPrivate && !campaignId) {
-      const res = await fetch("/api/private-drops", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat, lng }),
-      });
-      if (!res.ok) { setErrMsg("Could not store private drop — try again."); return; }
-      const data = await res.json();
-      token = data.token as string;
+      setErrMsg("");
+      setStatus("approving");
+      try {
+        const res = await fetch("/api/private-drops", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lat, lng }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        token = data.token as string;
+      } catch {
+        setErrMsg("Couldn't save your private spot. Check your connection and try again. Nothing was spent.");
+        setStatus("error");
+        return;
+      }
       onChainLat = 0;
       onChainLng = 0;
     }
@@ -476,21 +508,22 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
         });
         if (!res.ok) {
           const b = await res.json().catch(() => ({}));
-          setErrMsg(b.error ?? "Could not save the riddle — try again.");
+          setErrMsg(typeof b.error === "string" && b.error.length < 120 && !/signature|0x/i.test(b.error)
+            ? b.error : "Couldn't save the riddle. Try again. Nothing was spent.");
           setStatus("error");
           return;
         }
       } catch (e: unknown) {
-        const err = e as { shortMessage?: string; message?: string };
-        const msg = err.message ?? "";
-        setErrMsg(/reject|denied|cancel/i.test(msg)
-          ? "Signature cancelled — no drop was created."
-          : (err.shortMessage ?? msg ?? "Couldn't set up the riddle."));
+        const fe = friendlyClaimError(e);
+        if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; } // nothing was created
+        setErrMsg("Couldn't set up the riddle. Try again. Nothing was spent.");
         setStatus("error");
         return;
       }
     }
 
+    setErrMsg("");
+    setStatus("approving"); // busy from the first tap, before any network wait
     try {
       const allowance = await publicClient.readContract({
         address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "allowance",
@@ -502,57 +535,108 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
           address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve",
           args: [GOOD_DROPS_ADDRESS, maxUint256],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        await confirmTx(approveTx);
       }
       setStatus("dropping");
       const dropTx = await writeContractAsync({
         address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
         args: [degToGps(onChainLat), degToGps(onChainLng), amountBig as bigint, expiry, storedHint],
       });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: dropTx });
-
-      let newDropId: bigint | null = null;
-      for (const log of receipt.logs) {
-        try {
-          const decoded = decodeEventLog({
-            abi: GOOD_DROPS_ABI, data: log.data, topics: log.topics, eventName: "DropCreated",
-          });
-          if (decoded.args.dropId !== undefined) { newDropId = decoded.args.dropId as bigint; break; }
-        } catch { /* not this log */ }
-      }
-
-      if (token && newDropId !== null) {
-        fetch("/api/private-drops", {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, dropId: newDropId.toString() }),
-        }).catch(() => {});
-        setPrivateToken(token);
-        // Persist locally so the share link survives closing the drawer.
-        try { localStorage.setItem(`gd:privdrop:${newDropId}`, token); } catch { /* private mode */ }
-      }
-
-      setCreatedDropId(newDropId);
-
-      if (riddleOn && riddleToken && newDropId !== null) {
-        const p: PendingRiddle = { dropId: newDropId.toString(), token: riddleToken };
-        savePending(p);
-        setPending(p);
-        const ok = await bindRiddle(p);
-        if (!ok) return; // bindRiddle parked it in "riddleFailed" (resume UI)
-      }
-
-      window.dispatchEvent(new CustomEvent("gd:drop-created"));
-      track("drop_created", { kind: "single" });
-      setStatus("done");
+      sent.current = { hash: dropTx, kind: "single", token, riddleToken: riddleOn ? riddleToken : null };
     } catch (e: unknown) {
-      const err = e as { shortMessage?: string; message?: string };
-      setErrMsg(err.shortMessage ?? err.message ?? "Something went wrong — try again.");
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+      setErrMsg(dropErrorMessage(e));
       setStatus("error");
+      return;
     }
+    await finishSent();
+  // finishSent is declared below; it only reads refs and stable setters.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [guard, multiActive, handleMultiDrop, pending, amountNum, amountWei, hint, hintMaxLen,
       maxDrop, minDrop, balance, dropExpiry, lat, lng, isPrivate, campaignId, eventId,
-      targetAddress, riddleOn, riddleQuestion, riddleAnswer, address,
+      targetAddress, targetInvalid, riddleOn, riddleQuestion, riddleAnswer, address,
       signMessageAsync, writeContractAsync, bindRiddle]);
+
+  // Wait for a sent drop to land, then do what follows it (private link,
+  // riddle). Every ending gets a clear screen; nothing here ever re-sends.
+  async function finishSent() {
+    const s0 = sent.current;
+    if (!s0) return;
+    setErrMsg("");
+    setStatus(s0.kind === "multi" ? "multi" : "dropping");
+    let receipt;
+    try {
+      receipt = await confirmTx(s0.hash);
+    } catch (e) {
+      if (e instanceof StillPendingError) {
+        setErrMsg("Your drop is still being hidden. Give it a moment, then tap Try again to check on it.");
+      } else {
+        sent.current = null; // it did nothing, so a fresh try is safe
+        setErrMsg("That drop didn't go through, and none of your G$ was spent. Please try again.");
+        if (s0.kind === "multi") setMultiProgress(null);
+      }
+      setStatus("error");
+      return;
+    }
+    sent.current = null;
+
+    if (s0.kind === "multi") {
+      setMultiProgress((m) => (m ? { ...m, done: m.total } : m));
+      window.dispatchEvent(new CustomEvent("gd:drop-created"));
+      track("drop_created", { kind: "multi", count: qty });
+      setStatus("done");
+      return;
+    }
+
+    let newDropId: bigint | null = null;
+    for (const log of receipt.logs) {
+      try {
+        const decoded = decodeEventLog({
+          abi: GOOD_DROPS_ABI, data: log.data, topics: log.topics, eventName: "DropCreated",
+        });
+        if (decoded.args.dropId !== undefined) { newDropId = decoded.args.dropId as bigint; break; }
+      } catch { /* not this log */ }
+    }
+
+    if (s0.token && newDropId !== null) {
+      // The share link only works once the server knows this drop's id, so
+      // don't let one flaky request break it.
+      const body = JSON.stringify({ token: s0.token, dropId: newDropId.toString() });
+      for (let i = 0; i < 4; i++) {
+        const ok = await fetch("/api/private-drops", { method: "PATCH", headers: { "Content-Type": "application/json" }, body })
+          .then((r) => r.ok).catch(() => false);
+        if (ok) break;
+        await new Promise((r) => setTimeout(r, 800 * (i + 1)));
+      }
+      setPrivateToken(s0.token);
+      // Persist locally so the share link survives closing the drawer.
+      try { localStorage.setItem(`gd:privdrop:${newDropId}`, s0.token); } catch { /* private mode */ }
+    }
+
+    setCreatedDropId(newDropId);
+
+    if (s0.riddleToken && newDropId !== null) {
+      const p: PendingRiddle = { dropId: newDropId.toString(), token: s0.riddleToken };
+      savePending(p);
+      setPending(p);
+      const ok = await bindRiddle(p);
+      if (!ok) return; // bindRiddle parked it in "riddleFailed" (resume UI)
+    }
+
+    window.dispatchEvent(new CustomEvent("gd:drop-created"));
+    track("drop_created", { kind: "single" });
+    setStatus("done");
+  }
+
+  // One drop at a time. A ref, not state, so a fast double tap can't slip a
+  // second run in before React re-renders the button as busy: the first awaits
+  // (private-spot save, allowance read) run while status is still "idle".
+  const handleDrop = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try { await runDrop(); } finally { inFlight.current = false; }
+  }, [runDrop]);
 
   // ── Share ───────────────────────────────────────────────────────────────────
   const handleShare = useCallback(() => {
@@ -599,7 +683,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
     // form
     amount, setAmount, quantity, setQuantity, duration, setDuration, placedForS,
     eventExpiresAt: eventEndsAt ? eventEndsAt + EVENT_GRACE_S : null,
-    hint, setHint, isPrivate, setIsPrivate, targetAddress, setTargetAddress,
+    hint, setHint, isPrivate, setIsPrivate, targetAddress, setTargetAddress, targetInvalid,
     hasRiddle, setHasRiddle, riddleQuestion, setRiddleQuestion,
     riddleAnswer, setRiddleAnswer,
     // derived

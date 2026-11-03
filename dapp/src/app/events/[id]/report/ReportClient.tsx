@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "@/lib/toast";
 import { ArrowLeft, Check, Copy, Printer, RefreshCw } from "lucide-react";
 import { Nav } from "@/components/Nav";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
@@ -51,7 +52,17 @@ export default function ReportClient({ id }: { id: string }) {
   useProfiles(addrs);
 
   if (state === "missing") {
-    return <Shell><div className={`${CARD} p-8 max-w-[520px] mx-auto mt-10 text-center`}><p className="text-xl/none text-heading">Report not found</p></div></Shell>;
+    return (
+      <Shell>
+        <div className={`${CARD} p-8 max-w-[520px] mx-auto mt-10 flex flex-col items-center gap-4 text-center`}>
+          <p className="text-xl/none text-heading">Report not found</p>
+          <p className="text-sm/[145%] text-nav-muted">Reports are ready for approved events. This one may have been removed.</p>
+          <Link href="/events" className="h-11 px-6 rounded-full border border-line text-sm/none text-heading flex items-center gap-2 hover:bg-surface">
+            <ArrowLeft className="w-4 h-4" /> All events
+          </Link>
+        </div>
+      </Shell>
+    );
   }
   if (state === "error") {
     return (
@@ -90,11 +101,17 @@ export default function ReportClient({ id }: { id: string }) {
     `${s.hunters.toLocaleString()} ${s.hunters === 1 ? "person" : "people"} found G$, verified as unique humans with GoodDollar.`,
     `${found.toLocaleString()} G$ found across ${s.claims.toLocaleString()} drops (${foundPct}% of the ${placed.toLocaleString()} G$ placed).`,
     `${data.interested.toLocaleString()} people asked to be reminded.`,
-    `All figures are on the Celo blockchain: ${typeof window !== "undefined" ? window.location.origin : "https://www.gooddrops.xyz"}/events/${e.id}`,
+    `Every amount is public and can be checked independently. Live page: ${typeof window !== "undefined" ? window.location.origin : "https://www.gooddrops.xyz"}/events/${e.id}`,
   ].join("\n");
 
   async function copy() {
-    try { await navigator.clipboard.writeText(summary); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard blocked */ }
+    try {
+      await navigator.clipboard.writeText(summary);
+      setCopied(true); setTimeout(() => setCopied(false), 1800);
+      toast.success("Summary copied", { description: "Paste it into an email or a message." });
+    } catch {
+      toast.error("Couldn't copy here", { description: "Your browser blocked it. Use Save as PDF instead." });
+    }
   }
 
   return (
@@ -139,7 +156,7 @@ export default function ReportClient({ id }: { id: string }) {
           <Tile value={data.interested.toLocaleString()} label="asked to be reminded" />
         </div>
         <p className="mt-4 text-xs/[145%] text-nav-muted">
-          Each person verified once with GoodDollar&apos;s face check, and linked wallets count as one person. Amounts are read from the Celo blockchain.
+          Each person verified once with GoodDollar&apos;s face check, and linked wallets count as one person. Every amount is public and can be checked independently.
         </p>
       </section>
 

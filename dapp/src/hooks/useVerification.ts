@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { useIdentitySDK } from "@goodsdks/identity-sdk";
 import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
@@ -26,6 +26,13 @@ export function useVerification() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [verificationAttemptedAt, setVerificationAttemptedAt] = useState<number | null>(null);
+  // A failed link waits for the person to tap Try again. Without this, the
+  // effect below re-ran on every failure, re-prompting the wallet in a loop.
+  const [linkFailed, setLinkFailed] = useState(false);
+  // Network blips are retried a few times before we admit an error, so the
+  // status never sits on "loading" forever.
+  const blips = useRef(0);
+  const blipTimer = useRef<number | null>(null);
 
   const isPendingVerification =
     !isVerifying && verificationAttemptedAt !== null && status !== "verified";
@@ -40,6 +47,7 @@ export function useVerification() {
 
       const walletStatus = await claimSDK.getWalletClaimStatus();
 
+      blips.current = 0;
       if (walletStatus.status === "not_whitelisted") {
         setStatus("not_verified");
       } else {
@@ -56,6 +64,10 @@ export function useVerification() {
         msg.includes("ERR_NAME_NOT_RESOLVED") ||
         msg.includes("network")
       ) {
+        blips.current += 1;
+        if (blips.current >= 4) { blips.current = 0; setStatus("error"); return; }
+        if (blipTimer.current) window.clearTimeout(blipTimer.current);
+        blipTimer.current = window.setTimeout(() => { void checkVerification(); }, 3000 * blips.current);
         return;
       }
       console.error("Verification check failed:", error);
@@ -77,10 +89,12 @@ export function useVerification() {
       if (finalLink) {
         setFvLink(finalLink);
       } else {
+        setLinkFailed(true);
         setStatus("error");
       }
     } catch (e) {
       console.error("Failed to generate FV link:", e);
+      setLinkFailed(true);
       setStatus("error");
     } finally {
       setIsGeneratingLink(false);
@@ -93,16 +107,25 @@ export function useVerification() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, !!publicClient, !!identitySDK, !!walletClient?.account?.address]);
 
-  // Record timestamp when modal opens
+  // Record timestamp when modal opens; a fresh open gets a fresh link attempt.
   useEffect(() => {
     if (isVerifying) setVerificationAttemptedAt(Date.now());
+    else setLinkFailed(false);
   }, [isVerifying]);
 
-  // Generate FV link once when modal opens
+  useEffect(() => () => { if (blipTimer.current) window.clearTimeout(blipTimer.current); }, []);
+
+  // Generate FV link once when modal opens (and again only when asked to).
   useEffect(() => {
-    if (isVerifying && !fvLink && !isGeneratingLink) generateLink();
+    if (isVerifying && !fvLink && !isGeneratingLink && !linkFailed) generateLink();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVerifying, !!fvLink, isGeneratingLink]);
+  }, [isVerifying, !!fvLink, isGeneratingLink, linkFailed]);
+
+  /** "Try again": retry whatever failed (the link, or the status check). */
+  const refresh = async () => {
+    if (linkFailed) { setStatus("loading"); setLinkFailed(false); return; } // the effect regenerates the link
+    await checkVerification();
+  };
 
   // Polling: while modal is open OR during grace period after close
   useEffect(() => {
@@ -134,6 +157,6 @@ export function useVerification() {
     setIsVerifying,
     isGeneratingLink,
     isPendingVerification,
-    refresh: checkVerification,
+    refresh,
   };
 }

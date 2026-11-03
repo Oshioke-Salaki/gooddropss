@@ -40,7 +40,7 @@ export function ShopReceipt({ amount, shop, tx, paidAt, onDone }: {
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1.5 text-sm/none text-brand hover:underline"
       >
-        View transaction <ExternalLink className="w-4 h-4" />
+        View receipt <ExternalLink className="w-4 h-4" />
       </a>
       <button
         type="button"

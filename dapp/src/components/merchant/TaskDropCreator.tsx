@@ -1,8 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSignMessage, useReadContract } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
-import { parseUnits, maxUint256, decodeEventLog } from "viem";
+import { parseUnits, maxUint256, decodeEventLog, type Hex } from "viem";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, G_TOKEN_ADDRESS, ERC20_ABI } from "@/lib/contracts";
@@ -13,6 +13,8 @@ import type { Spot } from "@/types";
 import { taskCreateMessage } from "@/lib/taskCreateMsg";
 import { Check, Loader2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
+import { confirmTx, StillPendingError, TxFailedError } from "@/lib/txOutcome";
+import { friendlyClaimError } from "@/lib/claimErrors";
 
 const DURATIONS = [
   { label: "1 day", s: 86_400 },
@@ -46,12 +48,15 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   const [duration, setDuration] = useState(604_800);
   const [status, setStatus] = useState<Status>("idle");
   const [err, setErr]       = useState("");
-  // Set when the drop minted but the task record didn't save — lets the merchant
-  // finish saving WITHOUT re-funding (which would mint a second, wasted drop).
-  const [pendingSave, setPendingSave] = useState<{ dropId: string; sig: string } | null>(null);
+  // Once the reward has been sent, every later step (seeing it land, reading
+  // its id, the owner's confirmation, saving the task) resumes from here.
+  // While this is set the button can only finish the job, never fund again.
+  const job = useRef<{ hash: Hex; dropId: string | null; sig: string | null } | null>(null);
+  const [resumable, setResumable] = useState(false);
 
-  const amountNum = parseFloat(amount);
-  const amountWei = !isNaN(amountNum) && amountNum > 0 ? parseUnits(amount, 18) : 0n;
+  // type="number" accepts things like "1e5" that parseUnits can't read.
+  let amountWei = 0n;
+  try { if (/^\d*\.?\d+$/.test(amount.trim()) && Number(amount) > 0) amountWei = parseUnits(amount.trim(), 18); } catch { amountWei = 0n; }
   const busy = status === "approving" || status === "creating" || status === "saving";
 
   const problem =
@@ -63,7 +68,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
     null;
 
   async function handleCreate() {
-    if (!address || problem) return;
+    if (!address || problem || job.current) return;
     setErr(""); setStatus("approving");
     try {
       // 1. Approve escrow if needed.
@@ -72,7 +77,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
       });
       if (allowance < amountWei) {
         const aTx = await writeContractAsync({ address: G_TOKEN_ADDRESS, abi: ERC20_ABI, functionName: "approve", args: [GOOD_DROPS_ADDRESS, maxUint256] });
-        await publicClient.waitForTransactionReceipt({ hash: aTx });
+        await confirmTx(aTx);
       }
 
       // 2. Create the drop at the spot, tagged [T:spotId] with a hunter-facing clue.
@@ -86,61 +91,95 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
         address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "createDrop",
         args: [degToGps(spot.lat), degToGps(spot.lng), amountWei, expiry, hint],
       });
-      const rc = await publicClient.waitForTransactionReceipt({ hash: dTx });
-      window.dispatchEvent(new CustomEvent("gd:drop-created"));
-
-      // 3. Extract the new dropId from the DropCreated event.
-      let dropId: string | null = null;
-      for (const log of rc.logs) {
-        try {
-          const dec = decodeEventLog({ abi: GOOD_DROPS_ABI, data: log.data, topics: log.topics, eventName: "DropCreated" });
-          if (dec.args.dropId !== undefined) { dropId = String(dec.args.dropId); break; }
-        } catch { /* not this log */ }
-      }
-      if (!dropId) throw new Error("Created, but couldn't read the drop id — refresh and try again.");
-
-      // 4. Store the task record (owner-signed).
-      const sig = await signMessageAsync({ message: taskCreateMessage(dropId, spot.id) });
-      await saveTask(dropId, sig);
+      job.current = { hash: dTx, dropId: null, sig: null };
+      setResumable(true);
     } catch (e: unknown) {
-      const m = (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message ?? "Failed";
-      setErr(/rejected|denied/i.test(m) ? "Cancelled." : m);
+      const fe = friendlyClaimError(e);
+      if (fe.kind === "rejected") { setStatus("idle"); return; } // nothing was sent
+      setErr(fe.kind === "network" ? fe.message : "That didn't go through, and none of your G$ was spent. Please try again.");
+      setStatus("error");
+      return;
+    }
+    await finish();
+  }
+
+  // Steps 3 and 4, resumable: see the reward land, read its id, confirm it's
+  // yours, save the task. Never sends money.
+  async function finish() {
+    const j = job.current;
+    if (!j || !address) return;
+    setErr("");
+    try {
+      if (!j.dropId) {
+        setStatus("creating");
+        let rc;
+        try {
+          rc = await confirmTx(j.hash);
+        } catch (e) {
+          if (e instanceof TxFailedError) {
+            job.current = null; setResumable(false);
+            setErr("That didn't go through, and none of your G$ was spent. Please try again.");
+            setStatus("error");
+            return;
+          }
+          throw e;
+        }
+        window.dispatchEvent(new CustomEvent("gd:drop-created"));
+        for (const log of rc.logs) {
+          try {
+            const dec = decodeEventLog({ abi: GOOD_DROPS_ABI, data: log.data, topics: log.topics, eventName: "DropCreated" });
+            if (dec.args.dropId !== undefined) { j.dropId = String(dec.args.dropId); break; }
+          } catch { /* not this log */ }
+        }
+        if (!j.dropId) throw new Error("no drop id");
+      }
+      if (!j.sig) {
+        setStatus("saving");
+        j.sig = await signMessageAsync({ message: taskCreateMessage(j.dropId, spot.id) });
+      }
+      await saveTask(j.dropId, j.sig);
+    } catch (e: unknown) {
+      const fe = friendlyClaimError(e);
+      setErr(
+        e instanceof StillPendingError
+          ? "Your reward is still being funded. Give it a moment, then tap Finish setting up. You won't be charged again."
+          : fe.kind === "rejected"
+            ? "Your reward is funded. Approve the request in your wallet to finish setting it up. You won't be charged again."
+            : "Your reward is funded, but we couldn't finish setting it up. Tap Finish setting up. You won't be charged again.",
+      );
       setStatus("error");
     }
   }
 
   // Persist the task record with retries. The mint tx is already confirmed, so a
-  // failure here is almost always read-after-write RPC lag on the server — retry
-  // a few times, and if it still fails keep the dropId+sig so the merchant can
-  // finish saving without minting (and paying for) a second drop.
+  // failure here is almost always read-after-write lag on the server — retry a
+  // few times, and if it still fails keep the job so the merchant can finish
+  // without minting (and paying for) a second drop.
   async function saveTask(dropId: string, sig: string) {
     if (!address) return;
     setStatus("saving"); setErr("");
-    let lastErr = "Saving the task failed.";
     for (let i = 0; i < 3; i++) {
       try {
         const res = await fetch("/api/task/create", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dropId, spotId: spot.id, task: cleanTask(task), ownerAddress: address, signature: sig }),
         });
-        if (res.ok) { setPendingSave(null); setStatus("done"); onCreated(); return; }
-        const d = await res.json().catch(() => ({}));
-        lastErr = d.error ?? lastErr;
-      } catch { lastErr = "Network error while saving the task."; }
+        if (res.ok) { job.current = null; setResumable(false); setStatus("done"); onCreated(); return; }
+        // A refused signature won't get better by retrying with the same one.
+        if (res.status === 401 || res.status === 403) { if (job.current) job.current.sig = null; break; }
+      } catch { /* network: retry */ }
       if (i < 2) await new Promise((r) => setTimeout(r, 1500));
     }
-    setPendingSave({ dropId, sig });
-    setErr(`${lastErr} Your reward is already funded — tap "Finish saving" to complete it (this won't charge you again).`);
-    setStatus("error");
+    throw new Error("save failed");
   }
 
   // The hint doubles as guidance: the first thing to fix is always visible.
   const hint = err || problem;
   const ctaLabel =
-    status === "approving" ? "Approving G$…"
-    : status === "creating" ? "Creating drop…"
-    : status === "saving" ? "Saving task…"
-    : pendingSave ? "Finish saving task"
+    status === "approving" ? "Getting ready…"
+    : status === "creating" ? "Funding your reward…"
+    : status === "saving" ? "Saving the task…"
+    : resumable ? "Finish setting up"
     : `Fund ${amount || "?"} G$ reward`;
 
   return (
@@ -166,10 +205,10 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
       ) : (
         <form
           className="flex flex-col gap-y-5 pt-6"
-          onSubmit={(e) => { e.preventDefault(); if (pendingSave) saveTask(pendingSave.dropId, pendingSave.sig); else handleCreate(); }}
+          onSubmit={(e) => { e.preventDefault(); if (busy) return; if (job.current) finish(); else handleCreate(); }}
         >
           <p className="text-sm/[140%] text-nav-muted -mt-1">
-            Pinned at <span className="text-heading">{spot.name}</span>. The G$ is held in escrow until you approve a hunter.
+            Pinned at <span className="text-heading">{spot.name}</span>. The G$ is set aside until you approve a hunter.
           </p>
 
           <label className="block">
@@ -192,7 +231,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="0"
-                disabled={busy}
+                disabled={busy || resumable}
                 className={`${INPUT} pr-14`}
               />
               <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-base/none text-nav-muted">G$</span>
@@ -210,7 +249,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
                     type="button"
                     role="radio"
                     aria-checked={on}
-                    disabled={busy}
+                    disabled={busy || resumable}
                     onClick={() => setDuration(d.s)}
                     className={`flex-1 h-11 rounded-full text-sm/none cursor-pointer motion-safe:transition-colors
                       disabled:cursor-not-allowed
@@ -229,7 +268,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
               value={clue}
               onChange={(e) => setClue(e.target.value.slice(0, 150))}
               placeholder={`e.g. At the ${spot.name} counter`}
-              disabled={busy}
+              disabled={busy || resumable}
               className={INPUT}
             />
           </label>
@@ -244,7 +283,7 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
             </p>
             <button
               type="submit"
-              disabled={busy || (!pendingSave && !!problem)}
+              disabled={busy || (!resumable && !!problem)}
               className="w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
                 flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
                 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"

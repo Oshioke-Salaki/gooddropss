@@ -69,6 +69,11 @@ export function CompetitionBody() {
   useEffect(() => { loadConfig(); }, [loadConfig]);
 
   async function save() {
+    // Blank or bad dates would throw below and read as a network error.
+    if (!startsAt || !endsAt || Number.isNaN(new Date(startsAt).getTime()) || Number.isNaN(new Date(endsAt).getTime())) {
+      setMsg("Set a start and an end date first.");
+      return;
+    }
     setBusy("save"); setMsg("");
     try {
       const res = await fetch("/api/comp/config", {

@@ -1,12 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Nav } from "@/components/Nav";
 import { useMyDrops } from "@/hooks/useMyDrops";
-import { publicClient } from "@/lib/publicClient";
+import { confirmTx, StillPendingError } from "@/lib/txOutcome";
+import { friendlyClaimError } from "@/lib/claimErrors";
+import { toast } from "@/lib/toast";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
@@ -33,7 +35,7 @@ export default function MyDropsPage() {
   // isConnected=true with a leftover address even when the user has signed out —
   // which wrongly surfaced someone else's drops. Gate on the auth state too.
   const isConnected = authenticated && !!address;
-  const { drops, loading, fetchDrops } = useMyDrops(isConnected ? address : undefined);
+  const { drops, loading, error: loadError, fetchDrops } = useMyDrops(isConnected ? address : undefined);
   const { writeContractAsync } = useSponsoredWrite();
   const [tab, setTab] = useState<Tab>("created");
   const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
@@ -68,84 +70,78 @@ export default function MyDropsPage() {
   const anyBusy = reclaiming !== null || reactivating !== null || bulkBusy !== null;
   const showSkeleton = loading || !fetched;
 
-  async function handleReclaim(dropId: bigint) {
-    setReclaiming(dropId);
+  // One money action at a time across the whole page (a ref, so two fast taps
+  // on different cards can't both start). Every ending gets a clear message.
+  const actionLock = useRef(false);
+  async function run(
+    start: () => void,
+    send: () => Promise<`0x${string}`>,
+    success: string,
+  ) {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    start();
     try {
-      const tx = await writeContractAsync({
-        address: GOOD_DROPS_ADDRESS,
-        abi: GOOD_DROPS_ABI,
-        functionName: "reclaimExpired",
-        args: [dropId],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
+      const tx = await send();
+      await confirmTx(tx);
+      toast.success(success);
       fetchDrops();
     } catch (e) {
-      console.error(e);
+      if (e instanceof StillPendingError) {
+        toast("Still going through", { description: "It's taking longer than usual. This list will catch up in a minute." });
+        window.setTimeout(() => fetchDrops(), 15_000);
+      } else {
+        const fe = friendlyClaimError(e);
+        if (fe.kind !== "rejected") {
+          toast.error("That didn't go through", {
+            description: fe.kind === "network" || fe.kind === "gas" ? fe.message : "Nothing changed. Please try again.",
+          });
+        }
+        fetchDrops();
+      }
     } finally {
-      setReclaiming(null);
+      actionLock.current = false;
+      setReclaiming(null); setReactivating(null); setBulkBusy(null);
     }
   }
 
-  async function handleReactivate(dropId: bigint) {
-    setReactivating(dropId);
-    try {
-      // uint40 → viem expects a JS number (only >48-bit ints are bigint)
-      const newExpiry = Math.floor(Date.now() / 1000) + REACTIVATE_SECONDS;
-      const tx = await writeContractAsync({
-        address: GOOD_DROPS_ADDRESS,
-        abi: GOOD_DROPS_ABI,
-        functionName: "extendExpiry",
-        args: [dropId, newExpiry],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      fetchDrops();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setReactivating(null);
-    }
+  const newExpiry = () => Math.floor(Date.now() / 1000) + REACTIVATE_SECONDS; // uint40 → a JS number
+
+  function handleReclaim(dropId: bigint) {
+    const d = expiredDrops.find((x) => x.id === dropId);
+    return run(
+      () => setReclaiming(dropId),
+      () => writeContractAsync({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "reclaimExpired", args: [dropId] }),
+      d ? `${formatG$(d.amount)} G$ is back in your wallet` : "Your G$ is back in your wallet",
+    );
   }
 
-  async function handleReclaimAll() {
+  function handleReactivate(dropId: bigint) {
+    return run(
+      () => setReactivating(dropId),
+      () => writeContractAsync({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "extendExpiry", args: [dropId, newExpiry()] }),
+      `Your drop is back on the map for ${REACTIVATE_LABEL}`,
+    );
+  }
+
+  function handleReclaimAll() {
     if (expiredDrops.length === 0) return;
-    setBulkBusy("reclaim");
-    try {
-      const ids = expiredDrops.map((d) => d.id);
-      const tx = await writeContractAsync({
-        address: GOOD_DROPS_ADDRESS,
-        abi: GOOD_DROPS_ABI,
-        functionName: "reclaimManyExpired",
-        args: [ids],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      fetchDrops();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setBulkBusy(null);
-    }
+    const ids = expiredDrops.map((d) => d.id);
+    return run(
+      () => setBulkBusy("reclaim"),
+      () => writeContractAsync({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "reclaimManyExpired", args: [ids] }),
+      `${formatG$(expiredTotalWei)} G$ is back in your wallet`,
+    );
   }
 
-  async function handleReactivateAll() {
+  function handleReactivateAll() {
     if (expiredDrops.length === 0) return;
-    setBulkBusy("reactivate");
-    try {
-      const ids = expiredDrops.map((d) => d.id);
-      // uint40 → viem expects a JS number (only >48-bit ints are bigint)
-      const newExpiry = Math.floor(Date.now() / 1000) + REACTIVATE_SECONDS;
-      const tx = await writeContractAsync({
-        address: GOOD_DROPS_ADDRESS,
-        abi: GOOD_DROPS_ABI,
-        functionName: "extendManyExpiry",
-        args: [ids, newExpiry],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      fetchDrops();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setBulkBusy(null);
-    }
+    const ids = expiredDrops.map((d) => d.id);
+    return run(
+      () => setBulkBusy("reactivate"),
+      () => writeContractAsync({ address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "extendManyExpiry", args: [ids, newExpiry()] }),
+      `${ids.length} ${ids.length === 1 ? "drop is" : "drops are"} back on the map for ${REACTIVATE_LABEL}`,
+    );
   }
 
   const tabIndex = TABS.findIndex((t) => t.id === tab);
@@ -163,8 +159,8 @@ export default function MyDropsPage() {
             </div>
             {isConnected && (
               <div className="flex gap-2 lg:gap-4">
-                <StatPill value={myCreated.length} label="Created" loading={showSkeleton} />
-                <StatPill value={myClaimed.length} label="Claimed" loading={showSkeleton} />
+                <StatPill value={loadError && drops.length === 0 ? null : myCreated.length} label="Created" loading={showSkeleton} />
+                <StatPill value={loadError && drops.length === 0 ? null : myClaimed.length} label="Claimed" loading={showSkeleton} />
               </div>
             )}
           </div>
@@ -225,6 +221,14 @@ export default function MyDropsPage() {
                   <div className="flex flex-col gap-y-6">
                     {[1, 2, 3].map((i) => <Skeleton key={i} className="h-48 rounded-3xl bg-white" />)}
                   </div>
+                ) : loadError && drops.length === 0 ? (
+                  <div className={`${CARD} p-8 flex flex-col items-center text-center gap-4`} role="alert">
+                    <p className="text-lg/none text-heading">Couldn&apos;t load your drops</p>
+                    <p className="text-sm/[145%] text-nav-muted">Your G$ is safe. Check your connection and try again.</p>
+                    <button type="button" onClick={() => fetchDrops()} className="h-11 px-6 rounded-full bg-brand text-white text-sm/none flex items-center gap-2 cursor-pointer hover:bg-brand/90">
+                      <RefreshCw className="w-4 h-4" /> Try again
+                    </button>
+                  </div>
                 ) : tab === "created" ? (
                   myCreated.length === 0 ? (
                     <EmptyState
@@ -243,6 +247,7 @@ export default function MyDropsPage() {
                           onReactivate={handleReactivate}
                           isReclaiming={reclaiming === d.id || bulkBusy === "reclaim"}
                           isReactivating={reactivating === d.id || bulkBusy === "reactivate"}
+                          locked={anyBusy}
                           onShare={setSharingDrop}
                         />
                       ))}
@@ -280,7 +285,7 @@ export default function MyDropsPage() {
                       </div>
                     </div>
                     <p className="text-sm/[140%] text-nav-muted">
-                      Reactivate them for another {REACTIVATE_LABEL}, or reclaim your G$. One transaction handles them all.
+                      Reactivate them for another {REACTIVATE_LABEL}, or take your G$ back. One tap handles them all.
                     </p>
                     <div className="flex flex-col gap-2">
                       <button
@@ -295,7 +300,7 @@ export default function MyDropsPage() {
                       </button>
                       <button type="button" onClick={handleReclaimAll} disabled={anyBusy} className={`${PILL} h-12`}>
                         {bulkBusy === "reclaim" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" strokeWidth={1.75} />}
-                        {bulkBusy === "reclaim" ? "Reclaiming…" : "Reclaim all"}
+                        {bulkBusy === "reclaim" ? "Taking it back…" : "Take it all back"}
                       </button>
                     </div>
                   </section>
@@ -328,13 +333,13 @@ export default function MyDropsPage() {
 }
 
 /** "12 · Created" pill in the header. */
-function StatPill({ value, label, loading }: { value: number; label: string; loading: boolean }) {
+function StatPill({ value, label, loading }: { value: number | null; label: string; loading: boolean }) {
   return (
     <div className="bg-white rounded-full py-4 px-5 lg:px-6 flex items-center justify-center gap-x-2 lg:gap-x-3 flex-1 lg:flex-none min-w-0">
       {loading ? (
         <Skeleton className="h-4 lg:h-6 w-6 shrink-0" />
       ) : (
-        <span className="text-heading text-base/none lg:text-2xl/none shrink-0">{value.toLocaleString("en-US")}</span>
+        <span className="text-heading text-base/none lg:text-2xl/none shrink-0">{value === null ? "–" : value.toLocaleString("en-US")}</span>
       )}
       <span className="text-sm/none lg:text-base/none text-nav-muted truncate">{label}</span>
     </div>

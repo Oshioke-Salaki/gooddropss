@@ -18,7 +18,7 @@ const SLIDES = [
     Icon: MapPin,
     eyebrow: "Step 1",
     title: "Drop G$",
-    body: "Tap \"Drop G$\", pick any spot on the map, set an amount and leave a clue. Your G$ is locked on-chain until someone claims it.",
+    body: "Tap \"Drop G$\", pick any spot on the map, set an amount and leave a clue. Your G$ is held safely until someone finds it.",
     cta: "Next",
   },
   {

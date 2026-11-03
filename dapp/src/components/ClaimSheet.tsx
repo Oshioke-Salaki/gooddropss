@@ -11,7 +11,6 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
 import Link from "next/link";
-import { publicClient } from "@/lib/publicClient";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   haversineDistance,
@@ -26,7 +25,9 @@ import {
   shortAddr,
   formatUsdApprox,
 } from "@/lib/utils";
-import { eventLockTitle, friendlyClaimError } from "@/lib/claimErrors";
+import { eventLockTitle } from "@/lib/claimErrors";
+import { confirmTx } from "@/lib/txOutcome";
+import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { Sheet } from "@/components/ui/Sheet";
 import { TaskUnlock } from "@/components/TaskUnlock";
@@ -238,7 +239,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const [nearby, setNearby] = useState(0);
   // Nudge to set a name after a win — only once we've confirmed there isn't one.
   const needsName   = !!address && profile !== undefined && !profile?.username;
-  const { authenticated } = useAuth();
+  const { authenticated, login } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
   const { writeContractAsync, sponsored } = useSponsoredWrite();
@@ -321,9 +322,12 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const takenByOther   = riddleBlocked || alreadyClaimed;
   const terminal       = status === "gone" || takenByOther;
 
-  const canClaim =
+  // Everything needed to claim except the screen state, so "Try again" can
+  // retry in one tap instead of first resetting and asking for a second.
+  const claimReady =
     isConnected && verificationOk && isActive && !isSelfDrop && isClose &&
-    answerFilled && !riddleBlocked && status === "idle";
+    answerFilled && !riddleBlocked;
+  const canClaim = claimReady && status === "idle";
 
   // Merchant task drops: the hunter must do the task and be scanned/approved
   // before the claim will sign. When they're otherwise ready (verified, in range),
@@ -341,18 +345,26 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // The claim button is "active" (tappable, styled) when it can claim, when it's
   // offering a retry after an error, or when the verification read failed and the
   // tap should re-run that read.
-  const btnActive = canClaim || status === "error" || identityCheckFailed || terminal;
+  const btnActive = canClaim || status === "error" || identityCheckFailed || terminal || !isConnected;
   const busy = status === "claiming" || status === "gassing";
 
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
 
   async function handleClaim() {
-    if (!canClaim || !drop || !address) return;
+    if (!claimReady || (status !== "idle" && status !== "error") || !drop || !address) return;
+    const retrying = status === "error";
     track("claim_started", { surface: "sheet" });
     setStatus("claiming");
     setErrMsg("");
     try {
+      // After an unclear ending, look before trying again: the first claim may
+      // have landed in the meantime.
+      if (retrying) {
+        const c = await checkBeforeRetry(drop.id, address);
+        if (c === "won") { claimed(); return; }
+        if (c === "gone") { await failed(new Error("already claimed")); return; }
+      }
       // Ensure gas BEFORE requesting the proof, so a low wallet never fails the
       // claim mid-tx and the proof stays fresh while any top-up lands.
       // Sponsored Magic wallets need no CELO, so skip the faucet for them.
@@ -384,50 +396,44 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
         args: [drop.id, BigInt(deadline), sig as `0x${string}`],
       }, { onToppingUp: () => setStatus("gassing") });
 
-      await publicClient.waitForTransactionReceipt({ hash: tx });
-      setStatus("done");
-      track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "sheet" });
-      if (drop) fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
-      if (address) {
-        fetch("/api/engagement", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address }),
-        })
-          .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
-          .catch(() => {});
-      }
+      await confirmTx(tx);
+      claimed();
     } catch (e: unknown) {
-      track("claim_failed", { reason: claimFailReason(e), surface: "sheet" });
-      const fe = friendlyClaimError(e);
-      // User just dismissed the wallet prompt — no error UI, let them retry.
-      if (fe.kind === "rejected") { setStatus("idle"); setErrMsg(""); return; }
-      setEventLocked(fe.kind === "event");
-
-      // Truth-check on-chain: many raw errors (RPC blips, gas) don't say whether
-      // the drop is actually gone. Ask the contract so we show the RIGHT thing —
-      // "already claimed" only when it really is.
-      let gone = fe.terminal;
-      let msg  = fe.message;
-      if (!gone) {
-        try {
-          const oc = await publicClient.readContract({
-            address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [drop.id],
-          }) as { status: number; expiry: number };
-          const nowS = Math.floor(Date.now() / 1000);
-          if (oc.status === DROP_STATUS.Claimed)   { gone = true; msg = "Someone beat you to it — this drop has already been claimed."; }
-          else if (oc.status === DROP_STATUS.Reclaimed) { gone = true; msg = "The dropper took this one back — it's no longer available."; }
-          else if (Number(oc.expiry) <= nowS)      { gone = true; msg = "This drop has expired and can no longer be claimed."; }
-        } catch { /* couldn't re-check — fall back to the mapped message */ }
-      }
-
-      setErrMsg(msg);
-      setStatus(gone ? "gone" : "error");
+      await failed(e);
     }
   }
 
+  function claimed() {
+    if (!drop) return;
+    setStatus("done");
+    track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "sheet" });
+    if (drop) fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
+    if (address) {
+      fetch("/api/engagement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      })
+        .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
+        .catch(() => {});
+    }
+  }
+
+  async function failed(e: unknown) {
+    if (!drop) return;
+    const f = await settleClaimError(e, drop.id, address);
+    if (f.result === "won") { claimed(); return; }
+    track("claim_failed", { reason: f.result === "pending" ? "pending" : claimFailReason(e), surface: "sheet" });
+    // They just closed the wallet prompt: no error, let them tap again.
+    if (f.result === "rejected") { setStatus("idle"); setErrMsg(""); return; }
+    if (f.result === "pending") { setErrMsg(f.message); setStatus("error"); return; }
+    setEventLocked(f.kind === "event");
+    setErrMsg(f.message);
+    setStatus(f.gone ? "gone" : "error");
+  }
+
   function claimLabel(): React.ReactNode {
-    if (status === "gassing")  return <><Loader2 className="w-5 h-5 animate-spin" /> Topping up gas…</>;
+    if (status === "gassing")  return <><Loader2 className="w-5 h-5 animate-spin" /> Getting things ready…</>;
     if (status === "claiming") return <><Loader2 className="w-5 h-5 animate-spin" /> Claiming…</>;
     if (terminal)              return <><ArrowLeft className="w-5 h-5" strokeWidth={2} /> Back to the map</>;
     if (status === "error")    return "Try again";
@@ -471,7 +477,9 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
         return (
           <Sheet
             title={flash ? "Flash drop" : `${r.label} drop`}
-            onClose={onClose}
+            // Closing after a win takes the same path as the success button, so
+            // the found drop leaves the map instead of offering itself again.
+            onClose={status === "done" ? onSuccess : onClose}
             width={440}
             dismissible={!busy}
           >
@@ -762,7 +770,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       type="button"
                       onClick={
                         terminal ? onClose
-                        : status === "error" ? () => setStatus("idle")
+                        : status === "error" ? (claimReady ? handleClaim : () => { setStatus("idle"); setErrMsg(""); })
+                        : !isConnected ? () => login()
                         : identityCheckFailed ? () => refreshIdentity()
                         : handleClaim
                       }

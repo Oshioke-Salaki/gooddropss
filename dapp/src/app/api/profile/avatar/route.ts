@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unknown avatar" }, { status: 400 });
   }
   if (Math.abs(Date.now() - timestamp) > SIG_WINDOW) {
-    return NextResponse.json({ error: "Signature expired — try again" }, { status: 400 });
+    return NextResponse.json({ error: "That took too long. Please try again." }, { status: 400 });
   }
 
   const message = `GoodDrops: set avatar "${avatar}" at ${timestamp}`;
@@ -37,9 +37,9 @@ export async function POST(req: NextRequest) {
       message,
       signature: signature as `0x${string}`,
     });
-    if (!valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    if (!valid) return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
   } catch {
-    return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
+    return NextResponse.json({ error: "Couldn't confirm it's you. Please try again." }, { status: 401 });
   }
 
   try {
