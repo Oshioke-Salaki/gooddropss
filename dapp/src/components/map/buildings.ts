@@ -1,4 +1,4 @@
-// Brand-blue buildings, shared by every map in the app so they never drift apart.
+// Slate buildings, shared by every map in the app so they never drift apart.
 //
 //   "3d"    extruded, for maps that can tilt (main map, location picker, batch drops)
 //   "flat"  footprints only, for maps locked top-down (event map, hunter finds):
@@ -9,13 +9,13 @@
 import type { Map as MLMap } from "maplibre-gl";
 import { isLightDevice } from "@/lib/deviceTier";
 
-/** Deep blue at street level, lighter as buildings get taller. */
-export const BRAND_BUILDINGS = { low: "#272C92", high: "#3940C0", opacity: 0.95 } as const;
+/** Dark slate (#272938) at street level, a touch lighter as buildings get taller. */
+export const BRAND_BUILDINGS = { low: "#272938", high: "#363A4F", opacity: 0.95 } as const;
 export const BUILDINGS_LAYER = "gd-3d-buildings";
 
 const HEIGHT = ["coalesce", ["get", "render_height"], 10] as const;
 const COLOR = ["interpolate", ["linear"], HEIGHT, 0, BRAND_BUILDINGS.low, 40, BRAND_BUILDINGS.high] as const;
-const FLAT_COLOR = ["interpolate", ["linear"], HEIGHT, 0, "#333AB4", 40, "#3F46CC"] as const;
+const FLAT_COLOR = ["interpolate", ["linear"], HEIGHT, 0, "#2D3043", 40, "#3A3E54"] as const;
 
 export function addBuildings(
   map: MLMap,
