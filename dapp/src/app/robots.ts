@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: "*",
         allow: "/",
         // Admin surface and API routes shouldn't be indexed.
-        disallow: ["/admin", "/api/"],
+        disallow: ["/admin", "/api/", "/switch-to-email"],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

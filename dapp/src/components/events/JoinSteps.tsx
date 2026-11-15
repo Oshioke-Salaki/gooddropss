@@ -104,7 +104,7 @@ function VerifyButton({ lapsed, onDone }: { lapsed: boolean; onDone: () => void 
         className="h-10 px-4 rounded-full bg-brand text-white text-sm/none cursor-pointer hover:bg-brand/90 shrink-0">
         {lapsed ? "Re-verify" : "Verify"}
       </button>
-      <VerificationModal isOpen={v.isVerifying} onClose={() => v.setIsVerifying(false)} fvLink={v.fvLink} status={v.status} onRefresh={v.refresh} />
+      <VerificationModal isOpen={v.isVerifying} onClose={() => v.setIsVerifying(false)} fvLink={v.fvLink} status={v.status} onRefresh={v.refresh} linkedRoot={v.linkedRoot} />
     </>
   );
 }

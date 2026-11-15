@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { track } from "@/lib/analytics";
-import { BadgeCheck, Camera, Check, ExternalLink, Loader2, ScanFace, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { BadgeCheck, Camera, Check, ExternalLink, Link2, Loader2, ScanFace, ShieldCheck } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import type { VerificationStatus } from "@/hooks/useVerification";
 
@@ -11,6 +12,8 @@ interface Props {
   fvLink: string | null;
   status: VerificationStatus;
   onRefresh: () => void;
+  /** This wallet borrows its verification from another wallet (see useVerification). */
+  linkedRoot?: string | null;
 }
 
 const STEPS = [
@@ -24,7 +27,7 @@ const STEPS = [
  * GoodDollar's iframe; this is the frame around it: what to expect, a way out
  * if the camera won't start in the iframe, and the confirmation.
  */
-export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh }: Props) {
+export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh, linkedRoot }: Props) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
 
   useEffect(() => { setIframeLoaded(false); }, [fvLink]);
@@ -55,6 +58,28 @@ export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh }
           <p className="text-sm/[140%] text-nav-muted">
             Your GoodDollar identity is confirmed. You can now claim drops.
           </p>
+        </div>
+      ) : linkedRoot ? (
+        // A linked account can't face-verify itself: GoodDollar keeps the
+        // verification on the wallet it's linked to, so that's where it renews.
+        <div className="flex flex-col items-center text-center pt-6 pb-2 gap-y-4">
+          <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+            <Link2 className="w-7 h-7" strokeWidth={1.75} />
+          </span>
+          <p className="text-xl/[125%] text-heading">Renew with your original wallet</p>
+          <p className="text-sm/[150%] text-nav-muted max-w-[340px]">
+            This account shares the verification of your original wallet
+            ({linkedRoot.slice(0, 6)}…{linkedRoot.slice(-4)}), so that&apos;s where it renews. Open the renewal page,
+            connect that wallet and do a quick face scan. This account is covered again straight after.
+          </p>
+          <Link
+            href="/switch-to-email"
+            onClick={onClose}
+            className="w-full h-14 mt-2 rounded-full bg-brand text-white text-base/none flex items-center justify-center
+              motion-safe:transition-colors hover:bg-brand/90"
+          >
+            Open the renewal page
+          </Link>
         </div>
       ) : (
         <>

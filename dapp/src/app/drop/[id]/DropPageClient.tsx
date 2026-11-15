@@ -118,7 +118,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const successCountText = successAmount >= 1 ? Math.round(successCount).toLocaleString() : successCount.toFixed(2);
   const {
     status: verifyStatus, fvLink, isVerifying,
-    setIsVerifying, refresh: refreshVerify,
+    setIsVerifying, refresh: refreshVerify, linkedRoot,
   } = useVerification();
 
   // Parse hint + fetch campaign BEFORE early returns so hooks are always called
@@ -140,7 +140,7 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const shellVerifyProps = {
     isVerifying,
     setIsVerifying,
-    fvLink,
+    fvLink, linkedRoot,
     verifyStatus,
     onVerifyRefresh: refreshVerify,
   } as const;
@@ -1036,6 +1036,7 @@ interface ShellProps {
   isVerifying:     boolean;
   setIsVerifying:  (v: boolean) => void;
   fvLink:          string | null;
+  linkedRoot?:     string | null;
   verifyStatus:    import("@/hooks/useVerification").VerificationStatus;
   onVerifyRefresh: () => void;
 }
@@ -1044,7 +1045,7 @@ interface ShellProps {
  * Page chrome: the shared Nav (sign-in, wallet, verification banner) plus the
  * page header and the verification modal this page can open on its own.
  */
-function Shell({ children, dropId, isVerifying, setIsVerifying, fvLink, verifyStatus, onVerifyRefresh }: ShellProps) {
+function Shell({ children, dropId, isVerifying, setIsVerifying, fvLink, verifyStatus, onVerifyRefresh, linkedRoot }: ShellProps) {
   return (
     <div className="min-h-screen bg-surface font-sans">
       <Nav />
@@ -1072,6 +1073,7 @@ function Shell({ children, dropId, isVerifying, setIsVerifying, fvLink, verifySt
         fvLink={fvLink}
         status={verifyStatus}
         onRefresh={onVerifyRefresh}
+        linkedRoot={linkedRoot}
       />
     </div>
   );

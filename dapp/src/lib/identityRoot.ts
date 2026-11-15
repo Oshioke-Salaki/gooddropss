@@ -106,3 +106,30 @@ export async function resolveIdentityRoot(address: string): Promise<string> {
     return key; // RPC down — degrade to the raw address, don't block the caller
   }
 }
+
+/**
+ * Re-read a wallet's root from the chain and overwrite both cache layers.
+ *
+ * Called right after a wallet is linked (connectAccount), when the cached
+ * self-mapping would otherwise keep the new wallet looking like a stranger for
+ * up to ten minutes. Writing the true on-chain value is always safe: anyone can
+ * read it, so there's nothing to forge. Returns the resolved root.
+ */
+export async function refreshIdentityRoot(address: string): Promise<string | null> {
+  if (typeof address !== "string" || !ADDR_RE.test(address)) return null;
+  const key = address.toLowerCase();
+  cache.delete(key);
+  try {
+    const root = (await client.readContract({
+      address: IDENTITY_ADDRESS, abi: IDENTITY_ABI, functionName: "getWhitelistedRoot",
+      args: [key as `0x${string}`],
+    })) as string;
+    const resolved = root && ADDR_RE.test(root) && root.toLowerCase() !== ZERO ? root.toLowerCase() : key;
+    cache.set(key, { root: resolved, at: Date.now() });
+    const redis = getRedis();
+    if (redis) await redis.set(keys.identityRoot(key), resolved, { ex: resolved === key ? 600 : 86_400 }).catch(() => {});
+    return resolved;
+  } catch {
+    return null;
+  }
+}

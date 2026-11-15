@@ -346,7 +346,7 @@ export function VerifyBanner({
 export function Nav() {
   const path = usePathname();
   const { isConnected } = useAccount();
-  const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh } =
+  const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh, linkedRoot } =
     useVerification();
   const isVerificationLoading = status === "loading";
 
@@ -524,6 +524,7 @@ export function Nav() {
         fvLink={fvLink}
         status={status}
         onRefresh={refresh}
+        linkedRoot={linkedRoot}
       />
 
       {/* Global avatar picker — opened via the `gd:editAvatar` event from anywhere */}

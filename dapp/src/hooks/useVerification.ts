@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { useIdentitySDK } from "@goodsdks/identity-sdk";
 import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
+import { readLinkedRoot } from "@/lib/walletLink";
 
 export type VerificationStatus = "loading" | "verified" | "not_verified" | "error";
 
@@ -32,6 +33,18 @@ export function useVerification() {
   // Network blips are retried a few times before we admit an error, so the
   // status never sits on "loading" forever.
   const blips = useRef(0);
+  // A wallet LINKED to another one (e.g. an email account joined to someone's
+  // original MetaMask identity) can't face-verify itself: GoodDollar keeps the
+  // verification on the original wallet. Renewing has to happen there, so the
+  // popup sends them to /switch-to-email instead of a face scan that would fail.
+  const [linkedRoot, setLinkedRoot] = useState<string | null>(null);
+  useEffect(() => {
+    setLinkedRoot(null);
+    if (!address) return;
+    let cancelled = false;
+    readLinkedRoot(address).then((r) => { if (!cancelled) setLinkedRoot(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [address]);
   const blipTimer = useRef<number | null>(null);
 
   const isPendingVerification =
@@ -117,9 +130,9 @@ export function useVerification() {
 
   // Generate FV link once when modal opens (and again only when asked to).
   useEffect(() => {
-    if (isVerifying && !fvLink && !isGeneratingLink && !linkFailed) generateLink();
+    if (isVerifying && !fvLink && !isGeneratingLink && !linkFailed && !linkedRoot) generateLink();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVerifying, !!fvLink, isGeneratingLink, linkFailed]);
+  }, [isVerifying, !!fvLink, isGeneratingLink, linkFailed, linkedRoot]);
 
   /** "Try again": retry whatever failed (the link, or the status check). */
   const refresh = async () => {
@@ -158,5 +171,7 @@ export function useVerification() {
     isGeneratingLink,
     isPendingVerification,
     refresh,
+    /** Set when this wallet borrows its verification from another wallet. */
+    linkedRoot,
   };
 }
