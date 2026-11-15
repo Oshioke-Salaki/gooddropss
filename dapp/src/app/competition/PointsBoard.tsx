@@ -37,6 +37,8 @@ interface Props {
   onSignIn?: () => void;
   /** Reports the competition phase up to the page header. */
   onPhase?: (p: Phase) => void;
+  /** The page's run-up banner already shows the start countdown. */
+  runUp?: boolean;
 }
 
 const PAGE = 25;
@@ -44,7 +46,7 @@ const PAGE = 25;
 // The POINTS competition: drop + claim + refer + downline network bonus, top-N
 // split the pot. Only mounted while its tab is selected, so switching tabs never
 // pays for the other board's computation.
-export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Props) {
+export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runUp }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -74,8 +76,20 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Pr
 
   const now = useNow();
   const cfg = data?.config;
-  const phase: Phase = data?.phase ?? "upcoming";
-  useEffect(() => { if (data) onPhase?.(data.phase); }, [data, onPhase]);
+  const serverPhase: Phase = data?.phase ?? "upcoming";
+  // Board data is CDN-cached for up to two minutes. Past the start time, trust the
+  // clock so nobody sees "Starts in 00:00" while the season is already running.
+  const phase: Phase = serverPhase === "upcoming" && cfg && now >= cfg.startsAt && now < cfg.endsAt ? "live" : serverPhase;
+  // And fetch fresh (cache-busted) data the moment the season opens.
+  const startsAt = cfg?.startsAt;
+  useEffect(() => {
+    if (!startsAt) return;
+    const ms = startsAt * 1000 - Date.now();
+    if (ms <= 0 || ms > 2 ** 31 - 1) return;
+    const t = setTimeout(() => { load(true); }, ms + 1500);
+    return () => clearTimeout(t);
+  }, [startsAt, load]);
+  useEffect(() => { if (data) onPhase?.(phase); }, [data, phase, onPhase]);
   usePoll(load, !cfg || now < cfg.endsAt + 300);
 
   const target = cfg ? (now < cfg.startsAt ? cfg.startsAt : cfg.endsAt) : 0;
@@ -201,7 +215,7 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Pr
               from everyone you bring in.
             </p>
 
-            {loading ? (
+            {runUp && phase === "upcoming" ? null : loading ? (
               <div className="flex gap-2 lg:gap-3">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="flex-1 h-[68px] rounded-2xl" />)}</div>
             ) : (
               <Countdown phase={phase} target={target} now={now} />

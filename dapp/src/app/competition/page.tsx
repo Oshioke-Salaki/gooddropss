@@ -9,6 +9,8 @@ import { PointsBoard } from "./PointsBoard";
 import { ReferralBoard } from "./ReferralBoard";
 import { PhasePill, type Phase } from "./shared";
 import { OffSeasonCard, OffSeasonSkeleton, useSeasonStatus } from "./OffSeason";
+import { SeasonRunUp } from "./SeasonRunUp";
+import { compPhase, inRefCompWindow } from "@/lib/competition";
 
 type Tab = "points" | "referrals";
 const TAB_KEY = "gd:comp:tab";
@@ -32,7 +34,20 @@ export default function CompetitionPage() {
   // on its own when the next window opens — nothing is removed.
   const season = useSeasonStatus();
   const [showPast, setShowPast] = useState(false);
-  const boardsVisible = season?.live || showPast;
+  // The page re-renders once, at the start time, so the run-up flips to the live
+  // boards without a reload. (The countdown ticks inside the banner, so the
+  // boards below never re-render every second.)
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const nextStart = season ? Math.min(season.points.startsAt, season.refs.startsAt) : 0;
+  useEffect(() => {
+    const ms = nextStart * 1000 - Date.now();
+    if (!nextStart || ms <= 0 || ms > 2 ** 31 - 1) return;
+    const t = setTimeout(() => setNow(Math.floor(Date.now() / 1000)), ms + 50);
+    return () => clearTimeout(t);
+  }, [nextStart]);
+  const liveNow = !!season && (compPhase(season.points, now) === "live" || inRefCompWindow(season.refs, now));
+  const runUp = !!season && season.upcoming && !liveNow && now < nextStart;
+  const boardsVisible = liveNow || runUp || showPast;
 
   // Remember the last tab within the session so a refresh doesn't bounce the user
   // back. Read after mount to keep server and first client render identical.
@@ -98,13 +113,22 @@ export default function CompetitionPage() {
             )}
           </div>
 
+          {runUp && season && (
+            <SeasonRunUp points={season.points} refs={season.refs} onPick={(t) => {
+              pick(t);
+              document.getElementById("comp-boards")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }} />
+          )}
+
+          <div id="comp-boards" className="scroll-mt-28">
           {season === null ? (
             <OffSeasonSkeleton />
           ) : !boardsVisible ? (
             <OffSeasonCard hasPast={season.hasPast} onShowPast={() => setShowPast(true)} />
           ) : tab === "points"
-            ? <PointsBoard address={address} myLink={myLink} onSwitch={() => pick("referrals")} onSignIn={login} onPhase={setPhase} />
-            : <ReferralBoard address={address} myLink={myLink} onSwitch={() => pick("points")} onSignIn={login} onPhase={setPhase} />}
+            ? <PointsBoard address={address} myLink={myLink} onSwitch={() => pick("referrals")} onSignIn={login} onPhase={setPhase} runUp={runUp} />
+            : <ReferralBoard address={address} myLink={myLink} onSwitch={() => pick("points")} onSignIn={login} onPhase={setPhase} runUp={runUp} />}
+          </div>
         </div>
       </div>
     </div>

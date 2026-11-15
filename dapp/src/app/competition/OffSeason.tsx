@@ -11,9 +11,16 @@ import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 export interface SeasonStatus {
   /** True while either the points or the referral competition is inside its window. */
   live: boolean;
+  /** A season opens within the next two weeks: show the run-up, not "off-season". */
+  upcoming: boolean;
   /** Something has run before — there are standings worth looking back at. */
   hasPast: boolean;
+  points: CompConfig;
+  refs: RefCompConfig;
 }
+
+/** How far ahead a scheduled season replaces the off-season card with its run-up. */
+const RUN_UP_SECS = 14 * 86400;
 
 /**
  * Is a season running right now?
@@ -36,9 +43,14 @@ export function useSeasonStatus(): SeasonStatus | null {
       const p = points ?? COMP_DEFAULT;
       const r = refs ?? REF_COMP_DEFAULT;
       const now = Math.floor(Date.now() / 1000);
+      const live = compPhase(p, now) === "live" || inRefCompWindow(r, now);
+      const nextStart = Math.min(...[p.startsAt, r.startsAt].filter((t) => t > now), Infinity);
       setStatus({
-        live: compPhase(p, now) === "live" || inRefCompWindow(r, now),
+        live,
+        upcoming: !live && nextStart - now <= RUN_UP_SECS,
         hasPast: now >= p.endsAt || now >= r.endsAt,
+        points: p,
+        refs: r,
       });
     })();
     return () => { cancelled = true; };

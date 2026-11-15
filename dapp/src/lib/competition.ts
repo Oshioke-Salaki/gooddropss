@@ -31,24 +31,25 @@ export const MIN_DROP_WEI_DEFAULT = (100n * 10n ** 18n).toString(); // 100 G$
 export const REFERRAL_BONUS_WEIGHT_DEFAULT = 1.5;
 export const DOWNLINE_WEIGHTS_DEFAULT = [0.25, 0.1]; // 25% of L1's score, 10% of L2's
 
-// Season 3 — POINTS competition. Times are WAT (UTC+1, Nigeria — no DST):
-// Thu 10 Sep 09:00 → Fri 18 Sep 18:00, 2026. Score = distinct people who claimed
+// Season 4 — POINTS competition. Times are WAT (UTC+1, Nigeria — no DST):
+// Mon 16 Nov 09:00 → end of Wed 25 Nov, 2026. Score = distinct people who claimed
 // your drops (drop) + distinct people whose drops you claimed (claim) + people you
-// referred in-window (refer) + downline bonus. Top-N split a 1,000,000 G$ pot, paid
+// referred in-window (refer) + downline bonus. Top-N split a 650,000 G$ pot, paid
 // once at the end. Runs ALONGSIDE the referral competition below; the two are fully
 // independent (separate configs, participant sets, leaderboards and pots).
+// The live values sit in Redis (admin-editable); these are the fallback.
 export const COMP_DEFAULT: CompConfig = {
   // Bumping the id starts a clean participant/verification namespace — the safest
   // way to reset a season without deleting anything.
-  id: "points-2026-09-10",
-  startsAt: Math.floor(Date.parse("2026-09-10T09:00:00+01:00") / 1000),
-  endsAt: Math.floor(Date.parse("2026-09-18T18:00:00+01:00") / 1000),
-  potWei: (1_000_000n * 10n ** 18n).toString(),
+  id: "points-2026-11-16",
+  startsAt: Math.floor(Date.parse("2026-11-16T09:00:00+01:00") / 1000),
+  endsAt: Math.floor(Date.parse("2026-11-26T00:00:00+01:00") / 1000),
+  potWei: (650_000n * 10n ** 18n).toString(),
   minDropWei: MIN_DROP_WEI_DEFAULT,
   referralBonusWeight: REFERRAL_BONUS_WEIGHT_DEFAULT,
   downlineWeights: DOWNLINE_WEIGHTS_DEFAULT,
-  // 10 winners, min prize 80,000 G$, sums to exactly 1,000,000 G$. Edit in the admin.
-  tiers: [200_000, 120_000, 105_000, 90_000, 85_000, 80_000, 80_000, 80_000, 80_000, 80_000],
+  // 10 winners, sums to exactly 650,000 G$. Edit in the admin.
+  tiers: [130_000, 90_000, 75_000, 65_000, 60_000, 50_000, 50_000, 45_000, 45_000, 40_000],
 };
 
 // Whole-G$ prize for a 1-indexed rank (0 if outside the tiers). Length of `tiers`
@@ -107,15 +108,15 @@ export interface RefCompConfig {
   threshold: number;       // referrals needed before ANY payout unlocks
 }
 
-// Season 3 — REFERRAL competition. Same window as the points competition
-// (Thu 10 Sep 09:00 → Fri 18 Sep 18:00, 2026 WAT).
-// 1,000,000 G$ at 6,667 G$ each ⇒ 149 covered referrals.
+// Season 4 — REFERRAL competition. Same window as the points competition
+// (Mon 16 Nov 09:00 → end of Wed 25 Nov, 2026 WAT).
+// 650,000 G$ at 4,800 G$ each ⇒ 135 covered referrals (648,000 G$).
 export const REF_COMP_DEFAULT: RefCompConfig = {
-  id: "referrals-2026-09-10",
-  startsAt: Math.floor(Date.parse("2026-09-10T09:00:00+01:00") / 1000),
-  endsAt: Math.floor(Date.parse("2026-09-18T18:00:00+01:00") / 1000),
-  potWei: (1_000_000n * 10n ** 18n).toString(),
-  perReferralWei: (6_667n * 10n ** 18n).toString(),
+  id: "referrals-2026-11-16",
+  startsAt: Math.floor(Date.parse("2026-11-16T09:00:00+01:00") / 1000),
+  endsAt: Math.floor(Date.parse("2026-11-26T00:00:00+01:00") / 1000),
+  potWei: (650_000n * 10n ** 18n).toString(),
+  perReferralWei: (4_800n * 10n ** 18n).toString(),
   threshold: 5,
 };
 

@@ -39,13 +39,15 @@ interface Props {
   onSignIn?: () => void;
   /** Reports the competition phase up to the page header. */
   onPhase?: (p: Phase) => void;
+  /** The page's run-up banner already shows the start countdown. */
+  runUp?: boolean;
 }
 
 const PAGE = 25;
 
 // The REFERRAL competition: a flat rate per qualifying referral, unlocked at a
 // threshold, paid first-come-first-served until the pot is exhausted.
-export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: Props) {
+export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, runUp }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -75,8 +77,20 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
 
   const now = useNow();
   const cfg = data?.config;
-  const phase: Phase = data?.phase ?? "upcoming";
-  useEffect(() => { if (data) onPhase?.(data.phase); }, [data, onPhase]);
+  const serverPhase: Phase = data?.phase ?? "upcoming";
+  // Board data is CDN-cached for up to two minutes. Past the start time, trust the
+  // clock so nobody sees "Starts in 00:00" while the season is already running.
+  const phase: Phase = serverPhase === "upcoming" && cfg && now >= cfg.startsAt && now < cfg.endsAt ? "live" : serverPhase;
+  // And fetch fresh (cache-busted) data the moment the season opens.
+  const startsAt = cfg?.startsAt;
+  useEffect(() => {
+    if (!startsAt) return;
+    const ms = startsAt * 1000 - Date.now();
+    if (ms <= 0 || ms > 2 ** 31 - 1) return;
+    const t = setTimeout(() => { load(true); }, ms + 1500);
+    return () => clearTimeout(t);
+  }, [startsAt, load]);
+  useEffect(() => { if (data) onPhase?.(phase); }, [data, phase, onPhase]);
   usePoll(load, !cfg || now < cfg.endsAt + 300);
 
   const target = cfg ? (now < cfg.startsAt ? cfg.startsAt : cfg.endsAt) : 0;
@@ -191,7 +205,7 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
               </p>
             )}
 
-            {loading ? (
+            {runUp && phase === "upcoming" ? null : loading ? (
               <div className="flex gap-2 lg:gap-3">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="flex-1 h-[68px] rounded-2xl" />)}</div>
             ) : (
               <Countdown phase={phase} target={target} now={now} />
@@ -231,8 +245,9 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase }: 
                   <HowStep n={4}>The pot pays <b>first come, first served</b> — earlier referrals are covered first, and there are <b>{stats?.slots.toLocaleString() ?? "—"}</b> paid slots in total. Get in early.</HowStep>
                 </ol>
                 <p className="text-sm/[150%] text-nav-muted">
-                  Each person can only ever be referred once, by whoever invited them first. Earnings are paid to your
-                  wallet when the competition ends.
+                  Each person can only ever be referred once, by whoever invited them first. Only friends who join after the
+                  start count. The moment you unlock, your earnings are sent to your wallet automatically, and every referral
+                  after that is paid as it lands.
                 </p>
               </HowToPlay>
             )}
