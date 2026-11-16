@@ -461,8 +461,12 @@ export function LocationPickerSheet({
           </div>
         )}
 
-        {/* ── Map controls — the SAME components the map page uses ─────────── */}
-        <div className="absolute bottom-5 left-5 z-[1000] flex flex-col items-start gap-3 lg:bottom-[60px] lg:left-[60px]">
+        {/* ── Map controls — the SAME components the map page uses ─────────────
+            On phones the confirm bar below spans nearly the full width, so the
+            controls sit ABOVE it (bar: 20px from the bottom + 64px tall + a 16px
+            gap). Sharing its row hid "My location" behind it. Desktop has room
+            beside the bar, so it keeps the corner. */}
+        <div className="absolute bottom-[100px] left-5 z-[1000] flex flex-col items-start gap-3 lg:bottom-[60px] lg:left-[60px]">
           <MapZoomControls map={pickerMap} />
           <MyLocationButton
             onClick={goToMyLocation}
