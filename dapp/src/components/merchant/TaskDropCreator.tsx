@@ -15,6 +15,7 @@ import { Check, Loader2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { confirmTx, StillPendingError, TxFailedError } from "@/lib/txOutcome";
 import { friendlyClaimError } from "@/lib/claimErrors";
+import { dropBlockedReason } from "@/lib/dropGate";
 
 const DURATIONS = [
   { label: "1 day", s: 86_400 },
@@ -70,6 +71,9 @@ export function TaskDropCreator({ spot, onClose, onCreated }: { spot: Spot; onCl
   async function handleCreate() {
     if (!address || problem || job.current) return;
     setErr(""); setStatus("approving");
+    // Reward drops are drops: verified owners only (fresh, fail-closed check).
+    const blocked = await dropBlockedReason(address);
+    if (blocked) { setErr(blocked); setStatus("idle"); return; }
     try {
       // 1. Approve escrow if needed.
       const allowance = await publicClient.readContract({

@@ -18,6 +18,7 @@ import { degToGps, buildCampaignHint, formatG$, X_HANDLES, X_HASHTAGS } from "@/
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile } from "@/hooks/useProfile";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { dropBlockedReason } from "@/lib/dropGate";
 import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
 import { DropSuccessModal } from "@/components/drop/DropSuccessModal";
@@ -348,6 +349,16 @@ export function BatchDropCreator({ open, campaign, onClose, onSuccess }: Props) 
       return;
     }
     if (!canDeploy) return;
+    // Fresh, fail-closed verification check at the moment of dropping.
+    {
+      const blocked = await dropBlockedReason(address);
+      if (blocked) {
+        setErrMsg(blocked);
+        if (!blocked.startsWith("We couldn't")) window.dispatchEvent(new CustomEvent("gd:openVerify"));
+        return;
+      }
+    }
+
     // Keep expiry safely inside the contract window [now+minExpiryDuration,
     // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the
     // lower bound (the "1h" option sits on the floor) and cap under the ceiling.

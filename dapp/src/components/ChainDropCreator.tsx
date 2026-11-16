@@ -22,6 +22,7 @@ import { DropLocationCard } from "@/components/drop/DropLocationCard";
 import { Card, Label, TextField } from "@/components/drop/controls";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { dropBlockedReason } from "@/lib/dropGate";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useProfile } from "@/hooks/useProfile";
 import { addLandmarkClue, LANDMARK_CLUE_RADIUS_M } from "@/lib/landmarks";
@@ -196,6 +197,16 @@ export function ChainDropCreator({ open, userLocation, onClose, onSuccess }: Pro
       return;
     }
     if (!canDeploy) return;
+    // Fresh, fail-closed verification check at the moment of dropping.
+    {
+      const blocked = await dropBlockedReason(address);
+      if (blocked) {
+        setErrMsg(blocked);
+        if (!blocked.startsWith("We couldn't")) window.dispatchEvent(new CustomEvent("gd:openVerify"));
+        return;
+      }
+    }
+
 
     // Keep expiry safely inside the contract window [now+minExpiryDuration,
     // now+maxExpiryDuration] despite mining latency / device-clock skew: pad the

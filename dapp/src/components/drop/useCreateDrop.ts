@@ -27,6 +27,7 @@ import {
 } from "@/lib/riddles";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
+import { dropBlockedReason } from "@/lib/dropGate";
 import { track } from "@/lib/analytics";
 import { buildEventHint } from "@/lib/events";
 
@@ -432,7 +433,16 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
   const runDrop = useCallback(async () => {
     // A drop already sent whose ending we didn't see: check on it, don't resend.
     if (sent.current) { await finishSent(); return; }
-    if (!guard()) return;
+    if (!guard() || !address) return;
+    // Fresh, fail-closed verification check at the moment of dropping.
+    {
+      const blocked = await dropBlockedReason(address);
+      if (blocked) {
+        setErrMsg(blocked);
+        if (!blocked.startsWith("We couldn't")) window.dispatchEvent(new CustomEvent("gd:openVerify"));
+        return;
+      }
+    }
     if (multiActive) { await handleMultiDrop(); return; }
     // Never create a second drop while one is stranded — that escrows twice.
     if (pending) return;
