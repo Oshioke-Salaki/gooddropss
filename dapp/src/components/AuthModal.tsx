@@ -248,7 +248,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
     <AuthSheet
       title={
         view === "wallets" ? "Choose a wallet"
-        : view === "partner" && PARTNER ? `Continue with ${PARTNER.name}`
+        : view === "partner" && PARTNER ? `${PARTNER.name} sign-in`
         : "Sign in to GoodDrops"
       }
       onBack={view !== "main" ? () => { setView("main"); setErr(""); } : undefined}
@@ -265,8 +265,8 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
       ) : view === "partner" && PARTNER && partner ? (
         <>
           <p className="text-sm/[150%] text-nav-muted px-6 mt-6">
-            Use the email you signed up to {PARTNER.name} with. You&rsquo;ll get the same
-            wallet here — already verified, G$ and all.
+            Use the email you signed up to {PARTNER.name} with. You&rsquo;ll use the same
+            wallet here, with everything already in it.
           </p>
 
           {err && (

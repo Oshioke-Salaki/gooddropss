@@ -38,7 +38,8 @@ export function OptionRow({ label, iconSrc, iconFallback, onClick, disabled, bus
             ? <img src={iconSrc} alt="" width={40} height={40} className="w-10 h-10 object-cover" />
             : iconFallback}
         </span>
-        <span className="text-base/none text-heading truncate">{label}</span>
+        {/* Wraps to a second line rather than cutting a partner's name off on phones. */}
+        <span className="text-base/[125%] text-heading text-left line-clamp-2">{label}</span>
       </span>
 
       {busy
