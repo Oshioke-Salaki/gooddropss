@@ -68,7 +68,7 @@ type TaskId = "reclaim" | "link" | "move";
 type TaskState = "todo" | "active" | "done" | "skipped" | "failed";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+export const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const fmtG = (wei: bigint) => {
   const n = Number(wei) / 1e18;
   if (n === 0) return "0";
@@ -83,7 +83,7 @@ const RECLAIM_GAS = (n: number) => (90_000n * BigInt(Math.ceil(n / 40))) + 45_00
 const RECLAIM_BATCH = 40;
 
 // "Injected" means nothing to a person: name the wallet app when it says who it is.
-function walletName(name: string | undefined): string {
+export function walletName(name: string | undefined): string {
   if (name && name !== "Injected") return name;
   if (typeof window === "undefined") return "Your wallet";
   const eth = (window as unknown as { ethereum?: Record<string, unknown> }).ethereum;
@@ -113,6 +113,17 @@ export function SwitchFlow() {
   // The wallet they use now: any connected wallet that isn't an email account.
   const onEmail = isConnected && (connector?.id === "magic" || connector?.id === PARTNER_CONNECTOR_ID);
   const oldAddr = isConnected && !onEmail && address ? address.toLowerCase() : null;
+
+  // Already switched and here to renew (an old "come back to this page" note,
+  // or a saved link): the renewal page is the one for that.
+  useEffect(() => {
+    if (!onEmail || !address) return;
+    let cancelled = false;
+    Promise.all([readLinkedRoot(address), readRoot(address)])
+      .then(([linked, root]) => { if (!cancelled && linked && !root) router.replace(`/renew?account=${address}`); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [onEmail, address, router]);
 
   // ── The email account (from Magic's session, independent of wagmi) ────────
   const [emailAcct, setEmailAcct] = useState<EmailAcct | null>(null);
@@ -537,6 +548,12 @@ export function SwitchFlow() {
                     your G$ and you can verify your email account afterwards with a quick face scan.
                   </Note>
                 )}
+                {oldInfo && idState === "verified" && oldInfo.identity.isProbation && !oldIsLinkedChild && (
+                  <Note tone="info">
+                    Good to know: a first face scan only lasts 3 days. When it runs out, GoodDrops will ask you to renew once
+                    with this wallet, and after that it lasts about 6 months. Keep this wallet app for that.
+                  </Note>
+                )}
                 {oldInfo && idState === "blacklisted" && (
                   <Note tone="danger">GoodDollar has blocked this wallet&apos;s verification, so it can&apos;t be linked. Message the GoodDrops team for help.</Note>
                 )}
@@ -737,8 +754,8 @@ export function SwitchFlow() {
                   <>
                     <Bullet>Rankings, streak and profile can take a few minutes to show on your email account.</Bullet>
                     <Bullet>
-                      Every few months GoodDollar asks for a quick face scan. When it does, come back to this page with your old
-                      wallet to renew. It covers your email account too.
+                      Every few months GoodDollar asks for a quick face scan. When it does, tap Verify on GoodDrops and we&apos;ll
+                      walk you through renewing with your old wallet. It covers your email account too.
                     </Bullet>
                     <Bullet>GoodDollar&apos;s daily G$ is one claim per person, shared by both accounts.</Bullet>
                   </>
@@ -771,11 +788,11 @@ export function SwitchFlow() {
 }
 
 // ── Pieces ───────────────────────────────────────────────────────────────────
-function Card({ children }: { children: React.ReactNode }) {
+export function Card({ children }: { children: React.ReactNode }) {
   return <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6">{children}</section>;
 }
 
-function Step({ id, n, title, state, children }: { id: string; n: number; title: string; state: "done" | "current" | "locked"; children: React.ReactNode }) {
+export function Step({ id, n, title, state, children }: { id: string; n: number; title: string; state: "done" | "current" | "locked"; children: React.ReactNode }) {
   return (
     <section id={id} aria-current={state === "current" ? "step" : undefined}
       className={`scroll-mt-6 bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 ${state === "locked" ? "opacity-60" : ""}`}>
@@ -791,7 +808,7 @@ function Step({ id, n, title, state, children }: { id: string; n: number; title:
   );
 }
 
-function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+export function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-surface px-4 py-3 min-w-0">
       <span className="w-9 h-9 shrink-0 rounded-full bg-white text-brand flex items-center justify-center">{icon}</span>
@@ -810,7 +827,7 @@ function Bullet({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Note({ tone, children }: { tone: "info" | "ok" | "danger"; children: React.ReactNode }) {
+export function Note({ tone, children }: { tone: "info" | "ok" | "danger"; children: React.ReactNode }) {
   const cls = tone === "danger" ? "bg-[#FFF1F1] text-heading" : tone === "ok" ? "bg-brand-soft text-heading" : "bg-surface text-heading";
   const Icon = tone === "danger" ? ShieldAlert : tone === "ok" ? Check : Info;
   return (
@@ -846,11 +863,11 @@ function Task({ state, label, toggle }: {
   );
 }
 
-function Loading({ text }: { text: string }) {
+export function Loading({ text }: { text: string }) {
   return <p className="text-sm/none text-nav-muted flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" />{text}</p>;
 }
 
-function Retry({ text, onRetry }: { text: string; onRetry: () => void }) {
+export function Retry({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-4" role="alert">
       <span className="text-sm/[145%] text-heading">{text}</span>

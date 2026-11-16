@@ -36,7 +36,7 @@ export function UbiPrompt() {
 
   const eligible =
     ready && isConnected && !!address && ubi.status === "can_claim" &&
-    !pathname.startsWith("/admin") && !pathname.startsWith("/auth") && !pathname.startsWith("/switch-to-email");
+    !pathname.startsWith("/admin") && !pathname.startsWith("/auth") && !pathname.startsWith("/switch-to-email") && !pathname.startsWith("/renew");
 
   useEffect(() => {
     if (!eligible || open || !address || shownToday(address)) return;

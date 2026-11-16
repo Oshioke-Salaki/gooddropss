@@ -3,7 +3,11 @@
 // A Magic Dedicated Wallet belongs to the app (publishable key) that created it,
 // so a partner's user has no wallet here. Rather than migrate identities, we
 // let them sign in with the partner's OWN key from our domain: same email, same
-// wallet, already GoodDollar-verified, no re-verification and no linking tx.
+// wallet, and whatever GoodDollar verification that wallet has, no linking tx.
+// Not every partner player is verified: GoodDollar's first scan lasts only 3
+// days (many Moonshard players are lapsed on it and renew here with the normal
+// Verify popup), and players who used a wallet app there have no verified
+// email wallet at all (their scan here says "twin"; they should use that app).
 // The partner adds our domain to their Magic allowlist; we do the same for them.
 //
 // Everything is inert until NEXT_PUBLIC_PARTNER_MAGIC_KEY is set, so this can

@@ -55,7 +55,7 @@ export function ProfileSetup() {
   useEffect(() => {
     if (!ready || !isConnected || !address || profile === undefined) return;
     // The switch page is a focused, multi-wallet flow: no profile prompts over it.
-    if (pathname.startsWith("/admin") || pathname.startsWith("/switch-to-email")) return;
+    if (pathname.startsWith("/admin") || pathname.startsWith("/switch-to-email") || pathname.startsWith("/renew")) return;
     if (offeredFor.current === address) return;
     offeredFor.current = address;
 

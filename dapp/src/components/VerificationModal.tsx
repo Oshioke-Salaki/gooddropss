@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { track } from "@/lib/analytics";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 import { BadgeCheck, Camera, Check, ExternalLink, Link2, Loader2, ScanFace, ShieldCheck } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import type { VerificationStatus } from "@/hooks/useVerification";
@@ -28,6 +29,7 @@ const STEPS = [
  * if the camera won't start in the iframe, and the confirmation.
  */
 export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh, linkedRoot }: Props) {
+  const { address } = useAccount();
   const [iframeLoaded, setIframeLoaded] = useState(false);
 
   useEffect(() => { setIframeLoaded(false); }, [fvLink]);
@@ -66,14 +68,15 @@ export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh, 
           <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
             <Link2 className="w-7 h-7" strokeWidth={1.75} />
           </span>
-          <p className="text-xl/[125%] text-heading">Renew with your original wallet</p>
+          <p className="text-xl/[125%] text-heading">Renew on your verified wallet</p>
           <p className="text-sm/[150%] text-nav-muted max-w-[340px]">
-            This account shares the verification of your original wallet
-            ({linkedRoot.slice(0, 6)}…{linkedRoot.slice(-4)}), so that&apos;s where it renews. Open the renewal page,
-            connect that wallet and do a quick face scan. This account is covered again straight after.
+            This account is linked to another wallet ({linkedRoot.slice(0, 6)}…{linkedRoot.slice(-4)}), and that&apos;s where
+            GoodDollar keeps your verification, so the face scan happens there. Renew in the app that wallet lives in
+            (like the GoodDollar wallet or MiniPay), or connect it on the renewal page. This account is covered again
+            straight after.
           </p>
           <Link
-            href="/switch-to-email"
+            href={address ? `/renew?account=${address}` : "/renew"}
             onClick={onClose}
             className="w-full h-14 mt-2 rounded-full bg-brand text-white text-base/none flex items-center justify-center
               motion-safe:transition-colors hover:bg-brand/90"
@@ -131,6 +134,13 @@ export function VerificationModal({ isOpen, onClose, fvLink, status, onRefresh, 
                   <ExternalLink className="w-4 h-4" strokeWidth={2} />
                 </a>
               </div>
+
+              {/* GoodDollar allows one verified wallet per person; its "twin" message means another wallet has this face. */}
+              <p className="mt-4 rounded-2xl bg-surface p-4 text-sm/[150%] text-nav-muted">
+                <span className="text-heading">Does it say it found your twin?</span> You&apos;ve verified a different wallet
+                before, and GoodDollar allows one per person. Sign in to GoodDrops with that wallet instead, or message the
+                GoodDrops team and we&apos;ll help.
+              </p>
             </>
           ) : (
             <div className="flex flex-col items-center text-center pt-8 pb-2 gap-y-4">
