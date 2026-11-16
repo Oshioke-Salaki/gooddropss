@@ -34,7 +34,7 @@ export function useSponsoredWrite() {
   // Warm Magic's iframe and session lookup as soon as a Magic wallet is
   // connected, so the first claim tap doesn't pay for loading it.
   useEffect(() => {
-    if (connectorId !== "magic" || !address) return;
+    if ((connectorId !== "magic" && connectorId !== "magic-partner") || !address) return;
     const t = setTimeout(() => { void canSponsor(address, connectorId); }, 1500);
     return () => clearTimeout(t);
   }, [address, connectorId]);
@@ -58,7 +58,7 @@ export function useSponsoredWrite() {
       try {
         const hash = await sendSponsored(address as Address, [call], () =>
           publicClient.simulateContract({ ...p, account: address as Address } as never),
-        );
+        connectorId);
         track("tx_sponsored", { fn: p.functionName });
         return hash;
       } catch (e) {

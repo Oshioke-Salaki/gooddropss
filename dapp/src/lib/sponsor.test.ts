@@ -88,6 +88,37 @@ beforeEach(() => {
   chain.identityReads = 0;
 });
 
+describe("partner wallets (Continue with <partner>)", () => {
+  it("are not sponsored unless the partner switch is on", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_MAGIC_KEY", "pk_live_partner");
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_SPONSOR", "");
+    const s = await load();
+    expect(await s.canSponsor(USER, "magic-partner")).toBe(false);
+  });
+
+  it("are sponsored through the partner's Magic app once switched on", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_MAGIC_KEY", "pk_live_partner");
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_SPONSOR", "1");
+    const s = await load();
+    expect(await s.canSponsor(USER, "magic-partner")).toBe(true);
+  });
+
+  it("a failing partner app never switches sponsorship off for our own email users", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_MAGIC_KEY", "pk_live_partner");
+    vi.stubEnv("NEXT_PUBLIC_PARTNER_SPONSOR", "1");
+    const s = await load();
+    magicState.send.mockRejectedValue(new Error("smart accounts not enabled"));
+    vi.useFakeTimers({ shouldAdvanceTime: true, advanceTimeDelta: 1000 });
+    try {
+      const p = s.sendSponsored(USER, [{ to: USER, data: "0x" }], okSim, "magic-partner").catch((e) => e);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(await p).toBeInstanceOf(s.SponsorUnavailableError); // falls back to own gas, nothing sent
+    } finally { vi.useRealTimers(); }
+    expect(await s.canSponsor(USER, "magic-partner")).toBe(false); // partner breaker open
+    expect(await s.canSponsor(USER, "magic")).toBe(true);          // ours untouched
+  });
+});
+
 describe("canSponsor", () => {
   it("is true only for our Magic session's own address", async () => {
     const s = await load();

@@ -3,6 +3,8 @@ import { ArrowRight, Loader2 } from "lucide-react";
 
 interface Props {
   label: string;
+  /** Optional second line under the label (who this option is for). */
+  hint?: string;
   /** Path to a 1:1 logo, rendered as its own 40px circle. */
   iconSrc?: string;
   /** Fallback when a connector ships no artwork. */
@@ -21,7 +23,7 @@ interface Props {
  * `motion-safe`, so anyone with reduced motion enabled gets the colour change
  * only.
  */
-export function OptionRow({ label, iconSrc, iconFallback, onClick, disabled, busy }: Props) {
+export function OptionRow({ label, hint, iconSrc, iconFallback, onClick, disabled, busy }: Props) {
   return (
     <button
       type="button"
@@ -38,8 +40,11 @@ export function OptionRow({ label, iconSrc, iconFallback, onClick, disabled, bus
             ? <img src={iconSrc} alt="" width={40} height={40} className="w-10 h-10 object-cover" />
             : iconFallback}
         </span>
-        {/* Wraps to a second line rather than cutting a partner's name off on phones. */}
-        <span className="text-base/[125%] text-heading text-left line-clamp-2">{label}</span>
+        <span className="flex flex-col gap-y-1 text-left min-w-0">
+          {/* Wraps to a second line rather than cutting a partner's name off on phones. */}
+          <span className="text-base/[125%] text-heading line-clamp-2">{label}</span>
+          {hint && <span className="text-xs/[130%] text-nav-muted">{hint}</span>}
+        </span>
       </span>
 
       {busy

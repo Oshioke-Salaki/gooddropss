@@ -6,9 +6,13 @@
 // claim history are untouched) and sends calls through Alchemy's bundler, which
 // pays the gas under our Gas Manager policy. Verified on Celo mainnet, Oct 2026.
 //
-// Who it covers: only wallets created through OUR Magic key. MetaMask, MiniPay
-// and other injected wallets cannot delegate to Alchemy's account contract, so
-// they keep the normal path (their own CELO, or the faucet in ensureGas).
+// Who it covers: wallets created through OUR Magic key, and (when switched on
+// with NEXT_PUBLIC_PARTNER_SPONSOR=1) wallets from the partner's Magic app that
+// people use here through "Continue with <partner>". The Alchemy side is the
+// same for both: one policy, approved per verified person. Only the signing
+// differs, because each wallet lives in its own Magic app. MetaMask, MiniPay and
+// other injected wallets cannot delegate to Alchemy's account contract, so they
+// keep the normal path (their own CELO, or the faucet in ensureGas).
 //
 // Safety rules this file enforces:
 //   1. Never run a call twice. If a sponsored send throws, we first look on-chain
@@ -35,6 +39,18 @@ const CELO_CHAIN_ID = 42220;
 const API_KEY   = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ?? "";
 const POLICY_ID = process.env.NEXT_PUBLIC_ALCHEMY_POLICY_ID ?? "";
 const MAGIC_KEY = process.env.NEXT_PUBLIC_MAGIC_KEY ?? "";
+// The partner's Magic app (lib/partner). Off until a real partner account has
+// done a sponsored send: a partner app without Magic's smart-account support
+// could hang rather than refuse, and a hang deliberately shows an error rather
+// than risk sending twice.
+const PARTNER_KEY = process.env.NEXT_PUBLIC_PARTNER_SPONSOR === "1" ? (process.env.NEXT_PUBLIC_PARTNER_MAGIC_KEY ?? "") : "";
+
+/** Which Magic app a connector's wallets belong to, if that app is sponsored. */
+function keyFor(connectorId: string | undefined): string | null {
+  if (connectorId === "magic") return MAGIC_KEY || null;
+  if (connectorId === "magic-partner") return PARTNER_KEY || null;
+  return null;
+}
 
 /** Build-time switch: all three keys present and not explicitly disabled. */
 export const SPONSOR_CONFIGURED =
@@ -56,35 +72,42 @@ const LANDED_WAIT_MS   = 15_000;  // after a throw, how long we look for the op 
 const BREAKER_MS       = 10 * 60_000;
 const BREAKER_KEY      = "gd:sponsor-off-until";
 
-// ── Magic instance with the Smart Account extension ─────────────────────────
-// Separate from the wagmi connector's instance, but Magic sessions are shared
-// per API key + origin, so a user signed in through the app is signed in here.
-// We only ever ASK whether they're signed in; this file never shows Magic UI.
-let magic: Magic<[SmartAccountExtension]> | null = null;
-function getSponsorMagic() {
-  if (!SPONSOR_CONFIGURED || typeof window === "undefined") return null;
-  if (!magic) {
-    magic = new Magic(MAGIC_KEY, {
+// ── Magic instances with the Smart Account extension ────────────────────────
+// One per sponsored Magic app, separate from the wagmi connectors' instances.
+// Magic sessions are shared per API key + origin, so someone signed in through
+// the app is signed in here too. We only ever ASK; this file never shows Magic UI.
+const magics = new Map<string, Magic<[SmartAccountExtension]>>();
+function getSponsorMagic(key: string | null) {
+  if (!SPONSOR_CONFIGURED || !key || typeof window === "undefined") return null;
+  let m = magics.get(key);
+  if (!m) {
+    m = new Magic(key, {
       network: { rpcUrl: "https://forno.celo.org", chainId: CELO_CHAIN_ID },
       extensions: [new SmartAccountExtension({ apiKey: API_KEY, paymasterPolicyId: POLICY_ID })],
     });
+    magics.set(key, m);
   }
-  return magic;
+  return m;
 }
 
-// Which address the Magic session belongs to, cached for a few minutes so a
-// claim never waits on an iframe round-trip. A stale entry is harmless: the
+// Which address each app's Magic session belongs to, cached for a few minutes so
+// a claim never waits on an iframe round-trip. A stale entry is harmless: the
 // connected address must still match, and a failed send falls back safely.
-let sessionCache: { at: number; address: string | null } | null = null;
-let sessionLookup: Promise<string | null> | null = null;
-function magicSessionAddress(): Promise<string | null> {
-  if (sessionCache && Date.now() - sessionCache.at < 5 * 60_000) return Promise.resolve(sessionCache.address);
+const sessionCache = new Map<string, { at: number; address: string | null }>();
+const sessionLookup = new Map<string, Promise<string | null>>();
+function magicSessionAddress(key: string): Promise<string | null> {
+  const hit = sessionCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60_000) return Promise.resolve(hit.address);
   // Every component using the hook asks at once on mount; share one lookup.
-  sessionLookup ??= lookupSession().finally(() => { sessionLookup = null; });
-  return sessionLookup;
+  let p = sessionLookup.get(key);
+  if (!p) {
+    p = lookupSession(key).finally(() => { sessionLookup.delete(key); });
+    sessionLookup.set(key, p);
+  }
+  return p;
 }
-async function lookupSession(): Promise<string | null> {
-  const m = getSponsorMagic();
+async function lookupSession(key: string): Promise<string | null> {
+  const m = getSponsorMagic(key);
   if (!m) return null;
   try {
     let address: string | null = null;
@@ -94,34 +117,39 @@ async function lookupSession(): Promise<string | null> {
       };
       address = (info.publicAddress ?? info.wallets?.ethereum?.publicAddress ?? null)?.toLowerCase() ?? null;
     }
-    sessionCache = { at: Date.now(), address };
+    sessionCache.set(key, { at: Date.now(), address });
     return address;
   } catch {
-    sessionCache = null;
+    sessionCache.delete(key);
     return null;
   }
 }
 
 // ── Circuit breaker ──────────────────────────────────────────────────────────
-let offUntil = 0;
-function breakerOpen(): boolean {
-  if (Date.now() < offUntil) return true;
-  try { offUntil = Number(sessionStorage.getItem(BREAKER_KEY) ?? 0); } catch { /* storage blocked */ }
-  return Date.now() < offUntil;
+// Per Magic app: a partner app that can't sponsor never switches it off for our
+// own email users, and the other way round.
+const offUntil = new Map<string, number>();
+const breakerKey = (key: string) => (key === MAGIC_KEY ? BREAKER_KEY : `${BREAKER_KEY}:${key.slice(-8)}`);
+function breakerOpen(key: string = MAGIC_KEY): boolean {
+  if (Date.now() < (offUntil.get(key) ?? 0)) return true;
+  try { offUntil.set(key, Number(sessionStorage.getItem(breakerKey(key)) ?? 0)); } catch { /* storage blocked */ }
+  return Date.now() < (offUntil.get(key) ?? 0);
 }
-function tripBreaker() {
-  offUntil = Date.now() + BREAKER_MS;
-  try { sessionStorage.setItem(BREAKER_KEY, String(offUntil)); } catch { /* storage blocked */ }
+function tripBreaker(key: string = MAGIC_KEY) {
+  const until = Date.now() + BREAKER_MS;
+  offUntil.set(key, until);
+  try { sessionStorage.setItem(breakerKey(key), String(until)); } catch { /* storage blocked */ }
 }
 
 /**
- * Should this write be sponsored? True only for a Magic-connected wallet whose
- * Magic session is OUR key's session for the same address (a partner's Magic
- * login uses their key and is excluded), on a healthy sponsor.
+ * Should this write be sponsored? True only for a wallet from a sponsored Magic
+ * app (ours, or the partner's when switched on) whose Magic session is that
+ * app's session for the same address, on a healthy sponsor.
  */
 export async function canSponsor(address: string | undefined, connectorId: string | undefined): Promise<boolean> {
-  if (!SPONSOR_CONFIGURED || !address || connectorId !== "magic" || breakerOpen()) return false;
-  return (await magicSessionAddress()) === address.toLowerCase();
+  const key = keyFor(connectorId);
+  if (!SPONSOR_CONFIGURED || !address || !key || breakerOpen(key)) return false;
+  return (await magicSessionAddress(key)) === address.toLowerCase();
 }
 
 export type SponsoredCall = { to: Address; data: Hex; value?: bigint };
@@ -250,8 +278,11 @@ async function settle(hash: Hex, sender: string): Promise<Hex> {
  * SponsorUnavailableError when nothing was sent (caller may fall back), and
  * rethrows anything else only when it can't be sure whether the op landed.
  */
-export async function sendSponsored(sender: Address, calls: SponsoredCall[], simulate: () => Promise<unknown>): Promise<Hex> {
-  const m = getSponsorMagic();
+export async function sendSponsored(
+  sender: Address, calls: SponsoredCall[], simulate: () => Promise<unknown>, connectorId: string | undefined = "magic",
+): Promise<Hex> {
+  const key = keyFor(connectorId);
+  const m = getSponsorMagic(key);
   if (!m) throw new SponsorUnavailableError("not configured");
   const who = sender.toLowerCase();
   // +1: the op can't be in a block that already exists, and an earlier step's op
@@ -278,7 +309,7 @@ export async function sendSponsored(sender: Address, calls: SponsoredCall[], sim
     // fallback could run the call twice (two transfers, two drops). Look a
     // while longer, then stop and say so instead of retrying another way.
     if (e instanceof Error && e.message === "timeout") {
-      tripBreaker();
+      tripBreaker(key!);
       const late = await findLandedOp(sender, fromBlock, 30_000);
       if (late) return settle(late, who);
       throw new Error("This is taking longer than usual. Check your activity before trying again.");
@@ -286,7 +317,7 @@ export async function sendSponsored(sender: Address, calls: SponsoredCall[], sim
     // Rule 2: is it the call itself? Simulate from the user's own address; a
     // real revert (AlreadyClaimed, DropExpired, not enough G$...) throws here.
     await simulate();
-    tripBreaker();
+    tripBreaker(key!);
     throw new SponsorUnavailableError(e instanceof Error ? e.message : String(e));
   }
 
@@ -307,6 +338,6 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 /** Test hooks: reset module state between unit tests. */
 export const __test = {
-  reset() { offUntil = 0; sessionCache = null; sessionLookup = null; magic = null; verifiedCache.clear(); },
+  reset() { offUntil.clear(); sessionCache.clear(); sessionLookup.clear(); magics.clear(); verifiedCache.clear(); },
   tripBreaker, breakerOpen, userOpIn, decodeRevert,
 };

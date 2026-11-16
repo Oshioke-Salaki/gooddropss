@@ -68,6 +68,9 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const [emailBusy, setEmailBusy] = useState(false);
   const [partnerBusy, setPartnerBusy] = useState(false);
   const [email, setEmail] = useState("");
+  // Set when someone leaves the partner step to sign up with GoodDrops' own email
+  // instead: the email they typed comes along and the field is focused.
+  const [focusMainEmail, setFocusMainEmail] = useState(false);
   const [err, setErr] = useState("");
 
   const magic = connectors.find((c) => c.id === "magic");
@@ -265,8 +268,8 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
       ) : view === "partner" && PARTNER && partner ? (
         <>
           <p className="text-sm/[150%] text-nav-muted px-6 mt-6">
-            Use the email you signed up to {PARTNER.name} with. You&rsquo;ll use the same
-            wallet here, with everything already in it.
+            Only for people who already play {PARTNER.name}. Enter the email you signed up
+            with and you&rsquo;ll use the same wallet here, with everything already in it.
           </p>
 
           {err && (
@@ -306,9 +309,23 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
           </form>
 
           <p className="px-6 text-xs text-nav-muted leading-relaxed">
-            We&rsquo;ll email you a one-time code from {PARTNER.name}. No new wallet is
-            created and nothing is linked — it&rsquo;s your existing account, used here.
+            We&rsquo;ll email you a one-time code from {PARTNER.name}. It&rsquo;s your existing
+            account, used here. Nothing is linked.
           </p>
+
+          {/* New people belong in a GoodDrops account, not a fresh partner one: an
+              unknown email here would quietly create a {PARTNER.name} account. */}
+          <div className="px-6 pb-6 pt-4">
+            <button
+              type="button"
+              onClick={() => { setErr(""); setFocusMainEmail(true); setView("main"); }}
+              disabled={busy}
+              className="w-full h-12 rounded-full border border-line bg-white text-sm/none text-heading cursor-pointer
+                motion-safe:transition-colors hover:bg-surface disabled:opacity-50"
+            >
+              New here? Sign up with your email instead
+            </button>
+          </div>
         </>
       ) : (
         <>
@@ -348,6 +365,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); if (err) setErr(""); }}
                 disabled={busy}
+                autoFocus={focusMainEmail}
                 className={FIELD}
               />
             </div>
@@ -368,6 +386,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             <div className={BAND}>
               <OptionRow
                 label={`Continue with ${PARTNER.name}`}
+                hint={`If you already play ${PARTNER.name}`}
                 iconSrc={PARTNER.logo || undefined}
                 iconFallback={<Link2 className="w-5 h-5 text-heading" />}
                 onClick={() => { setErr(""); setView("partner"); }}
