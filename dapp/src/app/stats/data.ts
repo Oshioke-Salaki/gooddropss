@@ -19,6 +19,8 @@ export interface PublicStats {
   circulatedG: number;
   hunters: number;
   droppers: number;
+  /** Everyone who hid or found G$, one per person (a hunter who also drops counts once). */
+  users: number;
   events: { hosted: number; claimedG: number } | null;
   topHunters: { address: string; g: number; count: number }[];
   topDroppers: { address: string; g: number; count: number }[];
@@ -42,7 +44,17 @@ export function getPublicStats(): Promise<PublicStats> {
       addrs.add(d.dropper.toLowerCase());
       if (d.claimer !== ZERO) addrs.add(d.claimer.toLowerCase());
     }
-    const board = buildBoard(drops, await resolveRoots([...addrs]));
+    const roots = await resolveRoots([...addrs]);
+    const board = buildBoard(drops, roots);
+    // Total users, by identity: a hunter who also drops, or one person on two
+    // wallets, counts once. (The board's lists name each person by their latest
+    // wallet, so merging those could count someone twice.)
+    const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
+    const people = new Set<string>();
+    for (const d of drops) {
+      people.add(rootOf(d.dropper));
+      if (d.claimer !== ZERO && d.status === 1) people.add(rootOf(d.claimer));
+    }
     const top = (rs: typeof board.hunters) => rs.slice(0, 10).map((r) => ({ address: r.address, g: whole(r.totalWei), count: r.count }));
 
     return {
@@ -53,6 +65,7 @@ export function getPublicStats(): Promise<PublicStats> {
       circulatedG: circulatedG(whole(board.droppedWei)),
       hunters: board.hunters.length,
       droppers: board.droppers.length,
+      users: people.size,
       events: await eventTotals(),
       topHunters: top(board.hunters),
       topDroppers: top(board.droppers),

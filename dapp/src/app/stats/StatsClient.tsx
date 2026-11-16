@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarDays, Check, Coins, Gift, Share2, Target, Users, Map as MapIcon, RefreshCw } from "lucide-react";
+import { CalendarDays, Check, UsersRound, Coins, Gift, Share2, Target, Users, Map as MapIcon, RefreshCw } from "lucide-react";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { RankBadge } from "@/app/leaderboard/components/RankBadge";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
@@ -121,12 +121,15 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
                 <p className="text-sm/none text-white/80 mt-3">G$ circulated</p>
               </div>
             </div>
+            {/* Eight cells, two even rows: Total users sits up top beside the
+                headline; the found rate rides along under Drops claimed. */}
+            <Tile icon={<UsersRound className="w-5 h-5" />} value={s && fmt(s.users)} label="Total users" sub="Hid or found G$" />
             <Tile icon={<MapIcon className="w-5 h-5" />} value={s && fmt(s.drops)} label="Drops hidden" />
-            <Tile icon={<Target className="w-5 h-5" />} value={s && fmt(s.claims)} label="Drops claimed" />
+            <Tile icon={<Target className="w-5 h-5" />} value={s && fmt(s.claims)} label="Drops claimed"
+              sub={s && s.drops ? `${Math.round((s.claims / s.drops) * 100)}% found in time` : undefined} />
             <Tile icon={<Gift className="w-5 h-5" />} value={s && `${compact(s.claimedG)} G$`} label="G$ found" sub="Claimed by hunters" />
             <Tile icon={<Users className="w-5 h-5" />} value={s && fmt(s.hunters)} label="Hunters" sub="Unique people" />
             <Tile icon={<Users className="w-5 h-5" />} value={s && fmt(s.droppers)} label="Droppers" sub="Unique people" />
-            <Tile icon={<Check className="w-5 h-5" />} value={s && (s.drops ? `${Math.round((s.claims / s.drops) * 100)}%` : "–")} label="Found rate" sub="Drops claimed before expiring" />
           </div>
 
           {/* Events */}
