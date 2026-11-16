@@ -130,7 +130,13 @@ export function SwitchFlow() {
     }
     if (!magic) { setEmailChecked(true); return; }
     try {
-      if (!(await magic.user.isLoggedIn())) { setEmailAcct(null); return; }
+      // Magic answers from its own frame; if that's slow or blocked, don't leave
+      // the person on "Checking…": after 8s show the email form instead.
+      const loggedIn = await Promise.race([
+        magic.user.isLoggedIn(),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 8000)),
+      ]);
+      if (!loggedIn) { setEmailAcct(null); return; }
       const info = await magic.user.getInfo();
       let addr = info.publicAddress ?? info.wallets?.ethereum?.publicAddress ?? null;
       if (!addr && magic.rpcProvider) {

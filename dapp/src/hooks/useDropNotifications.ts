@@ -15,7 +15,7 @@ const POLL_MS = 180_000;
 // would otherwise never be seen here.
 export function useDropNotifications() {
   const { address } = useAccount();
-  const { drops, fetchDrops } = useMyDrops(address);
+  const { drops, fetchDrops, linkedFrom } = useMyDrops(address);
   const prevClaimedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef    = useRef(false);
 
@@ -32,9 +32,12 @@ export function useDropNotifications() {
   useEffect(() => {
     if (!address || drops.length === 0) return;
 
-    const myDrops = drops.filter(
-      (d) => d.dropper.toLowerCase() === address.toLowerCase()
-    );
+    // Includes drops hidden with the wallet this account is linked to, so someone
+    // who switched to email sign-in still hears when an old drop is found.
+    const myDrops = drops.filter((d) => {
+      const by = d.dropper.toLowerCase();
+      return by === address.toLowerCase() || (!!linkedFrom && by === linkedFrom);
+    });
 
     const nowClaimed = new Set(
       myDrops
@@ -78,5 +81,5 @@ export function useDropNotifications() {
     }
 
     prevClaimedIdsRef.current = nowClaimed;
-  }, [drops, address]);
+  }, [drops, address, linkedFrom]);
 }

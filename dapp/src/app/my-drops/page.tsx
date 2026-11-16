@@ -13,7 +13,7 @@ import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { formatG$ } from "@/lib/utils";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { DROP_STATUS, type Drop } from "@/types";
-import { RefreshCw, Undo2, Clock, Target, Gift, Loader2, Map as MapIcon } from "lucide-react";
+import { RefreshCw, Undo2, Clock, Target, Gift, Loader2, Map as MapIcon, Wallet } from "lucide-react";
 import { DropCard, ClaimCard, QRShareModal, CARD, PILL } from "./cards";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ export default function MyDropsPage() {
   // isConnected=true with a leftover address even when the user has signed out —
   // which wrongly surfaced someone else's drops. Gate on the auth state too.
   const isConnected = authenticated && !!address;
-  const { drops, loading, error: loadError, fetchDrops } = useMyDrops(isConnected ? address : undefined);
+  const { drops, loading, error: loadError, fetchDrops, linkedFrom } = useMyDrops(isConnected ? address : undefined);
   const { writeContractAsync } = useSponsoredWrite();
   const [tab, setTab] = useState<Tab>("created");
   const [reclaiming, setReclaiming]     = useState<bigint | null>(null);
@@ -52,20 +52,26 @@ export default function MyDropsPage() {
     return () => { alive = false; };
   }, [fetchDrops]);
 
-  const myCreated = drops.filter(
-    (d) => d.dropper.toLowerCase() === address?.toLowerCase()
-  );
+  // This account, plus the original wallet it's linked to (history moves with the
+  // person; see /switch-to-email). Only this account's drops can be acted on here.
+  const me = address?.toLowerCase();
+  const mine = (a: string) => { const x = a.toLowerCase(); return x === me || (!!linkedFrom && x === linkedFrom); };
+  const isOld = (a: string) => !!linkedFrom && a.toLowerCase() === linkedFrom;
+  const myCreated = drops.filter((d) => mine(d.dropper));
   const myClaimed = drops.filter(
-    (d) =>
-      d.claimer.toLowerCase() === address?.toLowerCase() &&
-      d.status === DROP_STATUS.Claimed
+    (d) => mine(d.claimer) && d.status === DROP_STATUS.Claimed
   );
 
-  // Expired-but-unclaimed drops the dropper can reclaim or reactivate.
+  // Expired-but-unclaimed drops the dropper can reclaim or reactivate. Only this
+  // wallet's: the contract lets just the wallet that hid a drop change it.
   const nowSec = Math.floor(Date.now() / 1000);
   const expiredDrops = myCreated.filter(
-    (d) => d.status === DROP_STATUS.Active && d.expiry < nowSec
+    (d) => !isOld(d.dropper) && d.status === DROP_STATUS.Active && d.expiry < nowSec
   );
+  const oldExpired = myCreated.filter(
+    (d) => isOld(d.dropper) && d.status === DROP_STATUS.Active && d.expiry < nowSec
+  );
+  const oldExpiredWei = oldExpired.reduce((s, d) => s + d.amount, 0n);
   const expiredTotalWei = expiredDrops.reduce((s, d) => s + d.amount, 0n);
   const anyBusy = reclaiming !== null || reactivating !== null || bulkBusy !== null;
   const showSkeleton = loading || !fetched;
@@ -249,6 +255,7 @@ export default function MyDropsPage() {
                           isReactivating={reactivating === d.id || bulkBusy === "reactivate"}
                           locked={anyBusy}
                           onShare={setSharingDrop}
+                          fromOldWallet={isOld(d.dropper)}
                         />
                       ))}
                     </div>
@@ -263,7 +270,7 @@ export default function MyDropsPage() {
                 ) : (
                   <div className="flex flex-col gap-y-6">
                     {myClaimed.map((d) => (
-                      <ClaimCard key={String(d.id)} drop={d} onShare={setSharingDrop} />
+                      <ClaimCard key={String(d.id)} drop={d} onShare={setSharingDrop} fromOldWallet={isOld(d.claimer)} />
                     ))}
                   </div>
                 )}
@@ -303,6 +310,30 @@ export default function MyDropsPage() {
                         {bulkBusy === "reclaim" ? "Taking it back…" : "Take it all back"}
                       </button>
                     </div>
+                  </section>
+                )}
+
+                {/* Expired drops from the linked original wallet: only it can act on them. */}
+                {!showSkeleton && oldExpired.length > 0 && (
+                  <section className={`${CARD} p-6 flex flex-col gap-y-5`}>
+                    <div className="flex items-center gap-4">
+                      <span className="w-11.5 h-11.5 shrink-0 rounded-full bg-surface text-heading flex items-center justify-center">
+                        <Wallet className="w-5 h-5" strokeWidth={1.75} />
+                      </span>
+                      <div className="min-w-0 flex flex-col gap-y-2">
+                        <p className="text-lg/none text-heading">
+                          {oldExpired.length} expired on your old wallet
+                        </p>
+                        <p className="text-sm/none text-nav-muted">Holding {formatG$(oldExpiredWei)} G$</p>
+                      </div>
+                    </div>
+                    <p className="text-sm/[140%] text-nav-muted">
+                      These were hidden with your old wallet, so only it can take them back. Open the switch page with that
+                      wallet and they all come back in one step.
+                    </p>
+                    <Link href="/switch-to-email" className={`${PILL} h-12`}>
+                      <Wallet className="w-4 h-4" strokeWidth={1.75} /> Take them back
+                    </Link>
                   </section>
                 )}
 

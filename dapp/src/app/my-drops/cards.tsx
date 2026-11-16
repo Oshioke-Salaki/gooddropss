@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import {
   QrCode, Copy, Check, Share2, Printer, RefreshCw, Undo2, MapPin, Clock, Lock, Link2,
-  Trophy, Target, Gift, Loader2, ExternalLink,
+  Trophy, Target, Gift, Loader2, ExternalLink, Wallet,
 } from "lucide-react";
 import {
   formatG$,
@@ -43,6 +44,22 @@ function Tag({ tone, children }: { tone: "brand" | "muted" | "bad" | "streak"; c
   );
 }
 
+/** "Drop #123", plus a quiet marker when it came from the wallet this account is
+ *  linked to (see /switch-to-email). Kept under the amount so phones never squeeze it. */
+function DropNumber({ id, fromOldWallet }: { id: bigint; fromOldWallet?: boolean }) {
+  return (
+    <p className="text-sm/none text-nav-muted flex items-center gap-1.5 whitespace-nowrap">
+      Drop #{String(id)}
+      {fromOldWallet && (
+        <>
+          <span aria-hidden>·</span>
+          <span>Old wallet</span>
+        </>
+      )}
+    </p>
+  );
+}
+
 /** Location line. Private drops store (0,0) on-chain — showing maps would go to the ocean. */
 function LocationRow({ drop, isPrivate }: { drop: Drop; isPrivate: boolean }) {
   if (isPrivate) {
@@ -76,8 +93,11 @@ export function DropCard({
   isReactivating,
   locked,
   onShare,
+  fromOldWallet,
 }: {
   drop: Drop;
+  /** Hidden with the wallet this account is linked to: only that wallet can change it. */
+  fromOldWallet?: boolean;
   onReclaim: (id: bigint) => void;
   onReactivate: (id: bigint) => void;
   isReclaiming: boolean;
@@ -106,7 +126,7 @@ export function DropCard({
             <p className="text-lg/none text-heading truncate">
               {formatG$(drop.amount)} <span className="text-nav-muted">G$</span>
             </p>
-            <p className="text-sm/none text-nav-muted">Drop #{String(drop.id)}</p>
+            <DropNumber id={drop.id} fromOldWallet={fromOldWallet} />
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2 shrink-0">
@@ -143,12 +163,19 @@ export function DropCard({
         )}
         {isExpiredActive && (
           <p className="flex items-center gap-2 text-sm/none text-nav-muted">
-            <Clock className="w-4 h-4 shrink-0" strokeWidth={2} /> Reactivate it, or take your G$ back
+            <Clock className="w-4 h-4 shrink-0" strokeWidth={2} />
+            {fromOldWallet ? "Only your old wallet can take this back or reactivate it" : "Reactivate it, or take your G$ back"}
           </p>
         )}
       </div>
 
-      {isExpiredActive && (
+      {isExpiredActive && fromOldWallet && (
+        <Link href="/switch-to-email" className={`${PILL} h-12`}>
+          <Wallet className="w-4 h-4" strokeWidth={1.75} /> Take it back with your old wallet
+        </Link>
+      )}
+
+      {isExpiredActive && !fromOldWallet && (
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             type="button"
@@ -190,7 +217,7 @@ export function DropCard({
   );
 }
 
-export function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop) => void }) {
+export function ClaimCard({ drop, onShare, fromOldWallet }: { drop: Drop; onShare: (drop: Drop) => void; fromOldWallet?: boolean }) {
   const { hint: cleanHint, isChainLast } = parseDropHint(drop.hint);
   return (
     <article className={`${CARD} p-6 flex flex-col gap-y-5 min-w-0`}>
@@ -203,14 +230,16 @@ export function ClaimCard({ drop, onShare }: { drop: Drop; onShare: (drop: Drop)
             <p className="text-lg/none text-heading truncate">
               {formatG$(drop.amount)} <span className="text-nav-muted">G$</span>
             </p>
-            <p className="text-sm/none text-nav-muted">Drop #{String(drop.id)}</p>
+            <DropNumber id={drop.id} fromOldWallet={fromOldWallet} />
           </div>
         </div>
+        <div className="flex flex-wrap justify-end gap-2 shrink-0">
         <Tag tone="brand">
           {isChainLast
             ? <><Trophy className="w-3.5 h-3.5" strokeWidth={2} /> Hunt complete</>
             : <><Check className="w-3.5 h-3.5" strokeWidth={2} /> Claimed</>}
         </Tag>
+        </div>
       </div>
 
       {cleanHint && (
