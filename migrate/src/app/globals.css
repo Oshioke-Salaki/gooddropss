@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  --cream: #f5f4f0;
+  --lime: #bffd00;
+  --ink: #111111;
+}
+
+html, body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+* { box-sizing: border-box; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
+
+@keyframes pop {
+  0% { transform: scale(0) rotate(-10deg); opacity: 0; }
+  60% { transform: scale(1.12) rotate(4deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.pop { animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+@keyframes rise {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.rise { animation: rise 0.4s ease both; }

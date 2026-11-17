@@ -25,6 +25,9 @@ import { Card, Step, Row, Note, Loading, Retry, short, walletName } from "@/app/
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 const SAVED = "gd:renew:account";
+// Focus Pet accounts are email wallets (Web3Auth/Privy) that only the restore app
+// can sign in to, so their renewal happens there.
+const FOCUS_PET_RENEW_URL = "https://migrate.gooddrops.xyz/?renew=1";
 
 type MagicSdk = { user: { isLoggedIn: () => Promise<boolean> } };
 
@@ -242,10 +245,17 @@ export function RenewFlow() {
                 ))}
                 {connectErr && <p className="text-sm/[145%] text-danger" role="alert">{connectErr}</p>}
                 {root && (
-                  <Note tone="info">
-                    Is that wallet in the GoodDollar wallet app, MiniPay or another app? You can renew there instead. Once it&apos;s
-                    done, this account counts as verified again on GoodDrops, nothing else needed.
-                  </Note>
+                  <>
+                    <Note tone="info">
+                      Is that wallet in the GoodDollar wallet app, MiniPay or another app? You can renew there instead. Once it&apos;s
+                      done, this account counts as verified again on GoodDrops, nothing else needed.
+                    </Note>
+                    {/* Focus Pet wallets are email wallets that only open on the restore app. */}
+                    <a href={FOCUS_PET_RENEW_URL}
+                      className="min-h-12 px-5 py-3 rounded-full border border-line bg-white text-sm/[130%] text-heading text-center flex items-center justify-center gap-2 hover:bg-surface">
+                      Verified on Focus Pet? Renew here <ArrowRight className="w-4 h-4 shrink-0" strokeWidth={2} />
+                    </a>
+                  </>
                 )}
               </div>
             )}
