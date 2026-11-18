@@ -318,13 +318,13 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
                     {distance < 1000 ? distance : `${(distance / 1000).toFixed(1)}k`}
                   </text>
                   <text x={120} y={134} textAnchor="middle" fill="#6B6E63" fontSize={13}
-                    style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
+                    style={{ fontFamily: "'DM Sans', sans-serif" }}>
                     {distance < 1000 ? "metres away" : "km away"}
                   </text>
                 </>
               ) : (
                 <text x={120} y={124} textAnchor="middle" fill="#6B6E63" fontSize={13}
-                  style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
+                  style={{ fontFamily: "'DM Sans', sans-serif" }}>
                   Locating…
                 </text>
               )}

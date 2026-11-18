@@ -1,0 +1,7 @@
+DM Sans  Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)
+Anta     Copyright 2023 The Anta Project Authors (https://github.com/Anta-Font/anta)
+
+Both fonts are licensed under the SIL Open Font License, Version 1.1:
+https://openfontlicense.org/open-font-license-official-text/
+
+The .woff2 files here are the unmodified subsets served by Google Fonts.

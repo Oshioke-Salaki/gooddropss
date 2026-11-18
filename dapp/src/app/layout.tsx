@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans, Anta } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/Providers";
@@ -10,20 +9,9 @@ const TITLE = "GoodDrops — Find hidden G$ in the wild";
 const DESCRIPTION =
   "Hide GoodDollar tokens at real-world GPS coordinates. Verified humans hunt them down and claim the reward — real money, real places.";
 
-// DM Sans is the app font (2026 refresh); Anta is the numeric display face.
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-dm-sans",
-  weight: ["400", "500", "600", "700"],
-});
-
-// Anta — the numeric display face for leaderboard rank badges.
-const anta = Anta({
-  subsets: ["latin"],
-  variable: "--font-anta-src",
-  weight: ["400"],
-});
-
+// Fonts are self-hosted from /public/fonts (see the @font-face rules in
+// globals.css), so builds never depend on reaching Google Fonts.
+const FONT_PRELOADS = ["/fonts/dm-sans-latin.woff2", "/fonts/anta-latin.woff2"];
 
 export const viewport: Viewport = {
   themeColor: "#F8F8F8",
@@ -119,7 +107,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${anta.variable}`}>
+    <html lang="en">
+      <head>
+        {FONT_PRELOADS.map((href) => (
+          <link key={href} rel="preload" href={href} as="font" type="font/woff2" crossOrigin="anonymous" />
+        ))}
+      </head>
       <body>
         <script
           type="application/ld+json"
