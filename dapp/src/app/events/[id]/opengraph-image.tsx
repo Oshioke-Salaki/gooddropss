@@ -38,7 +38,7 @@ export default async function EventOgImage({ params }: { params: Promise<{ id: s
   return new ImageResponse(
     (
       <div style={{ width: 1200, height: 630, background: BG, display: "flex", padding: 48, fontFamily: "system-ui, sans-serif" }}>
-        <div style={{ flex: 1, background: CARD, borderRadius: 40, padding: 64, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+        <div style={{ flex: 1, background: CARD, borderRadius: 40, padding: "56px 64px", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ width: 52, height: 52, borderRadius: 26, background: BRAND, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Mark size={34} color="#FFFFFF" />
@@ -52,20 +52,22 @@ export default async function EventOgImage({ params }: { params: Promise<{ id: s
             )}
           </div>
 
-          <div style={{ marginTop: 56, fontSize: visible && e!.title.length > 40 ? 64 : 80, lineHeight: 1.05, color: HEADING, display: "flex", maxWidth: 900 }}>
+          {/* Everything flows top to bottom (no absolute positioning), so a long
+              title pushes the amount down instead of printing over it. */}
+          <div style={{ marginTop: 40, fontSize: !visible ? 72 : e!.title.length > 40 ? 50 : e!.title.length > 22 ? 56 : 76, lineHeight: 1.08, color: HEADING, display: "flex", maxWidth: 860 }}>
             {visible ? e!.title : "Events with G$ hidden around them"}
           </div>
           {visible && (
-            <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 10, fontSize: 30, color: MUTED }}>
+            <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 8, fontSize: 28, color: MUTED, maxWidth: 760 }}>
               <span style={{ display: "flex" }}>{when}</span>
               <span style={{ display: "flex" }}>{e!.venueName}</span>
             </div>
           )}
 
           {visible && (
-            <div style={{ position: "absolute", left: 64, bottom: 56, display: "flex", alignItems: "baseline", gap: 14 }}>
-              <span style={{ fontSize: 64, color: HEADING }}>{e!.budgetG.toLocaleString("en-US")}</span>
-              <span style={{ fontSize: 40, color: BRAND }}>G$</span>
+            <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 14 }}>
+              <span style={{ fontSize: 60, color: HEADING }}>{e!.budgetG.toLocaleString("en-US")}</span>
+              <span style={{ fontSize: 38, color: BRAND }}>G$</span>
               <span style={{ fontSize: 28, color: MUTED }}>planned</span>
             </div>
           )}
