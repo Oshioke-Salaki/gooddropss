@@ -9,6 +9,7 @@ import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { DROP_STATUS, type Drop } from "@/types";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { AdminPage, Card, Hint, SectionTitle, Stat } from "./ui";
+import { DropLimitsCard } from "./DropLimitsCard";
 import { REWARDS_WEI } from "@/lib/circulation";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -191,6 +192,8 @@ export function AnalyticsBody() {
             ? "Identity required to claim. Sybil-protected."
             : "Identity NOT required: claims are open to anyone (farmable). Call setIdentityRequired(true)."}
       </div>
+
+      <DropLimitsCard />
 
       <Hint text={error} tone="bad" className="mb-3" />
 
