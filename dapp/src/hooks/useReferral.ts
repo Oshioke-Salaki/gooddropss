@@ -55,7 +55,15 @@ export function useReferral() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ referrer: pendingRef, signature, timestamp }),
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        // Not new to GoodDrops: the invite can never count, so stop retrying it.
+        const body = await res.json().catch(() => null);
+        if (body?.notNew) {
+          try { localStorage.setItem(REF_DONE_KEY, "1"); localStorage.removeItem(REF_STORAGE_KEY); } catch { /* ignore */ }
+          setPendingRef(null);
+        }
+        return false;
+      }
       try { localStorage.setItem(REF_DONE_KEY, "1"); localStorage.removeItem(REF_STORAGE_KEY); } catch { /* ignore */ }
       setPendingRef(null);
       await refresh();

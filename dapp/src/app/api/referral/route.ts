@@ -3,7 +3,7 @@ import { recoverMessageAddress } from "viem";
 import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
 import { referralAcceptMessage, REF_ADDR_RE } from "@/lib/referral";
-import { fetchHasActivity } from "@/lib/subgraph";
+import { fetchHasActivity, fetchFirstActivityAt } from "@/lib/subgraph";
 import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
 import { tryRefPayout } from "@/lib/refPayout";
 
@@ -13,6 +13,12 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const SIG_WINDOW = 24 * 60 * 60 * 1000;
+
+// Referrals are for growing GoodDrops, so only people who are new here count:
+// their first-ever claim or drop (on any of their wallets) has to be this
+// recent. A newcomer is credited within minutes of their first claim, so this
+// is generous; someone who has been hunting for weeks can't be "referred".
+const NEW_MEMBER_WINDOW_S = 3 * 24 * 60 * 60;
 
 // GET /api/referral?address=0x…          → { count, referredBy }
 // GET /api/referral?leaders=1            → { leaders: [{ root, count }] }
@@ -95,6 +101,15 @@ export async function POST(req: NextRequest) {
   // Can't refer yourself (or another wallet of the same identity).
   if (inviteeRoot === referrerRoot)
     return NextResponse.json({ error: "You can't refer yourself." }, { status: 400 });
+
+  // New members only (see NEW_MEMBER_WINDOW_S). Checked across the wallet and
+  // its identity root, so a long-time player on a fresh linked wallet is still
+  // recognised. If we can't tell, nothing is saved and the next visit retries.
+  let firstAt: number | null;
+  try { firstAt = await fetchFirstActivityAt([invitee, inviteeRoot]); }
+  catch { return NextResponse.json({ error: "Couldn't check right now. Please try again." }, { status: 503 }); }
+  if (firstAt !== null && Math.floor(Date.now() / 1000) - firstAt > NEW_MEMBER_WINDOW_S)
+    return NextResponse.json({ error: "Invites are for people new to GoodDrops.", notNew: true }, { status: 409 });
 
   const redis = getRedis();
   if (!redis) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });

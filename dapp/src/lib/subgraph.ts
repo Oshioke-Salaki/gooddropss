@@ -240,6 +240,33 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
   }
 }
 
+/**
+ * When these wallets first did anything on GoodDrops: the earliest claim or
+ * drop across all of them, in unix seconds. `null` = never active. Throws when
+ * the subgraph can't be reached, so callers can tell "new" from "unknown".
+ */
+export async function fetchFirstActivityAt(addresses: string[]): Promise<number | null> {
+  if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
+  const list = [...new Set(addresses.map((a) => a.toLowerCase()))].filter((a) => /^0x[0-9a-f]{40}$/.test(a));
+  if (!list.length) return null;
+  const inList = JSON.stringify(list);
+  const query = `{
+    claimed: drops(first: 1, orderBy: claimedAt, orderDirection: asc, where: { claimer_in: ${inList}, status: 1 }) { claimedAt }
+    created: drops(first: 1, orderBy: createdAt, orderDirection: asc, where: { dropper_in: ${inList} }) { createdAt }
+  }`;
+  const res = await fetch(SUBGRAPH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error(`subgraph ${res.status}`);
+  const json = await res.json();
+  if (json.errors?.length) throw new Error("subgraph query failed");
+  const times = [Number(json.data?.claimed?.[0]?.claimedAt), Number(json.data?.created?.[0]?.createdAt)]
+    .filter((t) => Number.isFinite(t) && t > 0);
+  return times.length ? Math.min(...times) : null;
+}
+
 // Fetches all drops using cursor pagination (1 000 per page).
 // Server-only micro-cache. Profile pages (/hunter/[address]) and /api/badges both
 // pull the ENTIRE drop set + resolve roots on every render — crawlers and bursts
