@@ -666,7 +666,17 @@ export default function MapView({
     // dropped rather than stacked — they reappear as you zoom in and space opens up.
     candidates.sort((a, b) => b.dropCount - a.dropCount || a.dist - b.dist);
 
-    const placed: { left: number; top: number; right: number; bottom: number }[] = [];
+    // Event pins are placed first: an event is time-boxed and usually sits at a
+    // named place, so its label wins and the place name steps aside rather than
+    // printing on top of it (seen at an event pinned on a named venue).
+    const placed: { left: number; top: number; right: number; bottom: number }[] =
+      eventMarkersRef.current.map((m) => {
+        const el = m.getElement();
+        const pt = map.project(m.getLngLat());
+        const w = el.offsetWidth, h = el.offsetHeight;
+        // Matches the marker's anchor "left" with offset [-16, 0].
+        return { left: pt.x - 16, top: pt.y - h / 2, right: pt.x - 16 + w, bottom: pt.y + h / 2 };
+      });
     const overlaps = (a: typeof placed[number], b: typeof placed[number]) =>
       a.left < b.right + LABEL_GAP_PX &&
       a.right + LABEL_GAP_PX > b.left &&
@@ -704,7 +714,7 @@ export default function MapView({
   useEffect(() => {
     if (!mapReady) return;
     renderLandmarkMarkers();
-  }, [landmarks, drops, mapReady, interactiveLandmarks, renderLandmarkMarkers]);
+  }, [landmarks, drops, events, mapReady, interactiveLandmarks, renderLandmarkMarkers]);
 
   useEffect(() => {
     const map = mapRef.current;
