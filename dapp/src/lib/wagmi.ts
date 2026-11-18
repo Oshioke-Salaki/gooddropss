@@ -90,7 +90,9 @@ if (typeof window !== "undefined") {
           name: "GoodDrops",
           description: "Hide and hunt real G$ anywhere in the world.",
           url: window.location.origin,
-          icons: [`${window.location.origin}/icon`],
+          // 180px icon: Valora shows this on its connect / approve screens, and
+          // /icon is only 32px.
+          icons: [`${window.location.origin}/apple-icon`],
         },
         // The QR / deep-link modal must render ABOVE our sign-in sheet (z 2000)
         // and session loader (z 3000) — otherwise the popup opens invisibly behind

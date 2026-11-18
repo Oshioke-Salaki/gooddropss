@@ -13,12 +13,21 @@ export const VALORA_WC_ID = "d01c7758d741b363e637a817a09bcf579feae4db9f5bb16f599
 // directly; instead we detect the WebView signature: on iOS a WKWebView omits the
 // "Safari" token real Safari always includes; on Android a WebView carries ";wv)".
 //
-// If a non-Valora in-app WebView ever matches, the only effect is the wallet button
-// targets Valora — and Google / email sign-in sits right above it as the fallback,
-// so nobody is ever stuck. Ordinary desktop / mobile-browser users never match.
+// Two things rule Valora out:
+// - an injected wallet (window.ethereum). Valora never injects one (checked against
+//   its wallet-stack source, Nov 2026), so this is MiniPay / MetaMask / Opera etc.,
+//   which connect directly and must keep WalletConnect's normal wallet list.
+// - a social app's own browser (Instagram, Facebook, TikTok, X, Telegram, Snapchat,
+//   LinkedIn, LINE). Those tag their user-agent, and people arriving from campaign
+//   links there may not have Valora at all, so they get the normal wallet list too.
+// Ordinary desktop / mobile-browser users never match.
+const SOCIAL_IN_APP = /Instagram|FBAN|FBAV|FB_IAB|FBIOS|Messenger|TikTok|musical_ly|BytedanceWebview|Twitter|Telegram|Snapchat|LinkedInApp|\bLine\//i;
+
 export function isValoraBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  if ((window as unknown as { ethereum?: unknown }).ethereum) return false;
   const ua = navigator.userAgent;
+  if (SOCIAL_IN_APP.test(ua)) return false;
   const iosWebView = /(iPhone|iPod|iPad)/.test(ua) && /AppleWebKit/.test(ua) && !/Safari/.test(ua);
   const androidWebView = /;\s*wv\)/.test(ua);
   return iosWebView || androidWebView;
