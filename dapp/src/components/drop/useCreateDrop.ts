@@ -50,6 +50,8 @@ function dropErrorMessage(e: unknown): string {
 // Multi-drop: scatter up to this many identical drops around one spot. Capped
 // because the batch is one transaction and the gas grows with it.
 export const MAX_MULTI = 20;
+/** How far a batch of event drops spreads from the venue pin, in metres. */
+const EVENT_SCATTER_M = 40;
 
 export type DropStatus =
   | "idle" | "approving" | "dropping" | "riddle" | "riddleFailed" | "multi" | "done" | "error";
@@ -248,7 +250,14 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
     // Always reflect storage — setting null clears any stale in-memory pending so a
     // finished riddle drop can't leave the next drop's button silently blocked.
     setPending(p);
-    if (p) { setResuming(true); setStatus("riddleFailed"); setErrMsg(""); }
+    if (p) {
+      setResuming(true); setStatus("riddleFailed"); setErrMsg("");
+      // Try to finish it straight away. Usually it already went through (an
+      // earlier retry, another tab) and this just clears the reminder, so the
+      // drawer opens normally instead of asking about a drop that's fine.
+      void bindRiddle(p);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Multi-drop and private/riddle are mutually exclusive — a scattered batch can't
@@ -308,8 +317,11 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
           return true;
         }
         // 404 (token expired) / 403 (owner mismatch) aren't transient — stop.
+        // "Drop not found" is: the network can lag just after the drop lands,
+        // so keep trying like a network blip.
         if (res.status === 404 || res.status === 403) {
           const body = await res.json().catch(() => ({}));
+          if (body?.notYet) throw new Error("not indexed yet");
           setErrMsg(body.error ?? "Could not finish the riddle.");
           setStatus("riddleFailed");
           return false;
@@ -389,7 +401,9 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
     const expiry = dropExpiry();
     if (expiry === null) return;
     setPlacedForS(expiry - Math.floor(Date.now() / 1000));
-    const points = scatterPoints(lat, lng, qty, CLAIM_RADIUS_M);
+    // Event drops stay close to the venue (often one building, where indoor GPS
+    // is rough), so a guest inside is always within claiming range of them.
+    const points = scatterPoints(lat, lng, qty, eventId ? EVENT_SCATTER_M : CLAIM_RADIUS_M);
     const lats = points.map((p) => degToGps(p.lat));
     const lngs = points.map((p) => degToGps(p.lng));
 

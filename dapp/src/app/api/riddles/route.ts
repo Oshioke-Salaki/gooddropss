@@ -12,6 +12,12 @@ import {
 export const runtime = "nodejs";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+
+function readDrop(dropId: string) {
+  return onChainClient.readContract({
+    address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(dropId)],
+  });
+}
 // Pending token records self-expire. Binding normally happens seconds after the
 // signature, but we keep them a full day so a dropper who's interrupted mid-flow
 // (network blip, app closed) can still resume the bind — with no new signature.
@@ -116,11 +122,17 @@ export async function PATCH(req: NextRequest) {
     const pending = await redis.get<RiddleTokenRecord>(keys.riddleToken(token));
     if (!pending) return NextResponse.json({ error: "Riddle setup expired or not found" }, { status: 404 });
 
-    const drop = await onChainClient.readContract({
-      address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI, functionName: "getDrop", args: [BigInt(dropId)],
-    });
+    // The app calls this the moment its drop is confirmed, and a public RPC
+    // node can still be a block or two behind. Re-read for a few seconds
+    // before deciding the drop doesn't exist.
+    let drop = null as Awaited<ReturnType<typeof readDrop>> | null;
+    for (let i = 0; i < 5; i++) {
+      drop = await readDrop(dropId).catch(() => null);
+      if (drop && drop.dropper !== ZERO) break;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
     if (!drop || drop.dropper === ZERO) {
-      return NextResponse.json({ error: "Drop not found" }, { status: 404 });
+      return NextResponse.json({ error: "Drop not found", notYet: true }, { status: 404 });
     }
 
     // The signer of the token must be the drop's creator — no cross-binding.
