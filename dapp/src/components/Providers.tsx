@@ -9,6 +9,7 @@ import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { ValoraDeepLink } from "@/components/ValoraDeepLink";
 import { ProfileSetup } from "@/components/profile/ProfileSetup";
 import { UbiPrompt } from "@/components/UbiPrompt";
+import { FlowVotePrompt } from "@/components/FlowVotePrompt";
 import { ProfileDrawerHost } from "@/components/profile/ProfileDrawer";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
@@ -83,6 +84,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               via the gd:setName event (wallet pill, post-claim screen, leaderboard). */}
           <ProfileSetup />
           <UbiPrompt />
+          <FlowVotePrompt />
           <ProfileDrawerHost />
           <Toaster />
         </AuthProvider>

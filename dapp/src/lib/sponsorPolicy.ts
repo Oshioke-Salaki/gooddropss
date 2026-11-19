@@ -9,6 +9,7 @@
 
 import { decodeFunctionData, parseAbi, type Address, type Hex } from "viem";
 import { ERC20_ABI, GOOD_DROPS_ABI, GOOD_DROPS_ADDRESS, G_TOKEN_ADDRESS } from "@/lib/contracts";
+import { FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_RECIPIENT } from "@/lib/flowstate";
 
 /** Alchemy Modular Account v2 (the EIP-7702 delegate) entry points. */
 const ACCOUNT_ABI = parseAbi([
@@ -21,7 +22,7 @@ const EXECUTE_USER_OP = "0x8dd7712f";
 export const MAX_CALLS = 4;
 
 export type InnerCall = { target: Address; value: bigint; data: Hex };
-export type CallKind = "claim" | "drop" | "manage" | "approve" | "transfer";
+export type CallKind = "claim" | "drop" | "manage" | "approve" | "transfer" | "vote";
 
 /** The calls a user operation will make, or null if we can't read it. */
 export function innerCalls(callData: Hex | undefined): InnerCall[] | null {
@@ -52,6 +53,15 @@ export function classify(call: InnerCall): CallKind | null {
       if (fn === "createDrop" || fn === "createManyDrops") return "drop";
       if (fn === "reclaimExpired" || fn === "reclaimManyExpired" || fn === "extendExpiry" || fn === "extendManyExpiry") return "manage";
       return null; // owner/admin functions
+    }
+    // Supporting GoodDrops on Flow State: only votes that set GoodDrops' points,
+    // so our credits can't pay for votes cast anywhere else.
+    if (same(call.target, FLOW_COUNCIL)) {
+      const d = decodeFunctionData({ abi: FLOW_COUNCIL_ABI, data: call.data });
+      if (d.functionName !== "vote") return null;
+      const votes = d.args[0];
+      if (votes.length === 0) return null;
+      return votes.every((v) => same(v.recipient, FLOW_RECIPIENT) && v.amount <= 1000n) ? "vote" : null;
     }
     if (same(call.target, G_TOKEN_ADDRESS)) {
       const d = decodeFunctionData({ abi: ERC20_ABI, data: call.data });

@@ -25,6 +25,9 @@ type Events = {
   event_leftovers_reclaimed: Record<string, never>;
   event_screen_opened: Record<string, never>;
   tx_sponsored: { fn: string };
+  flow_vote_prompt_shown: Record<string, never>;
+  flow_vote_cast: { points: number };
+  flow_vote_blocked: { reason: "identity_elsewhere" | "refused" | "no_points" };
   tx_sponsor_fallback: { fn: string };
 };
 

@@ -158,4 +158,6 @@ export const keys = {
   // ZSet dropId → unix s a claim proof was signed, per person (identity root) per
   // event. Enforces the host's per-person limit; unused proofs are pruned.
   eventFound:        (id: string, root: string) => `gd:event:found:${id}:${root.toLowerCase()}`,
+  // NX cooldown: one Flow State voter claim in flight per wallet.
+  flowClaimRl:       (address: string) => `gd:flow:claim:${address.toLowerCase()}`,
 };
