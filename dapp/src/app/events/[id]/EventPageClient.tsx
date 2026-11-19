@@ -109,7 +109,9 @@ export default function EventPageClient({ id }: { id: string }) {
           On desktop the actions sit in a sticky side column instead. */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-[auto_1fr] gap-5 lg:gap-x-8 items-start">
         {/* ── Hero ─────────────────────────────────────────────────────── */}
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+        {/* From the door QR on a phone, the getting-set-up steps come first:
+            the guest is standing at the venue and needs to act, not read. */}
+        <div className={`min-w-0 lg:col-start-1 lg:row-start-1 ${fromDoor ? "row-start-2" : ""}`}>
           <section className={`${CARD} p-6 lg:p-8`}>
             <div className="flex items-center gap-2 flex-wrap">
               <CategoryChip category={e.category} />
@@ -169,7 +171,7 @@ export default function EventPageClient({ id }: { id: string }) {
         </div>
 
         {/* ── Side column ─────────────────────────────────────────────── */}
-        <aside className="flex flex-col gap-5 row-start-2 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-[calc(var(--spacing-nav)+24px)]">
+        <aside className={`flex flex-col gap-5 ${fromDoor ? "row-start-1" : "row-start-2"} lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:self-start lg:sticky lg:top-[calc(var(--spacing-nav)+24px)]`}>
           {!isHost && !cancelled && phase !== "ended" && e.status === "approved" && (
             <JoinSteps address={address} onSignIn={login} live={phase === "live"} fromDoor={fromDoor} mapHref={`/?focus=${e.lat},${e.lng}`} />
           )}

@@ -19,7 +19,9 @@ const SIG_TTL_S = 15 * 60;
 // Anti-drain (same philosophy as the gas faucet): each (person, badge) can only
 // ever mint once, but bound total relayer gas anyway.
 const MINT_MAX_PER_DAY = Number(process.env.BADGE_MINT_MAX_PER_DAY ?? 300); // global circuit breaker
-const IP_MINT_MAX_PER_DAY = 15;
+// Per IP per day; generous because event crowds share one Wi-Fi or carrier IP.
+// Each person can only mint each badge once, and the global cap above holds.
+const IP_MINT_MAX_PER_DAY = Number(process.env.BADGE_MINT_MAX_PER_IP ?? 60);
 
 const publicClient = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
 

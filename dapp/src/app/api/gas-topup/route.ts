@@ -46,7 +46,10 @@ const MONTHLY_CAP     = 3;          // per identity root per rolling 30 days
 // funded, ~free to us); worst-case OUR CELO spend is still bounded by the
 // per-person gates (verified-only, 3-day cooldown, 3/month, IP cap). Env-overridable.
 const DAILY_CAP       = Number(process.env.GAS_TOPUP_MAX_PER_DAY ?? 300);
-const IP_DAILY_CAP    = 5;
+// Per IP per day. Generous on purpose: a venue's Wi-Fi or a mobile carrier
+// (which shares one IP across many phones) puts a whole crowd behind one
+// address, and the per-person gates above are the real protection.
+const IP_DAILY_CAP    = Number(process.env.GAS_TOPUP_MAX_PER_IP ?? 25);
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 
