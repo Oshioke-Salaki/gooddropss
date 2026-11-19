@@ -9,6 +9,13 @@ export type VerificationStatus = "loading" | "verified" | "not_verified" | "erro
 
 const GRACE_PERIOD_MS = 5 * 60 * 1000;
 
+// Last known answers per wallet, kept for the whole visit. Every page mounts
+// its own nav, so without these each page change started from "loading" and
+// the account area flickered as if signing in again. We show the last answer
+// at once and re-check quietly in the background.
+const statusCache = new Map<string, VerificationStatus>();
+const rootCache = new Map<string, string | null>();
+
 export function useVerification() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -22,7 +29,18 @@ export function useVerification() {
     return makeIdentitySDK(publicClient, walletClient);
   }, [identitySDKFromHook, publicClient, walletClient]);
 
-  const [status, setStatus] = useState<VerificationStatus>("loading");
+  const key = address?.toLowerCase();
+  const keyRef = useRef(key);
+  keyRef.current = key;
+  const [status, setStatusRaw] = useState<VerificationStatus>(() => (key && statusCache.get(key)) || "loading");
+  const setStatus = (s: VerificationStatus) => {
+    setStatusRaw(s);
+    if (keyRef.current && (s === "verified" || s === "not_verified")) statusCache.set(keyRef.current, s);
+  };
+  // A different wallet shows its own last answer (or loading), never the previous one's.
+  useEffect(() => {
+    setStatusRaw((key && statusCache.get(key)) || "loading");
+  }, [key]);
   const [fvLink, setFvLink] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
@@ -37,14 +55,14 @@ export function useVerification() {
   // original MetaMask identity) can't face-verify itself: GoodDollar keeps the
   // verification on the original wallet. Renewing has to happen there, so the
   // popup sends them to /switch-to-email instead of a face scan that would fail.
-  const [linkedRoot, setLinkedRoot] = useState<string | null>(null);
+  const [linkedRoot, setLinkedRoot] = useState<string | null>(() => (key && rootCache.get(key)) ?? null);
   useEffect(() => {
-    setLinkedRoot(null);
-    if (!address) return;
+    setLinkedRoot((key && rootCache.get(key)) ?? null);
+    if (!address || !key) return;
     let cancelled = false;
-    readLinkedRoot(address).then((r) => { if (!cancelled) setLinkedRoot(r); }).catch(() => {});
+    readLinkedRoot(address).then((r) => { rootCache.set(key, r); if (!cancelled) setLinkedRoot(r); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, key]);
   const blipTimer = useRef<number | null>(null);
 
   const isPendingVerification =
@@ -54,7 +72,8 @@ export function useVerification() {
     if (!address || !publicClient || !identitySDK || !walletClient?.account?.address) return;
 
     try {
-      if (!isVerifying && !isPendingVerification) setStatus("loading");
+      // Only show "loading" when there's no earlier answer for this wallet.
+      if (!isVerifying && !isPendingVerification && !(key && statusCache.has(key))) setStatus("loading");
 
       const claimSDK = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
 

@@ -23,6 +23,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Set after the first mount in this visit. Each page mounts its own nav, and
+// without this every page change hid the account area for a frame while it
+// "mounted" again. The first render after a full page load is still false, so
+// it matches the server render and hydration stays clean.
+let clientMounted = false;
+
 export function useAuth() {
   const { address, isConnected, status } = useAccount();
   const { disconnect } = useDisconnect();
@@ -32,9 +38,10 @@ export function useAuth() {
   // wagmi has settled its auto-reconnect. A 2s fallback guarantees `ready` can
   // never hang if a connector's reconnect probe stalls — otherwise the Connect
   // button (gated on `ready`) would never appear.
-  const [mounted, setMounted]   = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
+  const [mounted, setMounted]   = useState(() => clientMounted);
+  const [timedOut, setTimedOut] = useState(() => clientMounted);
   useEffect(() => {
+    clientMounted = true;
     setMounted(true);
     const t = setTimeout(() => setTimedOut(true), 2000);
     return () => clearTimeout(t);
