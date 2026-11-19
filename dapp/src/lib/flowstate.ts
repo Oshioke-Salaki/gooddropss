@@ -64,6 +64,8 @@ export interface Ballot {
   used: number;
   /** Points not given to anyone yet. */
   available: number;
+  /** Other projects this wallet currently gives points to. */
+  others: { recipient: `0x${string}`; amount: number }[];
 }
 
 /** Turn the contract's answers into what the screen needs. */
@@ -74,10 +76,25 @@ export function toBallot(
   const isVoter = voter.account !== "0x0000000000000000000000000000000000000000";
   const votingPower = Number(voter.votingPower);
   let used = 0, forUs = 0;
+  const others: Ballot["others"] = [];
   for (const v of votes) {
     const n = Number(v.amount);
+    if (n <= 0) continue;
     used += n;
     if (v.recipient.toLowerCase() === FLOW_RECIPIENT.toLowerCase()) forUs += n;
+    else others.push({ recipient: v.recipient as `0x${string}`, amount: n });
   }
-  return { isVoter, votingPower, forUs, used, available: Math.max(0, votingPower - used) };
+  return { isVoter, votingPower, forUs, used, available: Math.max(0, votingPower - used), others };
+}
+
+/**
+ * Votes this wallet could still give GoodDrops. A wallet that isn't a voter
+ * yet can always be asked (claiming gives it votes). Votes already given to
+ * other projects are theirs to keep: we only ever add free ones.
+ */
+export const canGiveMore = (b: Ballot) => !b.isVoter || b.available > 0;
+
+/** The ballot that gives GoodDrops every free vote, and touches nothing else. */
+export function ballotFor(b: Ballot): { recipient: `0x${string}`; amount: bigint }[] {
+  return [{ recipient: FLOW_RECIPIENT, amount: BigInt(b.forUs + b.available) }];
 }

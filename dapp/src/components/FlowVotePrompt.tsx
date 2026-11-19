@@ -13,17 +13,17 @@ import { publicClient } from "@/lib/publicClient";
 import { friendlyClaimError } from "@/lib/claimErrors";
 import { track } from "@/lib/analytics";
 import {
-  FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_COUNCIL_URL, FLOW_RECIPIENT,
-  buildClaimMessage, toBallot, type Ballot,
+  FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_COUNCIL_URL,
+  buildClaimMessage, toBallot, canGiveMore, ballotFor, type Ballot,
 } from "@/lib/flowstate";
 
-// Asks every verified person who hasn't backed GoodDrops on Flow State to vote,
-// with one button. It can't be dismissed while a vote is possible. The moment
-// it turns out a vote isn't (identity votes from another wallet, all points
-// given elsewhere, Flow State refusing or down), it explains and lets them go,
-// so nobody is ever locked out of the app.
+// Asks every verified person to give GoodDrops all of their free Flow State
+// votes, with one button. Checked on every visit, so anyone with votes not yet
+// given out is asked (for email sign-ups that's all of them). Votes someone
+// already gave other projects are never touched. It can't be dismissed while a vote is possible. The moment it turns out a
+// vote isn't (identity votes from another wallet, Flow State refusing or down),
+// it explains and lets them go, so nobody is ever locked out of the app.
 
-const votedKey = (a: string) => `gd:flow-voted:${a.toLowerCase()}`;
 const blockedKey = (a: string) => `gd:flow-blocked:${a.toLowerCase()}`;
 const BLOCKED_FOR_MS = 7 * 86_400_000;
 
@@ -45,8 +45,8 @@ async function readBallot(address: Address): Promise<Ballot> {
   return toBallot(voter, votes);
 }
 
-/** A vote is possible: no points on GoodDrops yet, and either not registered or points to give. */
-const canVote = (b: Ballot) => b.forUs === 0 && (!b.isVoter || b.available > 0);
+/** Checked once per wallet per visit. */
+const checkedThisVisit = new Set<string>();
 
 export type Phase = "ask" | "enabling" | "voting" | "toppingUp" | "done" | "stopped";
 
@@ -73,13 +73,13 @@ export function FlowVotePrompt() {
   // never lands on top of sign-up, verification or another prompt.
   useEffect(() => {
     if (!eligible || open || !address || dismissedThisVisit) return;
-    if (read(votedKey(address)) || recentlyBlocked(address)) return;
+    if (recentlyBlocked(address) || checkedThisVisit.has(address.toLowerCase())) return;
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
     readBallot(address as Address).then((b) => {
       if (cancelled) return;
-      if (b.forUs > 0) { write(votedKey(address), "1"); return; }
-      if (!canVote(b)) return; // nothing they can do here; don't nag
+      checkedThisVisit.add(address.toLowerCase());
+      if (!canGiveMore(b)) return; // every vote they have is already given out
       let quiet = 0;
       const startAt = Date.now() + 1500;
       timer = setInterval(() => {
@@ -95,6 +95,11 @@ export function FlowVotePrompt() {
     }).catch(() => { /* chain unreachable: try again on the next page */ });
     return () => { cancelled = true; if (timer) clearInterval(timer); };
   }, [eligible, open, address]);
+
+  // Signing out resets the visit, so every sign-in checks again for new votes.
+  useEffect(() => {
+    if (!isConnected) { checkedThisVisit.clear(); dismissedThisVisit = false; }
+  }, [isConnected]);
 
   // Switching wallets or signing out closes it; the next wallet gets its own check.
   const shownFor = useRef<string | undefined>(undefined);
@@ -127,7 +132,6 @@ export function FlowVotePrompt() {
     const a = address as Address;
     try {
       let b = await readBallot(a);
-      if (b.forUs > 0) { write(votedKey(a), "1"); setPhase("done"); return; }
 
       // 1. Get voting rights (once per round), by signing Flow State's own message.
       if (!b.isVoter) {
@@ -168,18 +172,19 @@ export function FlowVotePrompt() {
         b = added;
       }
 
-      // 2. Vote: put every free point on GoodDrops. Only GoodDrops' entry is
-      //    sent, so points already given to other projects stay where they are.
+      // 2. Vote: every free vote goes to GoodDrops. Only GoodDrops' entry is
+      //    sent, so votes given to other projects stay exactly where they are.
       if (b.available <= 0) {
+        if (b.forUs > 0) { setPhase("done"); return; }
         track("flow_vote_blocked", { reason: "no_points" });
-        return stop("All your votes are already with other projects, so there's nothing left to give. You can move some to GoodDrops on Flow State.", true);
+        return stop("All your votes are already given out on Flow State, so there are none left to give.", true);
       }
       setPhase("voting");
       const params = {
         address: FLOW_COUNCIL as Address,
         abi: FLOW_COUNCIL_ABI,
         functionName: "vote" as const,
-        args: [[{ recipient: FLOW_RECIPIENT as Address, amount: BigInt(b.forUs + b.available) }]] as const,
+        args: [ballotFor(b)] as const,
       };
       // Check it would go through before asking the wallet, so a problem shows
       // its real reason instead of a failed send.
@@ -189,17 +194,13 @@ export function FlowVotePrompt() {
       const rc = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
       if (rc.status !== "success") throw new Error("vote reverted");
       const after = await readBallot(a).catch(() => null);
-      if (after && after.forUs === 0) throw new Error("vote not recorded");
-      write(votedKey(a), "1");
-      track("flow_vote_cast", { points: b.forUs + b.available });
+      if (after && after.forUs < b.forUs + b.available) throw new Error("vote not recorded");
+      track("flow_vote_cast", { points: b.available });
       setPhase("done");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const fe = friendlyClaimError(e);
       if (fe.kind === "rejected") { setPhase("ask"); return; }
-      if (/NOT_ENOUGH_VOTING_POWER/.test(msg)) {
-        return stop("All your votes are already with other projects, so there's nothing left to give. You can move some to GoodDrops on Flow State.", true);
-      }
       if (/UNAUTHORIZED/.test(msg)) {
         setError("Flow State hasn't finished adding you as a voter. Tap the button again in a moment.");
       } else {
@@ -271,6 +272,7 @@ export function FlowVoteSheet({ phase, error, stopReason, working, closable, onV
             <p className="text-base/[150%] text-heading">
               Help GoodDrops grow. Give us your vote on Flow State with one tap.
             </p>
+
             <button
               type="button"
               onClick={onVote}

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { encodeFunctionData, parseAbi, maxUint256, type Hex } from "viem";
 import { classify, decide, innerCalls, isCelo } from "@/lib/sponsorPolicy";
 import { ERC20_ABI, GOOD_DROPS_ABI, GOOD_DROPS_ADDRESS, G_TOKEN_ADDRESS } from "@/lib/contracts";
-import { FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_RECIPIENT, buildClaimMessage, toBallot } from "@/lib/flowstate";
+import { FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_RECIPIENT, ballotFor, buildClaimMessage, canGiveMore, toBallot } from "@/lib/flowstate";
 
 const ACCOUNT = parseAbi([
   "function execute(address target, uint256 value, bytes data)",
@@ -120,6 +120,14 @@ describe("Flow State votes", () => {
     // The same vote sent to a different contract is not ours to pay for.
     expect(classify({ target: OTHER, value: 0n, data: voteFor(FLOW_RECIPIENT, 10n) })).toBeNull();
   });
+  it("never covers changing other projects' votes, even to zero", () => {
+    const move = encodeFunctionData({ abi: FLOW_COUNCIL_ABI, functionName: "vote", args: [[{ recipient: FLOW_RECIPIENT, amount: 10n }, { recipient: OTHER, amount: 0n }]] });
+    expect(classify({ target: FLOW_COUNCIL, value: 0n, data: move })).toBeNull();
+    const zeroOnly = encodeFunctionData({ abi: FLOW_COUNCIL_ABI, functionName: "vote", args: [[{ recipient: OTHER, amount: 0n }]] });
+    expect(classify({ target: FLOW_COUNCIL, value: 0n, data: zeroOnly })).toBeNull();
+    const zeroUs = encodeFunctionData({ abi: FLOW_COUNCIL_ABI, functionName: "vote", args: [[{ recipient: FLOW_RECIPIENT, amount: 0n }]] });
+    expect(classify({ target: FLOW_COUNCIL, value: 0n, data: zeroUs })).toBeNull();
+  });
   it("still needs a verified person", () => {
     expect(decide(exec(FLOW_COUNCIL, voteFor(FLOW_RECIPIENT, 10n)), false)).toEqual({ ok: false, reason: "needs_verification" });
   });
@@ -133,7 +141,18 @@ describe("Flow State claim message", () => {
   });
   it("works out points for GoodDrops and what's left", () => {
     const b = toBallot({ account: "0x1", votingPower: 10n }, [{ recipient: FLOW_RECIPIENT, amount: 2n }, { recipient: "0x2", amount: 5n }]);
-    expect(b).toEqual({ isVoter: true, votingPower: 10, forUs: 2, used: 7, available: 3 });
+    expect(b).toEqual({ isVoter: true, votingPower: 10, forUs: 2, used: 7, available: 3, others: [{ recipient: "0x2", amount: 5 }] });
+    // Every free vote goes to GoodDrops; the other project's 5 stay untouched.
+    expect(ballotFor(b)).toEqual([{ recipient: FLOW_RECIPIENT, amount: 5n }]);
+    expect(canGiveMore(b)).toBe(true);
+    expect(canGiveMore(toBallot({ account: "0x1", votingPower: 10n }, [{ recipient: FLOW_RECIPIENT, amount: 10n }]))).toBe(false);
+    expect(canGiveMore(toBallot({ account: "0x0000000000000000000000000000000000000000", votingPower: 0n }, []))).toBe(true);
+    // Votes doubled to 20 after giving GoodDrops 10: the next vote gives GoodDrops all 20.
+    const doubled = toBallot({ account: "0x1", votingPower: 20n }, [{ recipient: FLOW_RECIPIENT, amount: 10n }]);
+    expect(canGiveMore(doubled)).toBe(true);
+    expect(ballotFor(doubled)).toEqual([{ recipient: FLOW_RECIPIENT, amount: 20n }]);
+    // And 30, 100, whatever they have.
+    expect(ballotFor(toBallot({ account: "0x1", votingPower: 100n }, []))).toEqual([{ recipient: FLOW_RECIPIENT, amount: 100n }]);
     expect(toBallot({ account: "0x0000000000000000000000000000000000000000", votingPower: 0n }, []).isVoter).toBe(false);
   });
 });

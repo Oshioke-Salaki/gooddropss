@@ -55,13 +55,14 @@ export function classify(call: InnerCall): CallKind | null {
       return null; // owner/admin functions
     }
     // Supporting GoodDrops on Flow State: only votes that set GoodDrops' points,
-    // so our credits can't pay for votes cast anywhere else.
+    // so our credits never pay for votes for (or against) any other project.
     if (same(call.target, FLOW_COUNCIL)) {
       const d = decodeFunctionData({ abi: FLOW_COUNCIL_ABI, data: call.data });
       if (d.functionName !== "vote") return null;
       const votes = d.args[0];
       if (votes.length === 0) return null;
-      return votes.every((v) => same(v.recipient, FLOW_RECIPIENT) && v.amount <= 1000n) ? "vote" : null;
+      if (votes.length === 0) return null;
+      return votes.every((v) => same(v.recipient, FLOW_RECIPIENT) && v.amount > 0n && v.amount <= 1_000_000n) ? "vote" : null;
     }
     if (same(call.target, G_TOKEN_ADDRESS)) {
       const d = decodeFunctionData({ abi: ERC20_ABI, data: call.data });
