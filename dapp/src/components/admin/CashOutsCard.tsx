@@ -2,10 +2,11 @@
 import { useEffect, useState } from "react";
 import { Landmark } from "lucide-react";
 import { formatNaira } from "@/lib/goodcash";
-import { Card, EmptyState, Hint, SectionTitle, Stat, Tag } from "./ui";
+import { Button, Card, EmptyState, Hint, SectionTitle, Stat, Tag } from "./ui";
 
 interface PaidRow { id: string; wallet: string; amountG: string; naira: number; nairaPerDollar: number; txHash: string | null; paidAt: string }
-interface Data { configured: boolean; mode?: "live" | "test"; count?: number; g?: number; naira?: number; people?: number; recent?: PaidRow[]; error?: string }
+interface Health { mode: "live" | "test"; partnerName: string | null; partnerFeePercent: number | null; webhookUrl: string | null; webhookReady: boolean }
+interface Data { configured: boolean; mode?: "live" | "test"; count?: number; g?: number; naira?: number; people?: number; recent?: PaidRow[]; health?: Health; error?: string }
 
 const g = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
@@ -17,12 +18,24 @@ const g = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 })
 export function CashOutsCard() {
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState("");
-  useEffect(() => {
-    fetch("/api/admin/cashouts")
-      .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then(setData)
-      .catch(() => setErr("Couldn't load cash outs. Refresh to try again."));
-  }, []);
+  const [connecting, setConnecting] = useState(false);
+  const [hookMsg, setHookMsg] = useState<{ text: string; tone: "ok" | "bad" } | null>(null);
+  const load = () => fetch("/api/admin/cashouts")
+    .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(setData)
+    .catch(() => setErr("Couldn't load cash outs. Refresh to try again."));
+  useEffect(() => { void load(); }, []);
+
+  const connect = async () => {
+    setConnecting(true); setHookMsg(null);
+    try {
+      const r = await fetch("/api/admin/cashouts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect-webhook" }) });
+      const d = await r.json().catch(() => ({}));
+      setHookMsg(r.ok ? { text: "Connected. GoodCash will now tell us the moment each bank is paid.", tone: "ok" } : { text: d.error ?? "Couldn't connect. Try again.", tone: "bad" });
+      await load();
+    } finally { setConnecting(false); }
+  };
+  const h = data?.health;
 
   const loading = !data && !err;
   return (
@@ -37,9 +50,31 @@ export function CashOutsCard() {
       <Hint text={err} tone="bad" className="mb-3" />
 
       {data && !data.configured ? (
-        <EmptyState icon={Landmark} title="Cash out isn't switched on" body="Add the GoodCash secret key to turn it on." />
+        <EmptyState icon={Landmark} title="Cash out isn't switched on" body="GOODCASH_SECRET_KEY must be a GoodCash secret key (it starts with gc_sk_live_). A publishable key (gc_pk_) won't work here." />
       ) : (
         <>
+          {h && (
+            <div className="rounded-2xl border border-line p-4 mb-5 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2 text-sm/none text-heading">
+                  <Tag tone={h.mode === "live" ? "good" : "warn"}>{h.mode === "live" ? "Live" : "Test mode"}</Tag>
+                  {h.partnerName && <span className="text-nav-muted">GoodCash partner: {h.partnerName}</span>}
+                </div>
+                {h.webhookReady ? (
+                  <Tag tone="good">Webhook connected</Tag>
+                ) : (
+                  <Button variant="primary" busy={connecting} onClick={connect}>{connecting ? "Connecting…" : "Connect webhook"}</Button>
+                )}
+              </div>
+              {!h.webhookReady && !hookMsg && (
+                <p className="text-sm/[145%] text-nav-muted">Connect the webhook so cash outs are confirmed the moment the bank is paid. Our server uses its own key; no secret is shown to anyone.</p>
+              )}
+              {hookMsg && <Hint text={hookMsg.text} tone={hookMsg.tone} />}
+              {h.partnerFeePercent !== null && h.partnerFeePercent > 0 && (
+                <Hint tone="bad" text={`GoodCash is still adding a ${h.partnerFeePercent}% partner fee. We already take our 1% ourselves, so ask GoodCash to set it to 0% or users pay twice.`} />
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total cashed out" />
             <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />

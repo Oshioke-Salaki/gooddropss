@@ -339,3 +339,53 @@ export function toView(c: GcCashOut, o: Partial<OrderRecord> | null) {
     ...(o?.accountName ? { accountName: o.accountName, bankName: o.bankName, accountLast4: o.accountLast4 } : {}),
   };
 }
+
+// ── Webhook secret ────────────────────────────────────────────────────────────
+// Set GOODCASH_WEBHOOK_SECRET by hand, or let an admin press "Connect webhook":
+// the server registers our URL with its own key and keeps the secret GoodCash
+// returns (shown once) in storage, so no person ever has to copy either secret.
+
+const WHSEC_KEY = (mode: Mode) => `gd:cashout:whsec:${mode}`;
+
+export async function webhookSecret(): Promise<string | null> {
+  const env = process.env.GOODCASH_WEBHOOK_SECRET?.trim();
+  if (env) return env;
+  const cfg = gcConfig();
+  const s = store();
+  if (!cfg || !s) return null;
+  return s.get(WHSEC_KEY(cfg.mode));
+}
+
+export async function connectWebhook(url: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const cfg = gcConfig();
+  const s = store();
+  if (!cfg || !s) return { ok: false, error: "Cash out isn't configured." };
+  const current = await gc<{ url: string | null; hasSecret?: boolean }>("/v1/webhooks");
+  if (!current.ok) return { ok: false, error: current.error.message };
+  const have = await webhookSecret();
+  // A secret is only ever shown once: rotate if GoodCash has one we don't.
+  const rotate = !!current.data.hasSecret && !have;
+  const r = await gc<{ url: string; secret?: string }>("/v1/webhooks", { method: "PUT", body: { url, ...(rotate ? { rotateSecret: true } : {}) } });
+  if (!r.ok) return { ok: false, error: r.error.message };
+  if (r.data.secret) await s.set(WHSEC_KEY(cfg.mode), r.data.secret);
+  if (!r.data.secret && !have) return { ok: false, error: "GoodCash didn't return a signing secret. Try again." };
+  return { ok: true, url: r.data.url };
+}
+
+/** For the admin card: is everything in place? Never returns a secret. */
+export async function cashOutHealth() {
+  const cfg = gcConfig();
+  if (!cfg) return { configured: false as const };
+  const [partner, hook] = await Promise.all([
+    gc<{ feePercent?: number; name?: string }>("/v1/partner"),
+    gc<{ url: string | null; hasSecret?: boolean }>("/v1/webhooks"),
+  ]);
+  return {
+    configured: true as const,
+    mode: cfg.mode,
+    partnerName: partner.ok ? partner.data.name ?? null : null,
+    partnerFeePercent: partner.ok ? partner.data.feePercent ?? 0 : null,
+    webhookUrl: hook.ok ? hook.data.url : null,
+    webhookReady: hook.ok && !!hook.data.url && !!(await webhookSecret()),
+  };
+}

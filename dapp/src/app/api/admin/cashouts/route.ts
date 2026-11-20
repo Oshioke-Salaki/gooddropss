@@ -1,15 +1,28 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { isAdminAuthed } from "@/lib/adminAuth";
-import { gcConfig, store, totals } from "@/lib/goodcashServer";
+import { cashOutHealth, connectWebhook, gcConfig, store, totals } from "@/lib/goodcashServer";
 
 export const runtime = "nodejs";
 
-// GET /api/admin/cashouts → the central cash-out figure: everything our users have
-// cashed out to their banks, in G$ and in naira at the time of each cash out.
+const WEBHOOK_URL = "https://www.gooddrops.xyz/api/goodcash/webhook";
+
+// GET /api/admin/cashouts → the central cash-out figure (everything our users have
+// cashed out, in G$ and in naira at the time of each cash out) plus a health check.
 export async function GET() {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const cfg = gcConfig();
   const s = store();
   if (!cfg || !s) return NextResponse.json({ configured: false });
-  return NextResponse.json({ configured: true, mode: cfg.mode, ...(await totals(s, 50)) }, { headers: { "Cache-Control": "private, no-store" } });
+  const [t, health] = await Promise.all([totals(s, 50), cashOutHealth()]);
+  return NextResponse.json({ configured: true, mode: cfg.mode, ...t, health }, { headers: { "Cache-Control": "private, no-store" } });
+}
+
+// POST /api/admin/cashouts { action: "connect-webhook" } → register our webhook
+// with GoodCash using the server's own key; the signing secret never leaves the server.
+export async function POST(req: NextRequest) {
+  if (!(await isAdminAuthed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await req.json().catch(() => ({}));
+  if (body.action !== "connect-webhook") return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  const r = await connectWebhook(WEBHOOK_URL);
+  return NextResponse.json(r, { status: r.ok ? 200 : 502 });
 }

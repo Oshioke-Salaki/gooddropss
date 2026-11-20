@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { firstSight, gcConfig, store, syncCashOut, verifySignature, type GcCashOut } from "@/lib/goodcashServer";
+import { firstSight, gcConfig, store, syncCashOut, verifySignature, webhookSecret, type GcCashOut } from "@/lib/goodcashServer";
 
 export const runtime = "nodejs";
 
-// POST /api/goodcash/webhook ← GoodCash. Signed with GOODCASH_WEBHOOK_SECRET
+// POST /api/goodcash/webhook ← GoodCash. Signed with our webhook secret (env, or stored by "Connect webhook")
 // (HMAC over the RAW body, within 5 minutes). Each event is handled once; the
 // same event may arrive twice and that's fine. We answer fast (< 5 s).
 //
 // cashout.paid is what adds a cash out to the central total. Failed, refunded
 // and expired ones free the person's daily allowance again.
 export async function POST(req: NextRequest) {
-  const secret = process.env.GOODCASH_WEBHOOK_SECRET;
+  const secret = await webhookSecret();
   if (!secret || !gcConfig()) return NextResponse.json({ error: "Not configured" }, { status: 503 });
 
   const raw = await req.text();
