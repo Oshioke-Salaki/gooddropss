@@ -58,7 +58,11 @@ export async function gc<T>(path: string, init: { method?: string; body?: unknow
     try { body = JSON.parse(text); } catch { /* not JSON: e.g. a firewall page */ }
     if (!res.ok) {
       const e = (body as { error?: { code?: string; message?: string; detail?: string } } | null)?.error;
-      const detail = e?.detail ?? (e ? undefined : `${res.headers.get("server") ?? ""} ${res.headers.get("cf-mitigated") ?? ""} ${text.replace(/\s+/g, " ").slice(0, 160)}`.trim());
+      const detail = e?.detail ?? (e ? undefined : JSON.stringify({
+        url: `${API}${path}`, method: init.method ?? "GET", at: new Date().toISOString(), status: res.status,
+        cfRay: res.headers.get("cf-ray"), server: res.headers.get("server"), cfMitigated: res.headers.get("cf-mitigated"),
+        body: text,
+      }));
       console.warn(`[goodcash] ${path} ${res.status} ${e?.code ?? "non-json"}: ${detail ?? ""}`);
       return { ok: false, error: { code: e?.code ?? "unavailable", message: e?.message ?? FALLBACK_MSG, status: res.status, detail } };
     }
