@@ -33,7 +33,7 @@ export function cashOutEnabled(): boolean {
   return c.mode === "live" || process.env.GOODCASH_SHOW_TEST === "1";
 }
 
-export interface GcError { code: string; message: string; status: number }
+export interface GcError { code: string; message: string; status: number; detail?: string }
 export type GcResult<T> = { ok: true; data: T; status: number } | { ok: false; error: GcError };
 
 const FALLBACK_MSG = "Cash out is busy right now. Please try again in a moment.";
@@ -53,11 +53,14 @@ export async function gc<T>(path: string, init: { method?: string; body?: unknow
       signal: AbortSignal.timeout(init.timeoutMs ?? 15_000),
       cache: "no-store",
     });
-    const body = await res.json().catch(() => null);
+    const text = await res.text();
+    let body: unknown = null;
+    try { body = JSON.parse(text); } catch { /* not JSON: e.g. a firewall page */ }
     if (!res.ok) {
       const e = (body as { error?: { code?: string; message?: string; detail?: string } } | null)?.error;
-      if (e?.detail) console.warn(`[goodcash] ${path} ${res.status} ${e.code}: ${e.detail}`);
-      return { ok: false, error: { code: e?.code ?? "unavailable", message: e?.message ?? FALLBACK_MSG, status: res.status } };
+      const detail = e?.detail ?? (e ? undefined : `${res.headers.get("server") ?? ""} ${res.headers.get("cf-mitigated") ?? ""} ${text.replace(/\s+/g, " ").slice(0, 160)}`.trim());
+      console.warn(`[goodcash] ${path} ${res.status} ${e?.code ?? "non-json"}: ${detail ?? ""}`);
+      return { ok: false, error: { code: e?.code ?? "unavailable", message: e?.message ?? FALLBACK_MSG, status: res.status, detail } };
     }
     return { ok: true, data: body as T, status: res.status };
   } catch (e) {
@@ -387,5 +390,7 @@ export async function cashOutHealth() {
     partnerFeePercent: partner.ok ? partner.data.feePercent ?? 0 : null,
     webhookUrl: hook.ok ? hook.data.url : null,
     webhookReady: hook.ok && !!hook.data.url && !!(await webhookSecret()),
+    // Admin only: GoodCash's raw answer when it refuses us (never shown to users).
+    problem: partner.ok ? null : { status: partner.error.status, code: partner.error.code, detail: partner.error.detail ?? null },
   };
 }
