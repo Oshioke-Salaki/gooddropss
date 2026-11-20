@@ -10,6 +10,7 @@ import { DROP_STATUS, type Drop } from "@/types";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { AdminPage, Card, Hint, SectionTitle, Stat } from "./ui";
 import { DropLimitsCard } from "./DropLimitsCard";
+import { CashOutsCard } from "./CashOutsCard";
 import { REWARDS_WEI } from "@/lib/circulation";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -192,6 +193,8 @@ export function AnalyticsBody() {
             ? "Identity required to claim. Sybil-protected."
             : "Identity NOT required: claims are open to anyone (farmable). Call setIdentityRequired(true)."}
       </div>
+
+      <CashOutsCard />
 
       <DropLimitsCard />
 

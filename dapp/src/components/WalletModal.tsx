@@ -13,11 +13,13 @@ import {
   Loader2,
   ArrowRight,
   Send,
+  Landmark,
 } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { Avatar } from "@/components/Avatar";
 import { SendGModal } from "@/components/SendGModal";
+import { CashOutPanel } from "@/components/cashout/CashOutPanel";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
 import { useUbiClaim } from "@/hooks/useUbiClaim";
@@ -57,7 +59,17 @@ export function WalletModal({
   >("idle");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [sendOpen, setSendOpen] = useState(false);
+  // One side panel at a time: Send G$ or Cash out.
+  const [side, setSide] = useState<null | "send" | "cashout">(null);
+  const sendOpen = side !== null;
+  const setSendOpen = (v: boolean | ((x: boolean) => boolean)) =>
+    setSide((cur) => ((typeof v === "function" ? v(cur === "send") : v) ? "send" : null));
+  const [cashOutOn, setCashOutOn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/cashout/setup?probe=1").then((r) => r.json()).then((d) => { if (!cancelled) setCashOutOn(!!d.enabled); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { balance } = useGoodDollarProfile();
@@ -255,11 +267,19 @@ export function WalletModal({
               lg:static lg:w-[400px] lg:max-w-[calc(100vw-24px)]"
             style={{ bottom: kbInset, transition: "bottom 0.12s ease-out" }}
           >
-            <SendGModal
-              address={address}
-              balance={balance}
-              onClose={() => setSendOpen(false)}
-            />
+            {side === "cashout" ? (
+              <CashOutPanel
+                address={address}
+                balance={balance}
+                onClose={() => setSide(null)}
+              />
+            ) : (
+              <SendGModal
+                address={address}
+                balance={balance}
+                onClose={() => setSide(null)}
+              />
+            )}
           </div>
         )}
 
@@ -472,7 +492,7 @@ export function WalletModal({
 
             <button
               onClick={() => setSendOpen((v) => !v)}
-              className={`${ROW} w-full text-left cursor-pointer transition-colors ${sendOpen ? "bg-surface" : "hover:bg-surface"}`}
+              className={`${ROW} w-full text-left cursor-pointer transition-colors ${side === "send" ? "bg-surface" : "hover:bg-surface"}`}
             >
               <div className="bg-surface w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0">
                 <Send className="w-5 h-5 text-heading" />
@@ -484,6 +504,23 @@ export function WalletModal({
                 </div>
               </div>
             </button>
+
+            {cashOutOn && (
+              <button
+                onClick={() => setSide((v) => (v === "cashout" ? null : "cashout"))}
+                className={`${ROW} w-full text-left cursor-pointer transition-colors ${side === "cashout" ? "bg-surface" : "hover:bg-surface"}`}
+              >
+                <div className="bg-brand-soft w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0">
+                  <Landmark className="w-5 h-5 text-brand" />
+                </div>
+                <div className="flex flex-col gap-y-3 min-w-0">
+                  <div className="text-heading text-base/[100%]">Cash out to bank</div>
+                  <div className="text-nav-muted text-sm/[100%] truncate">
+                    G$ to naira, paid in minutes
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
 
           {/* ── Verify nudge — only when they can't yet claim drops ───────────── */}

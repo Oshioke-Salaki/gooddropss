@@ -29,6 +29,11 @@ type Events = {
   flow_vote_cast: { points: number };
   flow_vote_blocked: { reason: "identity_elsewhere" | "refused" | "no_points" };
   tx_sponsor_fallback: { fn: string };
+  cashout_opened: Record<string, never>;
+  cashout_started: { amountG: number };
+  cashout_sent: { amountG: number };
+  cashout_paid: { amountG: number };
+  cashout_failed: { reason: string };
 };
 
 export type ClaimFailReason =

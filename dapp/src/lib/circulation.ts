@@ -5,7 +5,9 @@
 // Public pages show only the total; never break out the rewards part.
 // When the team pays out new prizes, raise REWARDS_G to the new running total.
 
-export const REWARDS_G = 3_700_000;
+// 3,700,000 to 27 Oct 2026, + 85,000 (late September prize, paid 20 Nov)
+// + 283,200 (November referral competition, paid to 20 Nov).
+export const REWARDS_G = 4_068_200;
 export const REWARDS_WEI = BigInt(REWARDS_G) * 10n ** 18n;
 
 /** Whole G$ circulated, given whole G$ dropped. */

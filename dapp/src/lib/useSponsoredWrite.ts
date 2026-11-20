@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useWriteContract } from "wagmi";
+import { getCapabilities, sendCalls, waitForCallsStatus } from "wagmi/actions";
 import type { Address, Hex } from "viem";
 import { publicClient } from "@/lib/publicClient";
 import { ensureGasForClaim } from "@/lib/ensureGas";
@@ -28,6 +29,7 @@ export type WriteOptions = {
  */
 export function useSponsoredWrite() {
   const { writeContractAsync: wagmiWrite } = useWriteContract();
+  const config = useConfig();
   const { address, connector } = useAccount();
   const connectorId = connector?.id;
 
@@ -72,5 +74,61 @@ export function useSponsoredWrite() {
     return normal();
   }, [wagmiWrite, address, connectorId]);
 
-  return { writeContractAsync, sponsored };
+  /** Does the connected wallet say it can send a batch atomically on Celo? */
+  const canBatch = useCallback(async (account: Address): Promise<boolean> => {
+    try {
+      const caps = (await getCapabilities(config, { account, chainId: 42220 })) as { atomic?: { status?: string }; atomicBatch?: { supported?: boolean } };
+      return caps?.atomic?.status === "supported" || caps?.atomic?.status === "ready" || caps?.atomicBatch?.supported === true;
+    } catch { return false; } // most wallets don't answer this yet
+  }, [config]);
+
+  /**
+   * Several writes that belong together. Sponsored Magic wallets send them as
+   * ONE transaction (all or nothing) and get one hash back. Everyone else sends
+   * them one after another, in order, each confirmed before the next, and gets
+   * a hash per write; if a later one fails, the earlier ones have still happened.
+   */
+  const writeBatchAsync = useCallback(async (steps: WriteParams[], opts?: WriteOptions): Promise<Hex[]> => {
+    const calls = steps.map(toCall);
+    if (address && (await canSponsor(address, connectorId)) && (await policyAllows(address as Address, calls))) {
+      try {
+        const hash = await sendSponsored(address as Address, calls, () =>
+          publicClient.simulateContract({ ...steps[0], account: address as Address } as never),
+        connectorId);
+        track("tx_sponsored", { fn: steps.map((x) => x.functionName).join("+") });
+        return [hash];
+      } catch (e) {
+        if (!(e instanceof SponsorUnavailableError)) throw e;
+        track("tx_sponsor_fallback", { fn: steps.map((x) => x.functionName).join("+") });
+      }
+    }
+    if (opts?.onToppingUp && address) await ensureGasForClaim(address as Address, opts.onToppingUp);
+    else if (address) await ensureGasForClaim(address as Address);
+
+    // Wallets that can send several actions as one (EIP-5792): one approval,
+    // all or nothing. Anything else falls through to one approval per write.
+    if (steps.length > 1 && address && (await canBatch(address as Address))) {
+      const { id } = await sendCalls(config, { calls: calls.map((c) => ({ to: c.to, data: c.data, value: c.value })), forceAtomic: true });
+      const res = await waitForCallsStatus(config, { id, timeout: 180_000 });
+      const hash = res.receipts?.[0]?.transactionHash as Hex | undefined;
+      if (res.status !== "success" || !hash) throw Object.assign(new Error("batch failed"), { hashes: hash ? [hash] : [] });
+      return [hash];
+    }
+
+    const hashes: Hex[] = [];
+    for (const p of steps) {
+      // On any problem after the first write, `hashes` says what already went out.
+      try {
+        const h = (await wagmiWrite(p as never)) as Hex;
+        hashes.push(h);
+        const rc = await publicClient.waitForTransactionReceipt({ hash: h, timeout: 120_000 });
+        if (rc.status !== "success") throw new Error("reverted");
+      } catch (e) {
+        throw Object.assign(e instanceof Error ? e : new Error(String(e)), { hashes: [...hashes] });
+      }
+    }
+    return hashes;
+  }, [wagmiWrite, address, connectorId, config, canBatch]);
+
+  return { writeContractAsync, writeBatchAsync, sponsored };
 }

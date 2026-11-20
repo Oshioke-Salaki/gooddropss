@@ -7,9 +7,10 @@
 // Celo transaction. Alchemy asks our webhook before sponsoring each user
 // operation; this file decides by decoding exactly what the account will run.
 
-import { decodeFunctionData, parseAbi, type Address, type Hex } from "viem";
+import { decodeFunctionData, parseAbi, toFunctionSelector, type Address, type Hex } from "viem";
 import { ERC20_ABI, GOOD_DROPS_ABI, GOOD_DROPS_ADDRESS, G_TOKEN_ADDRESS } from "@/lib/contracts";
 import { FLOW_COUNCIL, FLOW_COUNCIL_ABI, FLOW_RECIPIENT } from "@/lib/flowstate";
+import { GOODCASH_ROUTER, TRANSFER_AND_CALL_ABI } from "@/lib/goodcash";
 
 /** Alchemy Modular Account v2 (the EIP-7702 delegate) entry points. */
 const ACCOUNT_ABI = parseAbi([
@@ -22,7 +23,7 @@ const EXECUTE_USER_OP = "0x8dd7712f";
 export const MAX_CALLS = 4;
 
 export type InnerCall = { target: Address; value: bigint; data: Hex };
-export type CallKind = "claim" | "drop" | "manage" | "approve" | "transfer" | "vote";
+export type CallKind = "claim" | "drop" | "manage" | "approve" | "transfer" | "vote" | "cashout";
 
 /** The calls a user operation will make, or null if we can't read it. */
 export function innerCalls(callData: Hex | undefined): InnerCall[] | null {
@@ -42,6 +43,7 @@ export function innerCalls(callData: Hex | undefined): InnerCall[] | null {
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const CASHOUT_SELECTOR = toFunctionSelector(TRANSFER_AND_CALL_ABI[0]).toLowerCase();
 
 /** What a single call does, or null if we don't sponsor it. */
 export function classify(call: InnerCall): CallKind | null {
@@ -61,10 +63,15 @@ export function classify(call: InnerCall): CallKind | null {
       if (d.functionName !== "vote") return null;
       const votes = d.args[0];
       if (votes.length === 0) return null;
-      if (votes.length === 0) return null;
       return votes.every((v) => same(v.recipient, FLOW_RECIPIENT) && v.amount > 0n && v.amount <= 1_000_000n) ? "vote" : null;
     }
     if (same(call.target, G_TOKEN_ADDRESS)) {
+      // Cash out to a bank: only G$ sent to GoodCash's fixed router, which pays
+      // the bank partner and returns any surplus to the sender.
+      if (call.data.slice(0, 10).toLowerCase() === CASHOUT_SELECTOR) {
+        const t = decodeFunctionData({ abi: TRANSFER_AND_CALL_ABI, data: call.data });
+        return same(t.args[0], GOODCASH_ROUTER) && t.args[1] > 0n ? "cashout" : null;
+      }
       const d = decodeFunctionData({ abi: ERC20_ABI, data: call.data });
       if (d.functionName === "approve") return same(d.args[0] as string, GOOD_DROPS_ADDRESS) ? "approve" : null;
       if (d.functionName === "transfer") return "transfer";
