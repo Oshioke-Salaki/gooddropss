@@ -6,12 +6,24 @@ import { DAILY_CAP_G } from "@/lib/goodcash";
 
 export const runtime = "nodejs";
 
+let reach: { at: number; ok: boolean } | null = null;
+async function reachable(): Promise<boolean> {
+  if (reach && Date.now() - reach.at < (reach.ok ? 300_000 : 60_000)) return reach.ok;
+  const r = await gc<GcLimits>("/v1/limits", { timeoutMs: 6000 });
+  reach = { at: Date.now(), ok: r.ok };
+  return r.ok;
+}
+
 // GET /api/cashout/setup?wallet=0x… → everything the cash-out screen needs to open:
 // whether it's on, the limits, the banks, and how much of today's cap is left.
 export async function GET(req: NextRequest) {
   if (!cashOutEnabled()) return NextResponse.json({ enabled: false });
-  // A cheap "is it on?" for the wallet menu, without calling GoodCash.
-  if (req.nextUrl.searchParams.has("probe")) return NextResponse.json({ enabled: true });
+  // "Is it on?" for the wallet menu: only when GoodCash actually answers us, so
+  // nobody is shown a cash-out button that can't work. Checked at most every
+  // few minutes per server instance.
+  if (req.nextUrl.searchParams.has("probe")) {
+    return NextResponse.json({ enabled: await reachable() }, { headers: { "Cache-Control": "public, max-age=60" } });
+  }
   const wallet = req.nextUrl.searchParams.get("wallet") ?? "";
 
   const [limits, bankList] = await Promise.all([gc<GcLimits>("/v1/limits"), banks()]);
