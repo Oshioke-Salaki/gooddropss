@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays,
+  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Banknote, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
@@ -18,13 +18,14 @@ import { CountBadge } from "@/components/admin/ui";
 // one navigation surface and one background.
 type BadgeKey = "suggestions" | "reports" | "businesses" | "events";
 const NAV: { href: string; label: string; Icon: LucideIcon; badge?: BadgeKey }[] = [
+  { href: "/admin/analytics",   label: "Analytics",   Icon: ChartColumn },
+  { href: "/admin/cashouts",    label: "Cash outs",   Icon: Banknote },
   { href: "/admin/suggestions", label: "Suggestions", Icon: Lightbulb,   badge: "suggestions" },
   { href: "/admin/reports",     label: "Reports",     Icon: Flag,        badge: "reports" },
   { href: "/admin/places",      label: "Places",      Icon: Tag },
   { href: "/admin/businesses",  label: "Businesses",  Icon: Store,       badge: "businesses" },
   { href: "/admin/events",      label: "Events",      Icon: CalendarDays, badge: "events" },
   { href: "/admin/badges",      label: "Badges",      Icon: Medal },
-  { href: "/admin/analytics",   label: "Analytics",   Icon: ChartColumn },
   { href: "/admin/competition", label: "Competition", Icon: Gift },
   { href: "/admin/health",      label: "Health",      Icon: HeartPulse },
 ];

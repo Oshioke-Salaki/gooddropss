@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits } from "viem";
 import {
-  X, Loader2, Check, Plus, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, ExternalLink, Clock,
+  X, Loader2, Check, Plus, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, Clock,
 } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
@@ -188,7 +188,6 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
           bankLine={phase.kind === "tracking" && phase.cashOut.bankName ? `${phase.cashOut.bankName} ••${phase.cashOut.accountLast4}` : account ? `${account.bankName} ••${account.accountNumber.slice(-4)}` : ""}
           onDone={onClose}
           onAgain={() => { flow.reset(); setAmount(""); setQuote(null); setStep("amount"); }}
-          testMode={setup?.mode === "test"}
         />
       ) : !setup ? (
         <div className="flex flex-col gap-4" aria-busy="true">
@@ -543,8 +542,8 @@ function Row({ label, value, action }: { label: string; value: React.ReactNode; 
   );
 }
 
-export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain, testMode }: {
-  phase: ReturnType<typeof useCashOut>["phase"]; naira: number; accountName?: string; bankLine: string; testMode?: boolean;
+export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain }: {
+  phase: ReturnType<typeof useCashOut>["phase"]; naira: number; accountName?: string; bankLine: string;
   onDone: () => void; onAgain: () => void;
 }) {
   const c: CashOutView | null = phase.kind === "tracking" ? phase.cashOut : null;
@@ -605,15 +604,7 @@ export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain,
       </ol>
 
       {paid ? (
-        <div className="flex flex-col gap-3">
-          <button className={BTN} onClick={onDone}>Done</button>
-          {c?.txHash && !testMode && (
-            <a href={`https://celoscan.io/tx/${c.txHash}`} target="_blank" rel="noopener noreferrer"
-              className="self-center inline-flex items-center gap-1 text-sm/none text-brand hover:underline">
-              View receipt <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
-        </div>
+        <button className={BTN} onClick={onDone}>Done</button>
       ) : (
         <p className="text-xs/[150%] text-nav-muted text-center -mt-2">
           {phase.kind === "checking"

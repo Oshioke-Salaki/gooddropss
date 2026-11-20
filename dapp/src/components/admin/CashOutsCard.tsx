@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Landmark } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Landmark } from "lucide-react";
 import { formatNaira } from "@/lib/goodcash";
 import { Button, Card, EmptyState, Hint, SectionTitle, Stat, Tag } from "./ui";
 
@@ -31,8 +32,14 @@ export function CashOutsCard() {
     try {
       const r = await fetch("/api/admin/cashouts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "connect-webhook" }) });
       const d = await r.json().catch(() => ({}));
-      setHookMsg(r.ok ? { text: "Connected. GoodCash will now tell us the moment each bank is paid.", tone: "ok" } : { text: d.error ?? "Couldn't connect. Try again.", tone: "bad" });
-      await load();
+      if (r.ok) {
+        // Show it as connected now; GoodCash can take a moment to report it back.
+        setData((cur) => (cur?.health ? { ...cur, health: { ...cur.health, webhookReady: true, webhookUrl: d.url ?? cur.health.webhookUrl } } : cur));
+        setHookMsg({ text: "Connected. GoodCash will now tell us the moment each bank is paid.", tone: "ok" });
+      } else {
+        setHookMsg({ text: d.error ?? "Couldn't connect. Try again.", tone: "bad" });
+        await load();
+      }
     } finally { setConnecting(false); }
   };
   const h = data?.health;
@@ -40,12 +47,8 @@ export function CashOutsCard() {
   const loading = !data && !err;
   return (
     <Card className="mb-6">
-      <div className="flex items-center justify-between gap-3 mb-2">
-        <SectionTitle>Cash outs to bank</SectionTitle>
-        {data?.mode === "test" && <Tag tone="warn">Test mode</Tag>}
-      </div>
       <p className="text-sm/[145%] text-nav-muted mb-5">
-        G$ our users have turned into naira through GoodCash, valued in naira at the moment of each cash out. Counted once the bank is paid.
+        Valued in naira at the moment of each cash out. Counted once GoodCash confirms the bank was paid.
       </p>
       <Hint text={err} tone="bad" className="mb-3" />
 
@@ -116,6 +119,35 @@ export function CashOutsCard() {
           ) : null}
         </>
       )}
+    </Card>
+  );
+}
+
+/** The headline figures for the Analytics page; the full view is /admin/cashouts. */
+export function CashOutsSummary() {
+  const [data, setData] = useState<Data | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    fetch("/api/admin/cashouts")
+      .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(setData)
+      .catch(() => setFailed(true));
+  }, []);
+  if (failed || (data && !data.configured)) return null;
+  const loading = !data;
+  return (
+    <Card className="mb-6">
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <SectionTitle>Cash outs to bank</SectionTitle>
+        <Link href="/admin/cashouts" className="inline-flex items-center gap-1 text-sm/none text-brand hover:underline">
+          See all <ArrowRight className="w-4 h-4" />
+        </Link>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total cashed out" />
+        <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
+        <Stat loading={loading} value={g(data?.count ?? 0)} label="Cash outs" sub={data ? `${g(data.people ?? 0)} ${data.people === 1 ? "person" : "people"}` : undefined} />
+      </div>
     </Card>
   );
 }
