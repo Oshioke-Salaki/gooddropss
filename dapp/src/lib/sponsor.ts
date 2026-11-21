@@ -25,8 +25,8 @@
 //   4. If sponsorship is failing (credits used up, policy cap hit, outage), stop
 //      trying for a while so every tap isn't slowed by a doomed attempt.
 
-import { Magic } from "magic-sdk";
-import { SmartAccountExtension } from "@magic-ext/smart-account";
+import type { Magic } from "magic-sdk";
+import type { SmartAccountExtension } from "@magic-ext/smart-account";
 import {
   decodeErrorResult, decodeEventLog, encodeFunctionData, parseAbi,
   type Abi, type Address, type Hex, type TransactionReceipt,
@@ -76,15 +76,21 @@ const BREAKER_KEY      = "gd:sponsor-off-until";
 // One per sponsored Magic app, separate from the wagmi connectors' instances.
 // Magic sessions are shared per API key + origin, so someone signed in through
 // the app is signed in here too. We only ever ASK; this file never shows Magic UI.
-const magics = new Map<string, Magic<[SmartAccountExtension]>>();
-function getSponsorMagic(key: string | null) {
+// Loaded on first use (only ever reached for signed-in Magic users), so Magic
+// isn't part of every visitor's first download.
+const magics = new Map<string, Promise<Magic<[SmartAccountExtension]>>>();
+async function getSponsorMagic(key: string | null): Promise<Magic<[SmartAccountExtension]> | null> {
   if (!SPONSOR_CONFIGURED || !key || typeof window === "undefined") return null;
   let m = magics.get(key);
   if (!m) {
-    m = new Magic(key, {
-      network: { rpcUrl: "https://forno.celo.org", chainId: CELO_CHAIN_ID },
-      extensions: [new SmartAccountExtension({ apiKey: API_KEY, paymasterPolicyId: POLICY_ID })],
-    });
+    m = Promise.all([import("magic-sdk"), import("@magic-ext/smart-account")]).then(
+      ([{ Magic: MagicCtor }, { SmartAccountExtension: Ext }]) =>
+        new MagicCtor(key, {
+          network: { rpcUrl: "https://forno.celo.org", chainId: CELO_CHAIN_ID },
+          extensions: [new Ext({ apiKey: API_KEY, paymasterPolicyId: POLICY_ID })],
+        }),
+    );
+    m.catch(() => { if (magics.get(key) === m) magics.delete(key); }); // a failed download can be retried
     magics.set(key, m);
   }
   return m;
@@ -107,9 +113,9 @@ function magicSessionAddress(key: string): Promise<string | null> {
   return p;
 }
 async function lookupSession(key: string): Promise<string | null> {
-  const m = getSponsorMagic(key);
-  if (!m) return null;
   try {
+    const m = await getSponsorMagic(key);
+    if (!m) return null;
     let address: string | null = null;
     if (await withTimeout(m.user.isLoggedIn(), 8_000)) {
       const info = (await withTimeout(m.user.getInfo(), 8_000)) as {
@@ -282,7 +288,8 @@ export async function sendSponsored(
   sender: Address, calls: SponsoredCall[], simulate: () => Promise<unknown>, connectorId: string | undefined = "magic",
 ): Promise<Hex> {
   const key = keyFor(connectorId);
-  const m = getSponsorMagic(key);
+  let m: Awaited<ReturnType<typeof getSponsorMagic>>;
+  try { m = await getSponsorMagic(key); } catch { throw new SponsorUnavailableError("magic unavailable"); }
   if (!m) throw new SponsorUnavailableError("not configured");
   const who = sender.toLowerCase();
   // +1: the op can't be in a block that already exists, and an earlier step's op

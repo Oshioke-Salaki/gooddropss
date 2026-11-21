@@ -11,6 +11,7 @@ import { useVerification } from "@/hooks/useVerification";
 import { publicClient } from "@/lib/publicClient";
 import { readIdentityStatus, type IdentityStatus } from "@/lib/identity";
 import { readLinkedRoot, isUserCancel } from "@/lib/walletLink";
+import { magicOf } from "@/lib/lazyMagicConnector";
 import { PARTNER_CONNECTOR_ID, rememberLogin } from "@/lib/partner";
 import { toast } from "@/lib/toast";
 import { Card, Step, Row, Note, Loading, Retry, short, walletName } from "@/app/switch-to-email/SwitchFlow";
@@ -149,7 +150,7 @@ export function RenewFlow() {
     setLeaving(true);
     try {
       if (isConnected && !onEmail) await disconnectAsync().catch(() => {});
-      const magic = (magicConnector as unknown as { magic?: MagicSdk } | undefined)?.magic;
+      const magic = await magicOf<MagicSdk>(magicConnector); // loads on first use
       const loggedIn = magic
         ? await Promise.race([magic.user.isLoggedIn().catch(() => false), new Promise<boolean>((r) => setTimeout(() => r(false), 6000))])
         : false;

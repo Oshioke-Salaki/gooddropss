@@ -1,7 +1,7 @@
 import { createConfig, http, type CreateConnectorFn } from "wagmi";
 import { celo } from "viem/chains";
 import { injected, walletConnect } from "wagmi/connectors";
-import { dedicatedWalletConnector } from "@magiclabs/wagmi-connector";
+import { lazyMagicConnector } from "@/lib/lazyMagicConnector";
 import { VALORA_WC_ID, isValoraBrowser } from "@/lib/valora";
 import { PARTNER, PARTNER_CONNECTOR_ID } from "@/lib/partner";
 
@@ -11,17 +11,17 @@ const CELO_RPC = "https://forno.celo.org";
 // keeps external wallets (MetaMask, MiniPay, Brave…) working. Both are standard
 // wagmi v2 connectors, so every useAccount / useReadContract / useWriteContract /
 // useWalletClient call in the app keeps working unchanged.
-// `injected` is safe on the server; the Magic connector instantiates magic-sdk
-// (which reads `window`) at construction, so it's only added on the client. The
-// server never needs it — connect() only ever runs in the browser.
+// `injected` is safe on the server; the Magic connectors touch `window`, so
+// they're only added on the client. The server never needs them.
 const connectors: CreateConnectorFn[] = [injected({ shimDisconnect: true })];
 
 if (typeof window !== "undefined") {
+  // Magic (email / Google) — loaded lazily: see lib/lazyMagicConnector. A browser
+  // that never signed in with Magic doesn't download it or its iframe app.
   connectors.unshift(
-    // v2.3.2 of the connector was built against an older wagmi, so its connect()
-    // return type drifts from the current CreateConnectorFn (runtime is fine).
-    dedicatedWalletConnector({
-      chains: [celo],
+    lazyMagicConnector({
+      id: "magic",
+      name: "Magic",
       options: {
         apiKey: process.env.NEXT_PUBLIC_MAGIC_KEY as string,
         magicSdkConfiguration: {
@@ -35,39 +35,26 @@ if (typeof window !== "undefined") {
         // URL instead. The connector's Magic instance always includes
         // OAuthExtension, so `magic.oauth2` is available regardless of this option.
       },
-    }) as unknown as CreateConnectorFn,
+    }),
   );
 
   // Partner sign-in — a SECOND Magic connector built with the partner's
   // publishable key, so their users get their existing (verified) wallet here.
-  //
-  // Two things make this safe to run beside our own Magic connector:
-  //   • magic-sdk keys its iframe + overlay on {API_KEY, origin, network}, so a
-  //     different key is a fully separate SDK instance and session.
-  //   • The connector hardcodes `id: 'magic'`, which wagmi uses for lookups and
-  //     for `recentConnectorId` on reconnect — two of those would collide. So we
-  //     wrap the factory and override id/name. createConnector() is the
-  //     identity function, so the factory is plain `(config) => connector`.
-  // Captured into a const so the narrowing survives into the factory closure.
-  const partner = PARTNER;
-  if (partner) {
-    const base = dedicatedWalletConnector({
-      chains: [celo],
+  // magic-sdk keys its iframe + session on {API_KEY, origin, network}, so a
+  // different key is a fully separate SDK instance; its own id keeps wagmi's
+  // lookups and `recentConnectorId` apart from ours. Also loaded lazily.
+  if (PARTNER) {
+    connectors.splice(1, 0, lazyMagicConnector({
+      id: PARTNER_CONNECTOR_ID,
+      name: PARTNER.name,
       options: {
-        apiKey: partner.key,
+        apiKey: PARTNER.key,
         magicSdkConfiguration: { network: { rpcUrl: CELO_RPC, chainId: celo.id } },
         enableEmailLogin: true,
         // Email OTP only. Google via the partner's key would need our callback
-        // URL on THEIR redirect allowlist and their OAuth provider enabled —
-        // avoidable coupling for no gain, since email is what their users have.
+        // URL on THEIR redirect allowlist and their OAuth provider enabled.
       },
-    }) as unknown as (config: Parameters<CreateConnectorFn>[0]) => Record<string, unknown>;
-
-    const partnerConnector: CreateConnectorFn = (config) =>
-      ({ ...base(config), id: PARTNER_CONNECTOR_ID, name: partner.name }) as unknown as ReturnType<CreateConnectorFn>;
-
-    // Right after our own Magic connector, ahead of the wallet connectors.
-    connectors.splice(1, 0, partnerConnector);
+    }));
   }
 
   // WalletConnect — lets mobile users connect an existing wallet (Valora, MiniPay,

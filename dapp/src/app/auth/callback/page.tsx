@@ -1,4 +1,5 @@
 "use client";
+import { magicOf } from "@/lib/lazyMagicConnector";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
@@ -75,7 +76,7 @@ export default function AuthCallbackPage() {
 
       // The connector's own Magic instance (always built with OAuthExtension),
       // so the session it creates is the one wagmi will find.
-      const sdk = (connector as unknown as { magic?: MagicSdk }).magic;
+      const sdk = await magicOf<MagicSdk>(connector); // loads on first use (lib/lazyMagicConnector)
       if (!sdk?.oauth2 || !sdk.user) {
         setErr("Sign-in isn't available right now.");
         return;

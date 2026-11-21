@@ -7,6 +7,7 @@ import { Link2, Loader2, Mail } from "lucide-react";
 import { isValoraBrowser } from "@/lib/valora";
 import { PARTNER, PARTNER_CONNECTOR_ID, lastLogin, rememberLogin } from "@/lib/partner";
 import { track } from "@/lib/analytics";
+import { magicOf, type LazyMagicExtras } from "@/lib/lazyMagicConnector";
 import { AuthSheet } from "@/components/auth/AuthSheet";
 import { OptionRow } from "@/components/auth/OptionRow";
 import { WalletSelectModal } from "@/components/auth/WalletSelectModal";
@@ -28,6 +29,7 @@ type MagicSdk = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 
 // Magic rejects with these when the user simply closes/cancels its OTP dialog —
 // that's not an error worth shouting about.
@@ -78,6 +80,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   const partner = PARTNER ? connectors.find((c) => c.id === PARTNER_CONNECTOR_ID) : undefined;
   const emailOk = EMAIL_RE.test(email.trim());
   const busy = isPending || googleBusy || emailBusy || partnerBusy;
+
+  // The sheet is open, so sign-in is likely: load Magic and preload its sign-in
+  // frame now (Magic's documented preload()), so tapping email or Google is instant.
+  useEffect(() => {
+    if (!open) return;
+    (magic as unknown as Partial<LazyMagicExtras> | undefined)?.warm?.();
+    (partner as unknown as Partial<LazyMagicExtras> | undefined)?.warm?.();
+  }, [open, magic, partner]);
 
   // Wallet connectors = everything except the Magic ones. EIP-6963 discovery adds
   // named wallets (id = rdns); prefer those and drop the generic `injected` fallback.
@@ -150,13 +160,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // isLoggedIn() and connects without showing anything further.
   async function loginWithEmail() {
     if (!magic || busy || !emailOk) return;
-    const sdk = (magic as unknown as { magic?: MagicSdk }).magic;
+    setEmailBusy(true);
+    setErr("");
+    const sdk = await magicOf<MagicSdk>(magic);
     if (!sdk?.auth?.loginWithEmailOTP) {
+      setEmailBusy(false);
       setErr("Email sign-in is unavailable right now. Please use Google.");
       return;
     }
-    setEmailBusy(true);
-    setErr("");
     try {
       await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
       await connectAsync({ connector: magic, chainId: celo.id });
@@ -183,13 +194,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // started.
   async function loginWithGoogle() {
     if (!magic || busy) return;
-    const sdk = (magic as unknown as { magic?: MagicSdk }).magic;
+    setGoogleBusy(true);
+    setErr("");
+    const sdk = await magicOf<MagicSdk>(magic);
     if (!sdk?.oauth2?.loginWithRedirect) {
+      setGoogleBusy(false);
       setErr("Google sign-in is unavailable right now. Please use email.");
       return;
     }
-    setGoogleBusy(true);
-    setErr("");
     try {
       // Remember where they were so the callback can send them back.
       sessionStorage.setItem("gd:returnTo", window.location.pathname + window.location.search);
@@ -211,13 +223,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
   // already have there, verified status included; nothing is created or linked.
   async function loginWithPartner() {
     if (!partner || !PARTNER || busy || !emailOk) return;
-    const sdk = (partner as unknown as { magic?: MagicSdk }).magic;
+    setPartnerBusy(true);
+    setErr("");
+    const sdk = await magicOf<MagicSdk>(partner);
     if (!sdk?.auth?.loginWithEmailOTP) {
+      setPartnerBusy(false);
       setErr(`${PARTNER.name} sign-in is unavailable right now. Please use Google or email.`);
       return;
     }
-    setPartnerBusy(true);
-    setErr("");
     try {
       await sdk.auth.loginWithEmailOTP({ email: email.trim(), showUI: true });
       await connectAsync({ connector: partner, chainId: celo.id });

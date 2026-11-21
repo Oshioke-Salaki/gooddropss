@@ -19,6 +19,7 @@ import { fromDropJson, type DropJson } from "@/lib/dropJson";
 import { DROP_STATUS, type Drop } from "@/types";
 import { confirmTx, StillPendingError, TxFailedError } from "@/lib/txOutcome";
 import { weiNeeded } from "@/lib/gasNeeds";
+import { magicOf } from "@/lib/lazyMagicConnector";
 import { PARTNER_CONNECTOR_ID, rememberLogin } from "@/lib/partner";
 import { toast } from "@/lib/toast";
 
@@ -107,7 +108,6 @@ export function SwitchFlow() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const magicConnector = connectors.find((c) => c.id === "magic");
-  const magic = (magicConnector as unknown as { magic?: MagicSdk } | undefined)?.magic;
   const walletConnectors = connectors.filter((c) => c.id !== "magic" && c.id !== PARTNER_CONNECTOR_ID);
 
   // The wallet they use now: any connected wallet that isn't an email account.
@@ -139,6 +139,8 @@ export function SwitchFlow() {
       const dev = new URLSearchParams(window.location.search).get("devEmail");
       if (dev && /^0x[0-9a-fA-F]{40}$/.test(dev)) { setEmailAcct({ address: dev.toLowerCase(), email: "you@example.com" }); setEmailChecked(true); return; }
     }
+    // Magic loads on first use (lib/lazyMagicConnector).
+    const magic = await magicOf<MagicSdk>(magicConnector);
     if (!magic) { setEmailChecked(true); return; }
     try {
       // Magic answers from its own frame; if that's slow or blocked, don't leave
@@ -160,13 +162,15 @@ export function SwitchFlow() {
     } finally {
       setEmailChecked(true);
     }
-  }, [magic]);
+  }, [magicConnector]);
   useEffect(() => { void readEmailSession(); }, [readEmailSession]);
 
   async function signInWithEmail() {
-    if (!magic || emailBusy || !EMAIL_RE.test(emailInput.trim())) return;
+    if (emailBusy || !EMAIL_RE.test(emailInput.trim())) return;
     setEmailBusy(true);
     setEmailErr("");
+    const magic = await magicOf<MagicSdk>(magicConnector);
+    if (!magic) { setEmailBusy(false); setEmailErr("Email sign-in is unavailable right now. Please try again."); return; }
     try {
       await magic.auth.loginWithEmailOTP({ email: emailInput.trim(), showUI: true });
       await readEmailSession();
@@ -178,7 +182,7 @@ export function SwitchFlow() {
   }
 
   async function useDifferentEmail() {
-    try { await magic?.user.logout(); } catch { /* already out */ }
+    try { await (await magicOf<MagicSdk>(magicConnector))?.user.logout(); } catch { /* already out */ }
     setEmailAcct(null);
     setEmailInfo(null);
     setEmailInput("");
