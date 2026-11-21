@@ -68,13 +68,21 @@ export function SectionTitle({ children, className = "" }: { children: ReactNode
 
 /** A number with a label. `tone="accent"` for the one figure that matters most. */
 export function Stat({
-  value, label, sub, tone = "default", loading,
-}: { value: ReactNode; label: string; sub?: string; tone?: "default" | "accent"; loading?: boolean }) {
+  value, label, sub, tone = "default", loading, fit, className = "",
+}: {
+  className?: string;
+  value: ReactNode; label: string; sub?: string; tone?: "default" | "accent"; loading?: boolean;
+  /** Shrink the figure to fit the tile instead of cutting it off (long amounts). */
+  fit?: boolean;
+}) {
   const accent = tone === "accent";
   return (
-    <div className={`rounded-2xl p-4 lg:p-5 min-w-0 ${accent ? "bg-brand text-white" : "bg-white border border-line"}`}>
+    <div className={`rounded-2xl p-4 lg:p-5 min-w-0 ${fit ? "@container" : ""} ${className} ${accent ? "bg-brand text-white" : "bg-white border border-line"}`}>
       {loading ? (
         <Skeleton className={`h-7 w-20 ${accent ? "bg-white/20" : ""}`} />
+      ) : fit ? (
+        <p className={`leading-none whitespace-nowrap tabular-nums ${accent ? "text-white" : "text-heading"}`}
+          style={{ fontSize: "clamp(19px, 11.5cqi, 28px)" }}>{value}</p>
       ) : (
         <p className={`text-2xl/none lg:text-[28px]/none truncate ${accent ? "text-white" : "text-heading"}`}>{value}</p>
       )}

@@ -79,10 +79,10 @@ export function CashOutsCard() {
             </div>
           )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-            <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
-            <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
-            <Stat loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" />
-            <Stat loading={loading} value={g(data?.people ?? 0)} label="People" />
+            <Stat fit className="col-span-2 lg:col-span-1" tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
+            <Stat fit className="col-span-2 lg:col-span-1" loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
+            <Stat fit loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" />
+            <Stat fit loading={loading} value={g(data?.people ?? 0)} label="People" />
           </div>
 
           {data && (data.recent?.length ?? 0) === 0 ? (
@@ -144,9 +144,9 @@ export function CashOutsSummary() {
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
-        <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
-        <Stat loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" sub={data ? `${g(data.people ?? 0)} ${data.people === 1 ? "person" : "people"}` : undefined} />
+        <Stat fit tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
+        <Stat fit loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
+        <Stat fit loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" sub={data ? `${g(data.people ?? 0)} ${data.people === 1 ? "person" : "people"}` : undefined} />
       </div>
     </Card>
   );

@@ -626,28 +626,49 @@ export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain 
 
 export function RecentCashOuts({ wallet, onOpen }: { wallet: string; onOpen: (c: CashOutView) => void }) {
   const [list, setList] = useState<CashOutView[] | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/cashout?wallet=${wallet}`).then((r) => r.json()).then((d) => { if (!cancelled) setList((d.data ?? []).filter((c: CashOutView) => c.status !== "awaiting_signature" && c.status !== "expired").slice(0, 3)); }).catch(() => {});
+    fetch(`/api/cashout?wallet=${wallet}`).then((r) => r.json()).then((d) => {
+      if (cancelled) return;
+      const items = (d.data ?? []).filter((c: CashOutView) => c.status !== "awaiting_signature" && c.status !== "expired").slice(0, 5) as CashOutView[];
+      setList(items);
+      // Something still on its way: show it without making them look for it.
+      if (items.some((c) => c.status === "sent" || c.status === "processing")) setOpen(true);
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [wallet]);
   if (!list || list.length === 0) return null;
   const label: Record<string, string> = { sent: "On its way", processing: "On its way", paid: "Paid", failed: "Returned", refunded: "Returned" };
   return (
-    <div className="flex flex-col gap-2 border-t border-line pt-5">
-      <p className="text-sm/none text-nav-muted mb-1">Recent</p>
-      {list.map((c) => (
-        <button key={c.id} type="button" onClick={() => onOpen(c)}
-          className="flex items-center justify-between gap-3 py-2 text-left cursor-pointer hover:opacity-80">
-          <span className="min-w-0">
-            <span className="block text-[15px]/[130%] text-heading">{formatNaira(c.naira)}</span>
-            <span className="block text-xs/[130%] text-nav-muted">{fmtG(Number(c.amountG))} G$ · {new Date(c.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}</span>
-          </span>
-          <span className={`text-xs/none py-1.5 px-2.5 rounded-full shrink-0 ${c.status === "paid" ? "bg-brand-soft text-brand" : c.status === "failed" || c.status === "refunded" ? "bg-surface text-heading" : "bg-streak-bg text-streak"}`}>
-            {label[c.status] ?? c.status}
-          </span>
-        </button>
-      ))}
+    <div className="border-t border-line pt-4 -mb-1">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}
+        className="w-full flex items-center justify-between gap-3 py-1 cursor-pointer group">
+        <span className="flex items-center gap-2 text-sm/none text-nav-muted group-hover:text-heading transition-colors">
+          Recent withdrawals
+          <span className="h-5 min-w-5 px-1.5 rounded-full bg-surface text-[11px]/5 text-heading text-center tabular-nums">{list.length}</span>
+        </span>
+        <ChevronDown className={`w-4 h-4 text-nav-muted transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {/* Height animates from 0 to auto (grid rows), so opening never jumps. */}
+      <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
+        <div className="overflow-hidden" inert={!open} aria-hidden={!open}>
+          <div className="flex flex-col gap-1 pt-3">
+            {list.map((c) => (
+              <button key={c.id} type="button" onClick={() => onOpen(c)}
+                className="flex items-center justify-between gap-3 py-2 text-left cursor-pointer hover:opacity-80">
+                <span className="min-w-0">
+                  <span className="block text-[15px]/[130%] text-heading">{formatNaira(c.naira)}</span>
+                  <span className="block text-xs/[130%] text-nav-muted">{fmtG(Number(c.amountG))} G$ · {new Date(c.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}</span>
+                </span>
+                <span className={`text-xs/none py-1.5 px-2.5 rounded-full shrink-0 ${c.status === "paid" ? "bg-brand-soft text-brand" : c.status === "failed" || c.status === "refunded" ? "bg-surface text-heading" : "bg-streak-bg text-streak"}`}>
+                  {label[c.status] ?? c.status}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
