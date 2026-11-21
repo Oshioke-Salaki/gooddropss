@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Bell, X, Loader2 } from "lucide-react";
 import { useAccount } from "wagmi";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
@@ -50,7 +50,7 @@ export function PushPermissionBanner({ preview = false }: { preview?: boolean } 
   return (
     <AnimatePresence>
       {show && (
-        <motion.div
+        <m.div
           initial={{ y: -24, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -24, opacity: 0 }}
@@ -94,7 +94,7 @@ export function PushPermissionBanner({ preview = false }: { preview?: boolean } 
           >
             <X className="w-4 h-4" strokeWidth={2} />
           </button>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

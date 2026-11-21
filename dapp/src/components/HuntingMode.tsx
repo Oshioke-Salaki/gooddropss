@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { ArrowLeft, Check, Loader2, Lock, Navigation, Puzzle } from "lucide-react";
@@ -184,7 +184,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
   useFocusReturn(true, backRef);
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 40 }}
@@ -228,14 +228,14 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
       {/* ── Main ────────────────────────────────────────────────────────────── */}
       {claimStatus === "done" ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6 text-center">
-          <motion.div
+          <m.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ type: "spring", damping: 14, stiffness: 300 }}
             className="w-24 h-24 rounded-full bg-brand-soft text-brand flex items-center justify-center"
           >
             <Check className="w-12 h-12" strokeWidth={2.5} />
-          </motion.div>
+          </m.div>
           <div className="flex flex-col gap-y-3">
             <p className="text-[32px]/none text-heading">You got it</p>
             <p className="text-base/[140%] text-nav-muted">{formatG$(drop.amount)} G$ is in your wallet.</p>
@@ -332,7 +332,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
           </div>
 
           {/* Status text */}
-          <motion.p
+          <m.p
             key={statusText()}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
@@ -341,7 +341,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
             className={`text-base/none text-center motion-safe:transition-colors ${isClose ? "text-brand" : "text-nav-muted"}`}
           >
             {statusText()}
-          </motion.p>
+          </m.p>
           </div>
 
           {/* Directions */}
@@ -385,6 +385,6 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
           </div>
         </div>
       )}
-    </motion.div>
+    </m.div>
   );
 }

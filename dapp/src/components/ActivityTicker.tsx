@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Coins, Target } from "lucide-react";
 import type { ActivityItem } from "@/lib/subgraph";
 import { formatG$ } from "@/lib/utils";
@@ -103,7 +103,7 @@ export function ActivityTicker() {
         {visible.map((item) => {
           const isDrop = item.type === "drop";
           return (
-            <motion.button
+            <m.button
               key={item.id}
               type="button"
               initial={{ opacity: 0, y: -8, scale: 0.97 }}
@@ -133,7 +133,7 @@ export function ActivityTicker() {
                 </span>
                 <span className="text-[11px]/none text-nav-muted">{timeAgo(item.timestamp)}</span>
               </span>
-            </motion.button>
+            </m.button>
           );
         })}
       </AnimatePresence>

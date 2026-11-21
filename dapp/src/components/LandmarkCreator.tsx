@@ -1,6 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { useSignMessage } from "wagmi";
 import {
   X, Loader2, MapPin, Check, GraduationCap, School, ShoppingCart, Church,
@@ -149,7 +149,7 @@ export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", on
       {/* Instruction banner while positioning the map */}
       <AnimatePresence>
         {placing && !picked && (
-          <motion.div
+          <m.div
             initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
             role="status"
             className="fixed left-1/2 -translate-x-1/2 z-[1100] max-w-[calc(100vw-24px)] font-sans
@@ -170,7 +170,7 @@ export function LandmarkCreator({ placing, picked, landmarks, mode = "admin", on
             >
               <X className="w-4 h-4" strokeWidth={2} />
             </button>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 

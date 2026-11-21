@@ -7,17 +7,24 @@ import { wagmiConfig } from "@/lib/wagmi";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { ValoraDeepLink } from "@/components/ValoraDeepLink";
-import { ProfileSetup } from "@/components/profile/ProfileSetup";
-import { UbiPrompt } from "@/components/UbiPrompt";
-import { FlowVotePrompt } from "@/components/FlowVotePrompt";
-import { ProfileDrawerHost } from "@/components/profile/ProfileDrawer";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
 import { GasTopup } from "@/components/GasTopup";
 import { BadgeCelebration } from "@/components/BadgeCelebration";
-import { ChestReward } from "@/components/ChestReward";
 import { installClientErrorReporter } from "@/lib/clientErrors";
 import { Toaster } from "@/components/ui/Toaster";
+import dynamic from "next/dynamic";
+import { LazyMotion } from "framer-motion";
+
+const loadMotion = () => import("@/lib/motionFeatures").then((m) => m.default);
+
+// Always mounted, but they only act after a sign-in, a claim or a tap, so they
+// load right after the page starts instead of delaying it.
+const ProfileSetup = dynamic(() => import("@/components/profile/ProfileSetup").then((m) => m.ProfileSetup), { ssr: false });
+const UbiPrompt = dynamic(() => import("@/components/UbiPrompt").then((m) => m.UbiPrompt), { ssr: false });
+const FlowVotePrompt = dynamic(() => import("@/components/FlowVotePrompt").then((m) => m.FlowVotePrompt), { ssr: false });
+const ProfileDrawerHost = dynamic(() => import("@/components/profile/ProfileDrawer").then((m) => m.ProfileDrawerHost), { ssr: false });
+const ChestReward = dynamic(() => import("@/components/ChestReward").then((m) => m.ChestReward), { ssr: false });
 
 // Keep every connected wallet on Celo. Auto-switches once whenever a wrong chain
 // is detected (on connect, or if the user changes networks in their wallet). The
@@ -68,6 +75,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     // reconnectOnMount restores the Magic (or wallet) session automatically on
     // every load, so a signed-in user never has to reconnect.
+    // Animations use framer-motion's small "m" components; the engine loads just
+    // after the page starts. `strict` fails loudly if a full "motion" sneaks in.
+    <LazyMotion features={loadMotion} strict>
     <WagmiProvider config={wagmiConfig} reconnectOnMount>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
@@ -92,5 +102,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </AuthProvider>
       </QueryClientProvider>
     </WagmiProvider>
+    </LazyMotion>
   );
 }

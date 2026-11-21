@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { ArrowRight, Coins, MapPin, Target } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 
@@ -84,7 +84,7 @@ export function OnboardingOverlay() {
     >
       <div className="overflow-hidden">
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div
+          <m.div
             key={slide}
             initial={{ x: dir * 40, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -97,7 +97,7 @@ export function OnboardingOverlay() {
             </span>
             <p className="mt-5 text-xs/none text-nav-muted uppercase tracking-[0.08em]">{eyebrow}</p>
             <p className="mt-4 text-sm/[150%] text-nav-muted max-w-[320px]">{body}</p>
-          </motion.div>
+          </m.div>
         </AnimatePresence>
       </div>
 

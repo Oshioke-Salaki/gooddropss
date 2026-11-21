@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 
 interface Reward { amount: string; rarity: "common" | "uncommon" | "rare" | "legendary" }
 
@@ -40,7 +40,7 @@ export function ChestReward() {
   return (
     <AnimatePresence>
       {reward && (
-        <motion.div
+        <m.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           onClick={() => setReward(null)}
@@ -51,7 +51,7 @@ export function ChestReward() {
           className="fixed inset-0 z-[5000] flex flex-col items-center justify-center font-sans
             bg-[#121607]/70 backdrop-blur-sm"
         >
-          <motion.div
+          <m.div
             initial={{ scale: 0.5, y: 20 }} animate={{ scale: 1, y: 0 }}
             transition={{ type: "spring", damping: 16, stiffness: 300 }}
             className="relative w-[180px] h-[180px]"
@@ -97,7 +97,7 @@ export function ChestReward() {
                 </g>
               </svg>
             </div>
-          </motion.div>
+          </m.div>
 
           <div className="chest-reward-amount mt-2 text-center">
             <p className="font-anta text-[40px]/none text-white" style={{ textShadow: "0 2px 12px rgba(255,215,0,.45)" }}>
@@ -105,7 +105,7 @@ export function ChestReward() {
             </p>
             <p className="mt-2 text-sm/none text-white/80">Claimed</p>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

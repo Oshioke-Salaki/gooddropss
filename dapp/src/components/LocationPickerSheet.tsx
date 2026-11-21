@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import { CornerUpRight, MapPin, Move, Search, X, Map as MapIcon } from "lucide-react";
 import { MapZoomControls } from "@/components/MapZoomControls";
@@ -297,7 +297,7 @@ export function LocationPickerSheet({
   return (
     <>
       {/* Backdrop */}
-      <motion.div
+      <m.div
         animate={{ opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none" }}
         transition={{ duration: 0.2 }}
         className="fixed inset-0 z-[1450] bg-[#0000000A] backdrop-blur-md"
@@ -306,7 +306,7 @@ export function LocationPickerSheet({
 
       {/* Full-screen sheet. The map owns the whole surface and every control
           floats on it — no header, no footer bar. */}
-      <motion.div
+      <m.div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
@@ -362,7 +362,7 @@ export function LocationPickerSheet({
 
           <AnimatePresence>
             {showResults && (
-              <motion.div
+              <m.div
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
@@ -417,7 +417,7 @@ export function LocationPickerSheet({
                     );
                   })
                 )}
-              </motion.div>
+              </m.div>
             )}
           </AnimatePresence>
         </div>
@@ -523,7 +523,7 @@ export function LocationPickerSheet({
           </div>
         )}
 
-      </motion.div>
+      </m.div>
     </>
   );
 }

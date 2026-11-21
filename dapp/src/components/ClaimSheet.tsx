@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import {
@@ -30,7 +30,9 @@ import { confirmTx } from "@/lib/txOutcome";
 import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
 import { ensureGasForClaim } from "@/lib/ensureGas";
 import { Sheet } from "@/components/ui/Sheet";
-import { TaskUnlock } from "@/components/TaskUnlock";
+import dynamic from "next/dynamic";
+// Only task drops show this (it carries a QR library), so it loads when needed.
+const TaskUnlock = dynamic(() => import("@/components/TaskUnlock").then((m) => m.TaskUnlock), { ssr: false });
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
 import { fireChestReward } from "@/components/ChestReward";
@@ -628,7 +630,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                         </span>
                       </div>
                       <div className="mt-3 h-2 rounded-full bg-surface overflow-hidden">
-                        <motion.div
+                        <m.div
                           animate={{ width: `${proximityPct}%` }}
                           transition={{ duration: 0.5 }}
                           className={`h-full rounded-full ${proximityPct > 65 ? "bg-brand" : "bg-nav-muted/40"}`}

@@ -1,8 +1,6 @@
 "use client";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
-import { useIdentitySDK } from "@goodsdks/identity-sdk";
-import { makeIdentitySDK } from "@/lib/goodSdk";
 import { readLinkedRoot } from "@/lib/walletLink";
 import { IDENTITY_ADDRESS, IDENTITY_ABI } from "@/lib/identity";
 
@@ -42,14 +40,8 @@ export function useVerification() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
-  const identitySDKFromHook = useIdentitySDK("production");
-
-  // Build SDK manually if the hook returns null (e.g. before wagmi syncs)
-  const identitySDK = useMemo(() => {
-    if (identitySDKFromHook) return identitySDKFromHook;
-    if (!publicClient || !walletClient) return null;
-    return makeIdentitySDK(publicClient, walletClient);
-  }, [identitySDKFromHook, publicClient, walletClient]);
+  // The GoodDollar SDK is only needed to create the face-scan link, so it's
+  // loaded at that moment rather than with every page.
 
   const key = address?.toLowerCase();
   const keyRef = useRef(key);
@@ -125,9 +117,10 @@ export function useVerification() {
   };
 
   const generateLink = async () => {
-    if (!address || !publicClient || !walletClient || !identitySDK || isGeneratingLink) return;
+    if (!address || !publicClient || !walletClient || isGeneratingLink) return;
     try {
       setIsGeneratingLink(true);
+      const { makeIdentitySDK } = await import("@/lib/goodSdk");
       const idSDK = makeIdentitySDK(publicClient, walletClient);
       const callbackUrl = window.location.href;
       // Typed as a string, but older SDK builds returned { link } — accept both.

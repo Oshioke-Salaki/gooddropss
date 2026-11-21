@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Award } from "lucide-react";
 import { badgeArt } from "@/components/profile/badgeArt";
 
@@ -53,7 +53,7 @@ export function BadgeCelebration() {
   return (
     <AnimatePresence>
       {current && (
-        <motion.div
+        <m.div
           key={current.name}
           initial={{ opacity: 0, y: -24, scale: 0.92 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -78,7 +78,7 @@ export function BadgeCelebration() {
             <p className="text-xs/none text-nav-muted">Badge unlocked</p>
             <p className="text-base/none text-heading truncate">{current.name}</p>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

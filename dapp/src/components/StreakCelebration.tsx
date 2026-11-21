@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 
 export const STREAK_MILESTONES = [3, 7, 14, 30] as const;
 
@@ -59,7 +59,7 @@ export function StreakCelebration({ milestone, onDone }: { milestone: number | n
   return createPortal(
     <AnimatePresence>
       {milestone !== null && (
-        <motion.div
+        <m.div
           key={milestone}
           initial={{ opacity: 0, y: -24, scale: 0.92 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -80,7 +80,7 @@ export function StreakCelebration({ milestone, onDone }: { milestone: number | n
             <p className="text-xs/none text-streak">{milestone}-day streak</p>
             <p className="text-sm/[130%] text-heading">{COPY[milestone]}</p>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>,
     document.body,

@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { ChevronDown, MessageCircle, Send, Loader2 } from "lucide-react";
 import { useAccount } from "wagmi";
 import { UserHandle } from "@/components/UserHandle";
@@ -94,7 +94,7 @@ export function DropComments({ dropId, dropper }: Props) {
 
       <AnimatePresence>
         {open && (
-          <motion.div
+          <m.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -173,7 +173,7 @@ export function DropComments({ dropId, dropper }: Props) {
                 </div>
               )}
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
     </div>
