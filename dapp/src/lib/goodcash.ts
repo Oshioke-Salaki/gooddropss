@@ -21,8 +21,8 @@ import { G_TOKEN_ADDRESS } from "@/lib/contracts";
 export const GOODCASH_ROUTER = "0x546698368a246539Df5e641EdC2b79c5782ea359" as const;
 export const CELO_CHAIN_ID = 42220;
 
-/** The most one person (all their linked wallets together) may cash out per day. */
-export const DAILY_CAP_G = 200_000;
+/** The most one withdrawal may take (there's no daily limit). */
+export const MAX_WITHDRAW_G = 200_000;
 
 export const TRANSFER_AND_CALL_ABI = parseAbi([
   "function transferAndCall(address to, uint256 value, bytes data) returns (bool)",

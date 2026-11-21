@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { formatUnits, parseUnits } from "viem";
+import { parseUnits } from "viem";
 import {
-  banks, cashOutEnabled, gc, gcConfig, lagosDay, markDay, saveOrder, store, toView, underLimit, usedTodayWei, withPersonLock,
+  banks, cashOutEnabled, gc, gcConfig, lagosDay, markDay, saveOrder, store, toView, underLimit, withPersonLock,
   ACCOUNT_RE, ADDR_RE, AMOUNT_RE, type GcCashOut, type GcLimits,
 } from "@/lib/goodcashServer";
-import { checkCashOutTx, DAILY_CAP_G, type CashOutOrder, type CashOutTx, type FeeLine, type Quote } from "@/lib/goodcash";
+import { checkCashOutTx, MAX_WITHDRAW_G, type CashOutOrder, type CashOutTx, type FeeLine, type Quote } from "@/lib/goodcash";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { clientIp } from "@/lib/eventAuth";
 
@@ -51,17 +51,9 @@ export async function POST(req: NextRequest) {
 
   const root = await resolveIdentityRoot(wallet);
   const result = await withPersonLock(s, root, async () => {
-    // The daily cap, per person.
-    const capWei = parseUnits(String(DAILY_CAP_G), 18);
-    const used = await usedTodayWei(s, root);
-    if (used + amountWei > capWei) {
-      const left = Math.max(0, Math.floor(Number(formatUnits(capWei - (used > capWei ? capWei : used), 18))));
-      return fail(
-        left > 0
-          ? `You can withdraw up to ${left.toLocaleString("en-US")} G$ more today.`
-          : `You've reached today's limit of ${DAILY_CAP_G.toLocaleString("en-US")} G$. You can withdraw again tomorrow.`,
-        400, "daily_limit", { leftTodayG: left },
-      );
+    // One withdrawal is at most MAX_WITHDRAW_G (no daily limit).
+    if (amountWei > parseUnits(String(MAX_WITHDRAW_G), 18)) {
+      return fail(`The most you can withdraw at once is ${MAX_WITHDRAW_G.toLocaleString("en-US")} G$.`, 400, "amount_too_large");
     }
 
     // The bank's own name for the account, the bank's display name, and a fresh

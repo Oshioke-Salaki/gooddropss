@@ -29,8 +29,6 @@ export interface Setup {
   minimumG?: number;
   maximumG?: number;
   feePercent?: number;
-  dailyCapG?: number;
-  leftTodayG?: number;
   banks?: Bank[];
   error?: string;
 }

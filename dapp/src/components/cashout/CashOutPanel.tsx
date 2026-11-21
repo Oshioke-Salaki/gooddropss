@@ -9,7 +9,7 @@ import { BigAmountInput } from "@/components/ui/BigAmountInput";
 import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 import { formatG$ } from "@/lib/utils";
 import { track } from "@/lib/analytics";
-import { formatNaira, splitAmount, GOODDROPS_FEE_PERCENT, type Bank, type CashOutView, type Quote } from "@/lib/goodcash";
+import { formatNaira, splitAmount, GOODDROPS_FEE_PERCENT, MAX_WITHDRAW_G, type Bank, type CashOutView, type Quote } from "@/lib/goodcash";
 import { forgetAccount, loadSavedAccounts, rememberAccount, useCashOut, type SavedAccount, type Setup } from "@/hooks/useCashOut";
 
 interface Props {
@@ -126,14 +126,11 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
 
   // ── What stops them continuing ─────────────────────────────────────────────
   const balanceG = Number(formatUnits(balance, 18));
+  // The most one withdrawal can take: Max and the quick amounts never go above it.
+  const maxG = setup?.maximumG ?? MAX_WITHDRAW_G;
   const amountProblem = (() => {
     if (!amount || !(amountNum > 0)) return "";
     if (amountNum > balanceG) return "That's more G$ than you have.";
-    if (setup?.leftTodayG !== undefined && amountNum > setup.leftTodayG) {
-      return setup.leftTodayG > 0
-        ? `You can withdraw up to ${fmtG(setup.leftTodayG)} G$ more today.`
-        : "You've reached today's withdrawal limit. Come back tomorrow.";
-    }
     if (setup?.maximumG && amountNum > setup.maximumG) return `The most you can withdraw at once is ${fmtG(setup.maximumG)} G$.`;
     const min = quote?.minimumG ?? setup?.minimumG;
     if (min && Number(cashG) < min) return `The smallest withdrawal is ${fmtG(Math.ceil(min))} G$.`;
@@ -230,9 +227,9 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
             <div className="flex flex-col items-center gap-2.5">
               <span className="text-[13px]/none text-nav-muted">Balance {formatG$(balance)} G$</span>
               <div className="flex items-center gap-2">
-                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(balanceG * 0.25)))}>25%</button>
-                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(balanceG * 0.5)))}>50%</button>
-                <button type="button" className={`${CHIP} !bg-brand-soft !text-brand`} onClick={() => setAmount(wholeG(balance))}>Max</button>
+                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(Math.min(balanceG * 0.25, maxG))))}>25%</button>
+                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(Math.min(balanceG * 0.5, maxG))))}>50%</button>
+                <button type="button" className={`${CHIP} !bg-brand-soft !text-brand`} onClick={() => setAmount(balanceG > maxG ? String(maxG) : wholeG(balance))}>Max</button>
               </div>
             </div>
           </div>
@@ -242,7 +239,6 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
           <button className={BTN} disabled={!amountReady} onClick={() => setStep("bank")}>Continue</button>
           <p className="text-center text-xs/[145%] text-nav-muted -mt-2">
             Paid to your Nigerian bank account, usually in minutes.
-            {setup.leftTodayG !== undefined && setup.leftTodayG < (setup.dailyCapG ?? Infinity) && ` ${fmtG(setup.leftTodayG)} G$ left today.`}
           </p>
           <RecentCashOuts wallet={address} onOpen={flow.open} />
         </>
@@ -497,7 +493,7 @@ export function Review({ amount, quote, quoting, account, phase, onConfirm, onCh
 }) {
   const working = phase.kind === "creating" || phase.kind === "signing" || phase.kind === "toppingUp";
   const error = phase.kind === "error" ? phase.message : "";
-  const limitHit = phase.kind === "error" && (phase.code === "daily_limit" || phase.code === "amount_too_large" || phase.code === "amount_too_small");
+  const limitHit = phase.kind === "error" && (phase.code === "amount_too_large" || phase.code === "amount_too_small");
   if (!quote || !account) return null;
   return (
     <>
