@@ -87,7 +87,10 @@ function WalletButton({
     return () => window.removeEventListener("gd:openWallet", onOpenWallet);
   }, []);
 
-  if (!ready) return null;
+  // Restoring a saved session: hold the space with a quiet placeholder.
+  if (!ready) {
+    return <span aria-label="Loading your account" className="block h-10 w-[132px] rounded-full bg-nav-controls motion-safe:animate-pulse" />;
+  }
 
   if (!authenticated) {
     // Sign in — brand pill, text only (the logo already sits beside it in the bar).

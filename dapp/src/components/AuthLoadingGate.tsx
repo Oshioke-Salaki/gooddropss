@@ -1,7 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useSessionRestore } from "@/hooks/useSessionRestore";
 import { BrandMark } from "@/components/BrandMark";
 
 // Full-screen branded loader shown while wagmi restores the session on a fresh
@@ -15,16 +14,12 @@ import { BrandMark } from "@/components/BrandMark";
 //
 // `preview` keeps it on screen for design QA; production never passes it.
 export function AuthLoadingGate({ preview = false }: { preview?: boolean } = {}) {
-  const { status } = useAccount();
   const pathname = usePathname();
-  const [done, setDone] = useState(false);
-
-  useEffect(() => {
-    if (preview) return;
-    if (status !== "connecting" && status !== "reconnecting") { setDone(true); return; }
-    const t = setTimeout(() => setDone(true), 4000);
-    return () => clearTimeout(t);
-  }, [status, preview]);
+  // Shown only while a saved session is being restored (see useSessionRestore):
+  // returning signed-in users see the brand, never a "Sign in" button that is
+  // about to turn into their wallet. New visitors go straight in.
+  const { restoring } = useSessionRestore();
+  const done = !preview && !restoring;
 
   // The admin console is gated by its own password cookie, not the wallet session,
   // so a wallet-session loader there is misleading — skip it on /admin.
@@ -34,6 +29,9 @@ export function AuthLoadingGate({ preview = false }: { preview?: boolean } = {})
     <div
       aria-busy="true"
       aria-label="Loading GoodDrops"
+      // Fades in only if restoring takes a moment, so a visitor with nothing
+      // to restore never sees it flash while the page hydrates.
+      style={{ animation: preview ? undefined : "gd-gate-in 200ms ease 300ms both" }}
       className="fixed inset-0 z-[3000] bg-white flex flex-col items-center justify-center gap-5 font-sans"
     >
       {/* The G-drop mark, breathing gently — a brand beat rather than a spinner. */}

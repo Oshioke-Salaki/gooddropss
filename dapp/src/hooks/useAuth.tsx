@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useAccount, useDisconnect } from "wagmi";
 import { AuthModal } from "@/components/AuthModal";
+import { useSessionRestore, markSignedIn } from "@/hooks/useSessionRestore";
 
 // Drop-in replacement for the parts of Privy the app used ({ ready, authenticated,
 // login, logout }). Auth state now comes entirely from wagmi — a single source of
@@ -30,28 +31,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 let clientMounted = false;
 
 export function useAuth() {
-  const { address, isConnected, status } = useAccount();
+  const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { login } = useContext(AuthContext);
 
-  // `ready` mirrors Privy's readiness gate: true once the client has mounted and
-  // wagmi has settled its auto-reconnect. A 2s fallback guarantees `ready` can
-  // never hang if a connector's reconnect probe stalls — otherwise the Connect
-  // button (gated on `ready`) would never appear.
-  const [mounted, setMounted]   = useState(() => clientMounted);
-  const [timedOut, setTimedOut] = useState(() => clientMounted);
-  useEffect(() => {
-    clientMounted = true;
-    setMounted(true);
-    const t = setTimeout(() => setTimedOut(true), 2000);
-    return () => clearTimeout(t);
-  }, []);
-  const settled = status !== "connecting" && status !== "reconnecting";
-  const ready = mounted && (settled || timedOut);
+  // `ready`: the client has mounted and any saved session has finished
+  // restoring, so "signed out" really means signed out. Until then the nav shows
+  // a placeholder, never a Sign in button for someone about to be signed in.
+  const [mounted, setMounted] = useState(() => clientMounted);
+  useEffect(() => { clientMounted = true; setMounted(true); }, []);
+  const { unsure } = useSessionRestore();
+  const ready = mounted && (isConnected || !unsure);
 
   // Signing out also ends the wallet session (lib/walletSession), so the next
   // person on this browser can't read the last wallet's private records.
   const logout = useCallback(() => {
+    markSignedIn(false); // the next load shouldn't wait for a session that's gone
     fetch("/api/session", { method: "DELETE" })
       .catch(() => {})
       .finally(() => window.dispatchEvent(new Event("gd:session-changed")));

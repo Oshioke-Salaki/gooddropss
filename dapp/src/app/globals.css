@@ -426,3 +426,6 @@
   .drawer-in-lg,
   .viewer-in-lg { animation: none; }
 }
+
+/* The session-restore loader fades in after a short beat (AuthLoadingGate). */
+@keyframes gd-gate-in { from { opacity: 0; } to { opacity: 1; } }
