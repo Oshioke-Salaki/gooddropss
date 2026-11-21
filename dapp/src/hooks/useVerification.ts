@@ -2,8 +2,30 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { useIdentitySDK } from "@goodsdks/identity-sdk";
-import { makeClaimSDK, makeIdentitySDK } from "@/lib/goodSdk";
+import { makeIdentitySDK } from "@/lib/goodSdk";
 import { readLinkedRoot } from "@/lib/walletLink";
+import { IDENTITY_ADDRESS, IDENTITY_ABI } from "@/lib/identity";
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+// One question, one call: is this wallet (or the root it's linked to) a verified
+// GoodDollar human right now? getWhitelistedRoot answers exactly that, and it's
+// the first thing the claim SDK's status routine checks, without the 6-8 calls
+// that follow (entitlement, other chains, claim times) which we never use.
+// Every component asking on the same page shares one in-flight answer.
+const inflight = new Map<string, { at: number; p: Promise<boolean> }>();
+type Reader = { readContract: (args: { address: `0x${string}`; abi: typeof IDENTITY_ABI; functionName: "getWhitelistedRoot"; args: [`0x${string}`] }) => Promise<unknown> };
+function readWhitelisted(client: Reader, addr: string, fresh: boolean): Promise<boolean> {
+  const k = addr.toLowerCase();
+  const hit = inflight.get(k);
+  if (!fresh && hit && Date.now() - hit.at < 10_000) return hit.p;
+  const p = client
+    .readContract({ address: IDENTITY_ADDRESS, abi: IDENTITY_ABI, functionName: "getWhitelistedRoot", args: [addr as `0x${string}`] })
+    .then((root) => typeof root === "string" && root.toLowerCase() !== ZERO);
+  inflight.set(k, { at: Date.now(), p });
+  p.catch(() => { if (inflight.get(k)?.p === p) inflight.delete(k); });
+  return p;
+}
 
 export type VerificationStatus = "loading" | "verified" | "not_verified" | "error";
 
@@ -68,19 +90,19 @@ export function useVerification() {
   const isPendingVerification =
     !isVerifying && verificationAttemptedAt !== null && status !== "verified";
 
-  const checkVerification = async () => {
-    if (!address || !publicClient || !identitySDK || !walletClient?.account?.address) return;
+  const checkVerification = async (fresh = false) => {
+    // Reading needs no wallet signer, so this no longer waits for one.
+    if (!address || !publicClient) return;
 
     try {
       // Only show "loading" when there's no earlier answer for this wallet.
       if (!isVerifying && !isPendingVerification && !(key && statusCache.has(key))) setStatus("loading");
 
-      const claimSDK = makeClaimSDK({ account: address, publicClient, walletClient, identitySDK });
-
-      const walletStatus = await claimSDK.getWalletClaimStatus();
+      const whitelisted = await readWhitelisted(publicClient as unknown as Reader, address, fresh);
+      if (keyRef.current !== address.toLowerCase()) return; // switched wallets meanwhile
 
       blips.current = 0;
-      if (walletStatus.status === "not_whitelisted") {
+      if (!whitelisted) {
         setStatus("not_verified");
       } else {
         setStatus("verified");
@@ -88,22 +110,17 @@ export function useVerification() {
         setVerificationAttemptedAt(null);
       }
     } catch (error: unknown) {
-      const msg: string = (error as { message?: string } | null)?.message ?? String(error);
-      // GoodDollar SDK queries both Celo and Fuse — Fuse RPC failures are transient
-      if (
-        msg.includes("fuse-rpc") ||
-        msg.includes("pokt.network") ||
-        msg.includes("ERR_NAME_NOT_RESOLVED") ||
-        msg.includes("network")
-      ) {
-        blips.current += 1;
-        if (blips.current >= 4) { blips.current = 0; setStatus("error"); return; }
-        if (blipTimer.current) window.clearTimeout(blipTimer.current);
-        blipTimer.current = window.setTimeout(() => { void checkVerification(); }, 3000 * blips.current);
+      // A single read: any failure is a network blip. Retry a few times, backing
+      // off, before admitting an error (an earlier answer stays on screen meanwhile).
+      blips.current += 1;
+      if (blips.current >= 4) {
+        blips.current = 0;
+        console.error("Verification check failed:", error);
+        if (!(key && statusCache.has(key))) setStatus("error");
         return;
       }
-      console.error("Verification check failed:", error);
-      setStatus("error");
+      if (blipTimer.current) window.clearTimeout(blipTimer.current);
+      blipTimer.current = window.setTimeout(() => { void checkVerification(true); }, 3000 * blips.current);
     }
   };
 
@@ -137,7 +154,7 @@ export function useVerification() {
   useEffect(() => {
     checkVerification();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, !!publicClient, !!identitySDK, !!walletClient?.account?.address]);
+  }, [address, !!publicClient]);
 
   // Record timestamp when modal opens; a fresh open gets a fresh link attempt.
   useEffect(() => {
@@ -156,7 +173,7 @@ export function useVerification() {
   /** "Try again": retry whatever failed (the link, or the status check). */
   const refresh = async () => {
     if (linkFailed) { setStatus("loading"); setLinkFailed(false); return; } // the effect regenerates the link
-    await checkVerification();
+    await checkVerification(true);
   };
 
   // Polling: while modal is open OR during grace period after close
@@ -173,12 +190,12 @@ export function useVerification() {
         clearInterval(interval);
         return;
       }
-      checkVerification();
+      checkVerification(true); // after a face scan: always ask the chain afresh
     }, 5000);
 
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVerifying, verificationAttemptedAt, status, address, !!publicClient, !!identitySDK, !!walletClient?.account?.address]);
+  }, [isVerifying, verificationAttemptedAt, status, address, !!publicClient]);
 
   return {
     status,

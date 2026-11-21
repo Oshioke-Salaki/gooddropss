@@ -12,10 +12,7 @@ import { MapActionButtons } from "@/components/MapActionButtons";
 import { useLandmarks } from "@/hooks/useLandmarks";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { isAdminAddress } from "@/lib/admins";
-import { DropGDrawer } from "@/components/drop/DropGDrawer";
-import { ChainDropCreator } from "@/components/ChainDropCreator";
 import { ClaimSheet } from "@/components/ClaimSheet";
-import { HuntingMode } from "@/components/HuntingMode";
 import { ActivityTicker } from "@/components/ActivityTicker";
 import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
@@ -31,6 +28,14 @@ import type { MapEventPin } from "@/components/MapView";
 import type { GdEvent } from "@/lib/events";
 import { useRouter } from "next/navigation";
 import { DROP_STATUS } from "@/types";
+
+// Opened by a tap, so not part of the first load; warmed once the map settles.
+const loadDropG = () => import("@/components/drop/DropGDrawer");
+const loadChain = () => import("@/components/ChainDropCreator");
+const loadHunt = () => import("@/components/HuntingMode");
+const DropGDrawer = dynamic(() => loadDropG().then((m) => m.DropGDrawer), { ssr: false });
+const ChainDropCreator = dynamic(() => loadChain().then((m) => m.ChainDropCreator), { ssr: false });
+const HuntingMode = dynamic(() => loadHunt().then((m) => m.HuntingMode), { ssr: false });
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -154,6 +159,11 @@ export default function HomePage() {
 
   const handleSpotClick = useCallback((spot: Spot) => {
     setSelectedSpot(spot);
+  }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => { void loadDropG(); void loadChain(); void loadHunt(); }, 4000);
+    return () => window.clearTimeout(t);
   }, []);
 
   // GPS fires about once a second while walking. Moves under ~5 m don't change

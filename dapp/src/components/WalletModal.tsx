@@ -22,6 +22,7 @@ import { Avatar } from "@/components/Avatar";
 import { SendGModal } from "@/components/SendGModal";
 import { CashOutPanel } from "@/components/cashout/CashOutPanel";
 import { GOODDROPS_FEE_PERCENT } from "@/lib/goodcash";
+import { getStreak, peekStreak } from "@/lib/streakCache";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
 import { useUbiClaim } from "@/hooks/useUbiClaim";
@@ -103,26 +104,17 @@ export function WalletModal({
   const { signMessageAsync } = useSignMessage();
 
   // ── Hunting streak ────────────────────────────────────────────────────────
-  const [streak, setStreak] = useState<{
-    current: number;
-    best: number;
-  } | null>(null);
-  const [streakLoading, setStreakLoading] = useState(true);
+  // Shared with the nav's streak badge, so reopening the wallet shows it at once.
+  const cachedStreak = peekStreak(address);
+  const [streak, setStreak] = useState<{ current: number; best: number } | null>(cachedStreak ?? null);
+  const [streakLoading, setStreakLoading] = useState(cachedStreak === undefined);
   useEffect(() => {
     let cancelled = false;
-    setStreakLoading(true);
-    fetch(`/api/engagement?address=${address}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled && d.streak) setStreak(d.streak);
-      })
+    getStreak(address)
+      .then((s) => { if (!cancelled) setStreak(s); })
       .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setStreakLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .finally(() => { if (!cancelled) setStreakLoading(false); });
+    return () => { cancelled = true; };
   }, [address]);
 
   // ── UBI claim ─────────────────────────────────────────────────────────────

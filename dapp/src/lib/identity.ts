@@ -34,7 +34,7 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 // whole point of this module — the two need completely different copy.
 const TEMP_EXCLUSION_TS = 1772697574n;
 
-const IDENTITY_ABI = parseAbi([
+export const IDENTITY_ABI = parseAbi([
   "function getWhitelistedRoot(address account) view returns (address)",
   "function identities(address) view returns (uint256 dateAuthenticated, uint256 dateAdded, string did, uint256 whitelistedOnChainId, uint8 status, uint32 authCount)",
   "function reverifyDaysOptions(uint256) view returns (uint256)",

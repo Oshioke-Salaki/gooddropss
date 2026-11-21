@@ -285,7 +285,9 @@ export default function MapView({
   dropsRef.current = drops;
 
   // Marker registries so re-renders can clear stale DOM markers.
-  const dropMarkersRef     = useRef<maplibregl.Marker[]>([]);
+  // Keyed so a pan or zoom keeps the markers still in view instead of recreating
+  // them all: "d:<drop id>" for a drop, "c:<cluster id>:<count>:<position>" for a cluster.
+  const dropMarkersRef     = useRef<Map<string, maplibregl.Marker>>(new Map());
   const spotMarkersRef     = useRef<maplibregl.Marker[]>([]);
   const eventMarkersRef    = useRef<maplibregl.Marker[]>([]);
   const landmarkMarkersRef = useRef<maplibregl.Marker[]>([]);
@@ -462,42 +464,52 @@ export default function MapView({
       : clusterRef.current;
     if (!index) return;
 
-    dropMarkersRef.current.forEach((m) => m.remove());
-    dropMarkersRef.current = [];
-
     const b = map.getBounds();
     const clusters = index.getClusters(
       [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
       Math.floor(map.getZoom()),
     );
 
+    const live = dropMarkersRef.current;
+    const next = new Map<string, maplibregl.Marker>();
     for (const feature of clusters) {
       const [lng, lat] = feature.geometry.coordinates as [number, number];
-      let el: HTMLDivElement;
+      const isCluster = "cluster" in feature.properties && !!feature.properties.cluster;
+      const drop = isCluster ? undefined : dropsRef.current[(feature.properties as DropFeatureProps).dropIndex];
+      if (!isCluster && !drop) continue;
+      const key = isCluster
+        ? `c:${(feature.properties as { cluster_id: number }).cluster_id}:${(feature.properties as { point_count: number }).point_count}:${lng.toFixed(5)},${lat.toFixed(5)}`
+        : `d:${drop!.id}`;
 
-      if ("cluster" in feature.properties && feature.properties.cluster) {
-        const clusterId = feature.properties.cluster_id as number;
-        el = makeClusterElement(feature.properties.point_count as number);
+      // Still on screen from the last render: keep it as it is.
+      const kept = live.get(key);
+      if (kept) { next.set(key, kept); live.delete(key); continue; }
+
+      let el: HTMLDivElement;
+      if (isCluster) {
+        const { cluster_id: clusterId, point_count: count } = feature.properties as { cluster_id: number; point_count: number };
+        el = makeClusterElement(count);
         el.addEventListener("click", (e) => {
           e.stopPropagation();
           const zoom = index.getClusterExpansionZoom(clusterId);
           map.easeTo({ center: [lng, lat], zoom: Math.min(zoom, 18), duration: 600 });
         });
       } else {
-        const drop = dropsRef.current[(feature.properties as DropFeatureProps).dropIndex];
-        if (!drop) continue;
-        el = makeDropElement(drop);
+        const d = drop!;
+        el = makeDropElement(d);
         el.addEventListener("click", (e) => {
           e.stopPropagation();
-          onDropClickRef.current(drop);
+          onDropClickRef.current(d);
         });
       }
-
       const marker = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([lng, lat])
         .addTo(map);
-      dropMarkersRef.current.push(marker);
+      next.set(key, marker);
     }
+    // Whatever is left went off screen or merged into a cluster.
+    live.forEach((m) => m.remove());
+    dropMarkersRef.current = next;
   }, []);
 
   // Rebuild the cluster index when drops change, then re-render.
@@ -536,6 +548,9 @@ export default function MapView({
           ),
       ),
     );
+    // The drops themselves changed: rebuild every marker so none shows stale data.
+    dropMarkersRef.current.forEach((m) => m.remove());
+    dropMarkersRef.current = new Map();
     renderDropMarkers();
   }, [drops, landmarks, mapReady, renderDropMarkers]);
 
@@ -543,13 +558,10 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    // A zoom also ends with "moveend", so listening to "zoomend" too drew twice.
     const handler = () => renderDropMarkers();
     map.on("moveend", handler);
-    map.on("zoomend", handler);
-    return () => {
-      map.off("moveend", handler);
-      map.off("zoomend", handler);
-    };
+    return () => { map.off("moveend", handler); };
   }, [mapReady, renderDropMarkers]);
 
   // ── Shop (GoodSpot) markers ─────────────────────────────────────────────────
@@ -721,8 +733,7 @@ export default function MapView({
     if (!map || !mapReady) return;
     const handler = () => renderLandmarkMarkers();
     map.on("moveend", handler);
-    map.on("zoomend", handler);
-    return () => { map.off("moveend", handler); map.off("zoomend", handler); };
+    return () => { map.off("moveend", handler); };
   }, [mapReady, renderLandmarkMarkers]);
 
   // Crosshair cursor while placing a landmark.

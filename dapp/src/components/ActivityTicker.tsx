@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Coins, Target } from "lucide-react";
-import { fetchRecentActivity, type ActivityItem } from "@/lib/subgraph";
+import type { ActivityItem } from "@/lib/subgraph";
 import { formatG$ } from "@/lib/utils";
 import { UserHandle } from "@/components/UserHandle";
 
@@ -27,7 +27,12 @@ export function ActivityTicker() {
   );
 
   async function load() {
-    const data = await fetchRecentActivity();
+    let data: ActivityItem[] = [];
+    try {
+      const r = await fetch("/api/activity");
+      const d = (await r.json()) as { items?: (Omit<ActivityItem, "amount"> & { amount: string })[] };
+      data = (d.items ?? []).map((i) => ({ ...i, amount: BigInt(i.amount) }));
+    } catch { return; } // offline: keep what's showing
     if (!data.length) return;
 
     const fresh = data.filter((a) => !seenRef.current.has(a.id));
@@ -70,7 +75,8 @@ export function ActivityTicker() {
 
   useEffect(() => {
     load();
-    const iv = setInterval(load, 20_000);
+    // Only while the tab is visible: a background tab has no one to show it to.
+    const iv = setInterval(() => { if (document.visibilityState === "visible") load(); }, 20_000);
     const timers = timerRef.current; // same Map for the component's life
     return () => {
       clearInterval(iv);

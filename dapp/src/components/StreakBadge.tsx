@@ -1,4 +1,5 @@
 "use client";
+import { getStreak } from "@/lib/streakCache";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
@@ -36,12 +37,11 @@ export function StreakBadge() {
     // streak doesn't throw a toast.
     const load = (afterClaim: boolean) => {
       setLoading(true);
-      fetch(`/api/engagement?address=${signedInAddress}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (cancelled || !d.streak) return;
-          setStreak(d.streak);
-          const current = Number(d.streak.current) || 0;
+      getStreak(signedInAddress, { fresh: afterClaim })
+        .then((s) => {
+          if (cancelled || !s) return;
+          setStreak(s);
+          const current = Number(s.current) || 0;
           if (!afterClaim) { seedStreakMilestones(signedInAddress, current); return; }
           const hit = takeStreakMilestone(signedInAddress, current);
           // Let a badge toast (fired by the same claim) finish first.

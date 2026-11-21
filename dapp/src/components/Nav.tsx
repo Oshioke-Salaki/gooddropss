@@ -6,7 +6,13 @@ import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { celo } from "viem/chains";
 import { Map, CalendarDays, Trophy, Gift, Store, Equal, X, ShieldCheck, RefreshCw, Clock, Ban } from "lucide-react";
-import { WalletModal } from "@/components/WalletModal";
+import dynamic from "next/dynamic";
+
+// The wallet (with Send and Withdraw) is a big piece that only shows after a
+// tap, so it isn't in every page's first load. It's fetched quietly once the
+// page settles (see below), so the first tap still opens it at once.
+const loadWalletModal = () => import("@/components/WalletModal");
+const WalletModal = dynamic(() => loadWalletModal().then((m) => m.WalletModal), { ssr: false });
 import { Logo } from "@/components/Logo";
 import { StreakBadge } from "@/components/StreakBadge";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
@@ -68,6 +74,11 @@ function WalletButton({
   // conditionally. useProfile handles an undefined address safely.
   const profile = useProfile(address);
   const [showModal, setShowModal] = useState(false);
+  // Warm the wallet's code a moment after the page settles, so opening it is instant.
+  useEffect(() => {
+    const t = window.setTimeout(() => { void loadWalletModal(); }, 2500);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Open wallet modal when ClaimSheet success state dispatches gd:openWallet
   useEffect(() => {
