@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // GET /api/cashout/quote?amountG=5000 → what the person gets in naira, every fee
 // on its own line. Shown as is: we never work fees out ourselves.
 export async function GET(req: NextRequest) {
-  if (!cashOutEnabled()) return NextResponse.json({ error: "Cash out isn't available yet." }, { status: 404 });
+  if (!cashOutEnabled()) return NextResponse.json({ error: "Withdrawals aren't available yet." }, { status: 404 });
   const amountG = req.nextUrl.searchParams.get("amountG") ?? "";
   if (!AMOUNT_RE.test(amountG) || Number(amountG) <= 0) {
     return NextResponse.json({ error: "Enter an amount.", code: "invalid_request" }, { status: 400 });

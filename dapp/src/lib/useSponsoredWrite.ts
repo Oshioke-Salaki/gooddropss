@@ -56,7 +56,10 @@ export function useSponsoredWrite() {
     };
 
     const call = toCall(p);
-    if (address && (await canSponsor(address, connectorId)) && (await policyAllows(address as Address, [call]))) {
+    const [canS, allowed] = address
+      ? await Promise.all([canSponsor(address, connectorId), policyAllows(address as Address, [call])])
+      : [false, false];
+    if (address && canS && allowed) {
       try {
         const hash = await sendSponsored(address as Address, [call], () =>
           publicClient.simulateContract({ ...p, account: address as Address } as never),

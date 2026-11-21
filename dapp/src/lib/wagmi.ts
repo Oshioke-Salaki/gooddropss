@@ -112,7 +112,7 @@ export const wagmiConfig = createConfig({
   chains: [celo],
   ssr: true,
   transports: {
-    [celo.id]: http(CELO_RPC),
+    [celo.id]: http(CELO_RPC, { batch: true }),
   },
   connectors,
 });

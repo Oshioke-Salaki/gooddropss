@@ -19,7 +19,7 @@ import { CountBadge } from "@/components/admin/ui";
 type BadgeKey = "suggestions" | "reports" | "businesses" | "events";
 const NAV: { href: string; label: string; Icon: LucideIcon; badge?: BadgeKey }[] = [
   { href: "/admin/analytics",   label: "Analytics",   Icon: ChartColumn },
-  { href: "/admin/cashouts",    label: "Cash outs",   Icon: Banknote },
+  { href: "/admin/cashouts",    label: "Withdrawals", Icon: Banknote },
   { href: "/admin/suggestions", label: "Suggestions", Icon: Lightbulb,   badge: "suggestions" },
   { href: "/admin/reports",     label: "Reports",     Icon: Flag,        badge: "reports" },
   { href: "/admin/places",      label: "Places",      Icon: Tag },

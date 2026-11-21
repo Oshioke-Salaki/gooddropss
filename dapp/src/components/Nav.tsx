@@ -343,9 +343,13 @@ export function VerifyBanner({
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
+/** Wallets whose verification this visit has already been announced / seen. */
+const announcedVerified = new Set<string>();
+const seenVerification = new Set<string>();
+
 export function Nav() {
   const path = usePathname();
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const { status, isVerified, fvLink, isVerifying, setIsVerifying, refresh, linkedRoot } =
     useVerification();
   const isVerificationLoading = status === "loading";
@@ -391,14 +395,21 @@ export function Nav() {
             : null;
 
   // Broadcast verification so every useGoodDollarProfile instance refetches immediately
-  const prevVerified = useRef(false);
+  // Only when verification actually changes, not on every page (Nav remounts on
+  // each route, and the cached "verified" would otherwise refetch everything).
   useEffect(() => {
-    if (isVerified && !prevVerified.current) {
-      window.dispatchEvent(new CustomEvent("gd:verified"));
-      refreshIdentity();
+    const key = address?.toLowerCase();
+    if (!key) return;
+    if (isVerified && !announcedVerified.has(key)) {
+      const firstSight = !seenVerification.has(key);
+      announcedVerified.add(key);
+      if (!firstSight) {
+        window.dispatchEvent(new CustomEvent("gd:verified"));
+        refreshIdentity();
+      }
     }
-    prevVerified.current = isVerified;
-  }, [isVerified, refreshIdentity]);
+    seenVerification.add(key);
+  }, [isVerified, address, refreshIdentity]);
 
   // Listen for events dispatched by ClaimSheet / DropPageClient to open modals.
   // gd:openVerify — opens the GoodDollar face-verification flow.

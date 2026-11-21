@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 // this wallet, so sponsored sends match too). 202 means "not mined yet": the app
 // reports again in a few seconds.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!cashOutEnabled()) return NextResponse.json({ error: "Cash out isn't available yet." }, { status: 404 });
+  if (!cashOutEnabled()) return NextResponse.json({ error: "Withdrawals aren't available yet." }, { status: 404 });
   const { id } = await params;
   let body: { txHash?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid request" }, { status: 400 }); }

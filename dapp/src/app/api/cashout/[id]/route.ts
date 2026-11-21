@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 // our secret key. Also brings our records up to date (the daily cap, and the
 // central total once it's paid), so we never depend on the webhook alone.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!cashOutEnabled()) return NextResponse.json({ error: "Cash out isn't available yet." }, { status: 404 });
+  if (!cashOutEnabled()) return NextResponse.json({ error: "Withdrawals aren't available yet." }, { status: 404 });
   const { id } = await params;
   if (!ID_RE.test(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const r = await gc<GcCashOut>(`/v1/cashouts/${id}`);

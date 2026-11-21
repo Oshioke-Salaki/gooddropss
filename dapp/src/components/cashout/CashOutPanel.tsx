@@ -2,9 +2,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits } from "viem";
 import {
-  X, Loader2, Check, Plus, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, Clock,
+  X, Loader2, Check, Plus, Globe, Send, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, Clock,
 } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
+import { BigAmountInput } from "@/components/ui/BigAmountInput";
 import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 import { formatG$ } from "@/lib/utils";
 import { track } from "@/lib/analytics";
@@ -14,12 +15,17 @@ import { forgetAccount, loadSavedAccounts, rememberAccount, useCashOut, type Sav
 interface Props {
   address: `0x${string}`;
   balance: bigint;
+  /** False outside Nigeria: withdrawals only pay Nigerian bank accounts. */
+  available?: boolean;
+  /** Offer Send G$ instead when withdrawing isn't available here. */
+  onSend?: () => void;
   onClose: () => void;
 }
 
 type Step = "amount" | "bank" | "banks" | "review";
 
-const BTN = "shrink-0 w-full h-12 rounded-full bg-brand text-white text-[15px]/none flex items-center justify-center gap-2 cursor-pointer hover:bg-brand/90 transition-colors disabled:bg-[#A4A4A4] disabled:cursor-not-allowed";
+const BTN = "shrink-0 w-full h-12 rounded-full bg-brand text-white text-[15px]/none flex items-center justify-center gap-2 cursor-pointer hover:bg-brand/90 transition-[transform,background-color] duration-150 active:scale-[0.98] disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:active:scale-100";
+const CHIP = "h-8 px-3.5 rounded-full bg-surface text-[13px]/none text-heading cursor-pointer hover:bg-[#ECECEC] transition-[transform,background-color] duration-150 active:scale-[0.95]";
 const INPUT = "w-full border border-line h-12 px-5 text-[15px]/none rounded-full placeholder:text-nav-muted text-heading outline-none focus:border-brand transition-colors disabled:opacity-60";
 
 /** Plain decimal G$ from wei, whole G$ only (cash outs don't need cents). */
@@ -36,7 +42,7 @@ const cleanAmount = (v: string) => v.replace(/[^\d.]/g, "").replace(/(\..*)\./g,
  * confirm, the bank's own name for the account is shown before they confirm,
  * and once money has moved there is no "try again", only progress.
  */
-export function CashOutPanel({ address, balance, onClose }: Props) {
+export function CashOutPanel({ address, balance, available = true, onSend, onClose }: Props) {
   const flow = useCashOut();
   const { phase } = flow;
   const busy = phase.kind === "creating" || phase.kind === "signing" || phase.kind === "toppingUp"
@@ -125,12 +131,12 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
     if (amountNum > balanceG) return "That's more G$ than you have.";
     if (setup?.leftTodayG !== undefined && amountNum > setup.leftTodayG) {
       return setup.leftTodayG > 0
-        ? `You can cash out up to ${fmtG(setup.leftTodayG)} G$ more today.`
-        : "You've reached today's cash-out limit. Come back tomorrow.";
+        ? `You can withdraw up to ${fmtG(setup.leftTodayG)} G$ more today.`
+        : "You've reached today's withdrawal limit. Come back tomorrow.";
     }
-    if (setup?.maximumG && amountNum > setup.maximumG) return `The most you can cash out at once is ${fmtG(setup.maximumG)} G$.`;
+    if (setup?.maximumG && amountNum > setup.maximumG) return `The most you can withdraw at once is ${fmtG(setup.maximumG)} G$.`;
     const min = quote?.minimumG ?? setup?.minimumG;
-    if (min && Number(cashG) < min) return `The smallest cash out is ${fmtG(Math.ceil(min))} G$.`;
+    if (min && Number(cashG) < min) return `The smallest withdrawal is ${fmtG(Math.ceil(min))} G$.`;
     return "";
   })();
   const amountReady = !!quote && !quoting && !amountProblem && !quoteErr && quote.enough !== false && quote.amountG === cashG;
@@ -143,8 +149,9 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
 
   // ── Layout ──────────────────────────────────────────────────────────────────
   const following = phase.kind === "tracking" || phase.kind === "sending" || phase.kind === "checking";
-  const title = following ? "Cash out" : step === "banks" ? "Choose your bank" : "Cash out to bank";
+  const title = following ? "Withdraw" : step === "banks" ? "Choose your bank" : "Withdraw to bank";
   const canGoBack = !following && !busy && step !== "amount";
+  const stepIndex = step === "amount" ? 0 : step === "review" ? 2 : 1;
   const back = () => setStep(step === "banks" ? "bank" : step === "review" ? "bank" : "amount");
 
   return (
@@ -152,7 +159,7 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
       ref={sheetRef}
       role="dialog"
       aria-modal="true"
-      aria-label="Cash out to bank"
+      aria-label="Withdraw to bank"
       tabIndex={-1}
       className="outline-none bg-white rounded-t-3xl lg:rounded-3xl p-6 flex flex-col gap-y-5 font-sans
         max-h-[88dvh] overflow-y-auto lg:max-h-[calc(100dvh-var(--spacing-nav)-32px)] panel-in-lg"
@@ -173,8 +180,15 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
               <span className="shrink-0 py-1 px-2.5 rounded-full bg-streak-bg text-streak text-xs/none">Test mode</span>
             )}
           </div>
+          {!following && available && setup?.enabled && !setup.error && (
+            <div className="ml-auto mr-1 flex items-center gap-1.5" aria-label={`Step ${stepIndex + 1} of 3`}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === stepIndex ? "w-5 bg-brand" : i < stepIndex ? "w-1.5 bg-brand/40" : "w-1.5 bg-line"}`} />
+              ))}
+            </div>
+          )}
           <button onClick={onClose} disabled={busy} aria-label="Close"
-            className="p-1.5 text-black rounded-full bg-surface cursor-pointer hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
+            className="p-1.5 text-black rounded-full bg-surface cursor-pointer hover:bg-[#ECECEC] transition-[transform,background-color] duration-150 active:scale-[0.94] disabled:opacity-40 disabled:cursor-not-allowed">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -189,39 +203,37 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
           onDone={onClose}
           onAgain={() => { flow.reset(); setAmount(""); setQuote(null); setStep("amount"); }}
         />
+      ) : !available ? (
+        <div className="flex flex-col items-center text-center gap-3 pt-2">
+          <span className="w-12 h-12 rounded-full bg-brand-soft text-brand flex items-center justify-center"><Globe className="w-6 h-6" /></span>
+          <p className="text-base/[130%] text-heading">Withdrawals are for Nigeria, for now</p>
+          <p className="text-sm/[150%] text-nav-muted max-w-[300px]">We pay out to Nigerian bank accounts only. You can still send your G$ to any wallet.</p>
+          {onSend && (
+            <button className={`${BTN} mt-2`} onClick={onSend}><Send className="w-4 h-4" />Send G$ instead</button>
+          )}
+        </div>
       ) : !setup ? (
         <div className="flex flex-col gap-4" aria-busy="true">
           <div className="h-[120px] rounded-3xl bg-surface animate-pulse" />
           <div className="h-14 rounded-full bg-surface animate-pulse" />
         </div>
       ) : !setup.enabled ? (
-        <Notice title="Cash out is coming soon" body="You'll be able to send G$ straight to your bank account from here." />
+        <Notice title="Withdrawals are coming soon" body="You'll be able to send G$ straight to your bank account from here." />
       ) : setup.error ? (
-        <Notice title="Cash out is busy" body={setup.error} />
+        <Notice title="Withdrawals are busy" body={setup.error} />
       ) : step === "amount" ? (
         <>
           <div className="flex flex-col items-center gap-3 pt-2">
-            <label htmlFor="cashout-amount" className="text-sm/none text-nav-muted">You cash out</label>
-            <div className="flex items-baseline justify-center gap-2 w-full">
-              <input
-                id="cashout-amount"
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder="0"
-                value={groupDigits(amount)}
-                onChange={(e) => setAmount(cleanAmount(e.target.value.replace(/,/g, "")))}
-                className="min-w-0 max-w-full text-center text-[34px]/none text-heading outline-none placeholder:text-[#C9C9C9] bg-transparent"
-                style={{ width: `${Math.max(2, groupDigits(amount || "0").length + 0.5)}ch` }}
-                autoFocus
-              />
-              <span className="text-lg/none text-nav-muted">G$</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm/none">
-              <span className="text-nav-muted">Balance: {formatG$(balance)} G$</span>
-              <button type="button" onClick={() => setAmount(wholeG(balance))}
-                className="bg-brand-soft rounded-full py-1.5 px-3 text-brand cursor-pointer hover:opacity-80 transition-opacity">
-                Max
-              </button>
+            <label htmlFor="cashout-amount" className="text-sm/none text-nav-muted">You withdraw</label>
+            <BigAmountInput id="cashout-amount" value={amount} display={groupDigits(amount)}
+              onChange={(v) => setAmount(cleanAmount(v.replace(/,/g, "")))} />
+            <div className="flex flex-col items-center gap-2.5">
+              <span className="text-[13px]/none text-nav-muted">Balance {formatG$(balance)} G$</span>
+              <div className="flex items-center gap-2">
+                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(balanceG * 0.25)))}>25%</button>
+                <button type="button" className={CHIP} onClick={() => setAmount(String(Math.floor(balanceG * 0.5)))}>50%</button>
+                <button type="button" className={`${CHIP} !bg-brand-soft !text-brand`} onClick={() => setAmount(wholeG(balance))}>Max</button>
+              </div>
             </div>
           </div>
 
@@ -315,7 +327,7 @@ export function CashOutPanel({ address, balance, onClose }: Props) {
         />
       )}
 
-      <p className="text-center text-[11px]/none text-nav-muted -mt-1">Powered by GoodCash</p>
+      {available && <p className="text-center text-[11px]/none text-nav-muted -mt-1">Powered by GoodCash</p>}
     </div>
   );
 }
@@ -509,12 +521,12 @@ export function Review({ amount, quote, quoting, account, phase, onConfirm, onCh
       <div className="flex flex-col gap-3">
         <button className={BTN} onClick={limitHit ? onEditAmount : onConfirm} disabled={working || quoting}>
           {working && <Loader2 className="w-5 h-5 animate-spin" />}
-          {phase.kind === "creating" ? "Getting your cash out ready…"
+          {phase.kind === "creating" ? "Getting your withdrawal ready…"
             : phase.kind === "toppingUp" ? "Getting things ready…"
             : phase.kind === "signing" ? "Confirm in your wallet…"
             : limitHit ? "Change amount"
             : error ? "Try again"
-            : `Cash out ${formatNaira(quote.receive.naira)}`}
+            : `Withdraw ${formatNaira(quote.receive.naira)}`}
         </button>
         {error ? (
           <p role="status" className="text-sm/[145%] text-danger text-center">{error}</p>
@@ -554,15 +566,15 @@ export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain 
   if (bad) {
     const body = status === "refunded" || status === "failed"
       ? "The bank couldn't be paid, so your money was sent back to your wallet in dollars (USDT). It's safe there."
-      : "This cash out closed before anything was sent. Nothing left your wallet.";
+      : "This withdrawal closed before anything was sent. Nothing left your wallet.";
     return (
       <div className="flex flex-col items-center text-center gap-5 py-2">
         <span className="w-12 h-12 rounded-full bg-surface text-heading flex items-center justify-center"><AlertCircle className="w-6 h-6" /></span>
         <div className="flex flex-col gap-2">
-          <p className="text-base/[120%] text-heading">{status === "expired" ? "Cash out closed" : "Your bank wasn't paid"}</p>
+          <p className="text-base/[120%] text-heading">{status === "expired" ? "Withdrawal closed" : "Your bank wasn't paid"}</p>
           <p className="text-sm/[150%] text-nav-muted max-w-[320px]">{body}</p>
         </div>
-        <button className={BTN} onClick={onAgain}>Start a new cash out</button>
+        <button className={BTN} onClick={onAgain}>Start a new withdrawal</button>
       </div>
     );
   }
@@ -582,7 +594,7 @@ export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain 
         </span>
         <span className="text-[28px]/none text-heading">{formatNaira(naira)}</span>
         <div className="flex flex-col items-center gap-1 text-sm/[145%] text-nav-muted">
-          <span>{paid ? "has been paid to" : phase.kind === "checking" ? "Checking on your cash out…" : "on its way to"}</span>
+          <span>{paid ? "has been paid to" : phase.kind === "checking" ? "Checking on your withdrawal…" : "on its way to"}</span>
           {accountName && phase.kind !== "checking" && (
             <>
               <span className="text-[15px]/[130%] text-heading">{accountName}</span>

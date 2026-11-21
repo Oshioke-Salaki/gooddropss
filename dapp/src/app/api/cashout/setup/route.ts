@@ -22,7 +22,11 @@ export async function GET(req: NextRequest) {
   // nobody is shown a cash-out button that can't work. Checked at most every
   // few minutes per server instance.
   if (req.nextUrl.searchParams.has("probe")) {
-    return NextResponse.json({ enabled: await reachable() }, { headers: { "Cache-Control": "public, max-age=60" } });
+    // Withdrawals pay Nigerian bank accounts only. Vercel tells us the visitor's
+    // country from their connection; the app also checks the device time zone
+    // when this is missing (local development).
+    const country = req.headers.get("x-vercel-ip-country");
+    return NextResponse.json({ enabled: await reachable(), country }, { headers: { "Cache-Control": "private, max-age=60" } });
   }
   const wallet = req.nextUrl.searchParams.get("wallet") ?? "";
 

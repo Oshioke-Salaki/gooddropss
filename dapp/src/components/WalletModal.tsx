@@ -14,12 +14,14 @@ import {
   ArrowRight,
   Send,
   Landmark,
+  ShieldCheck,
 } from "lucide-react";
 import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { Avatar } from "@/components/Avatar";
 import { SendGModal } from "@/components/SendGModal";
 import { CashOutPanel } from "@/components/cashout/CashOutPanel";
+import { GOODDROPS_FEE_PERCENT } from "@/lib/goodcash";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
 import { useUbiClaim } from "@/hooks/useUbiClaim";
@@ -34,15 +36,14 @@ interface Props {
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,24}$/;
 
-/** Row shell shared by the streak / balance / action rows. */
-const ROW =
-  "rounded-full py-3 pl-4 pr-6 border border-line flex items-center gap-4";
-
 /** Neutral shimmer block. Sized by the caller so skeletons occupy the exact
  *  footprint of the real content — no layout shift when the data lands. */
 function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-full bg-line ${className}`} />;
 }
+
+let nairaRateCache: number | null = null;
+let probeCache: { enabled?: boolean; country?: string | null } | null = null;
 
 export function WalletModal({
   address,
@@ -64,10 +65,33 @@ export function WalletModal({
   const sendOpen = side !== null;
   const setSendOpen = (v: boolean | ((x: boolean) => boolean)) =>
     setSide((cur) => ((typeof v === "function" ? v(cur === "send") : v) ? "send" : null));
-  const [cashOutOn, setCashOutOn] = useState(false);
+  const [cashOutOn, setCashOutOn] = useState(!!probeCache?.enabled);
+  // Withdrawals pay Nigerian bank accounts only: by connection country, or by
+  // device time zone (Lagos time) when the country isn't known.
+  const [inNigeria, setInNigeria] = useState(true);
+  // Naira per G$ after all fees, from GoodCash's live quote, so the balance can
+  // show what it's worth in the bank. One fetch per page view.
+  const [nairaPerG, setNairaPerG] = useState<number | null>(nairaRateCache);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/cashout/setup?probe=1").then((r) => r.json()).then((d) => { if (!cancelled) setCashOutOn(!!d.enabled); }).catch(() => {});
+    const apply = (d: { enabled?: boolean; country?: string | null }) => {
+      if (cancelled) return;
+      setCashOutOn(!!d.enabled);
+      let tz = "";
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { /* unknown */ }
+      setInNigeria(d.country === "NG" || tz === "Africa/Lagos");
+      if (d.enabled && nairaRateCache === null) {
+        fetch("/api/cashout/quote?amountG=100000").then((r) => r.json()).then((q) => {
+          // GoodDrops keeps 1% before GoodCash converts the rest.
+          const rate = q?.receive?.naira > 0 ? (q.receive.naira / 100000) * (1 - GOODDROPS_FEE_PERCENT / 100) : null;
+          nairaRateCache = rate;
+          if (!cancelled) setNairaPerG(rate);
+        }).catch(() => {});
+      }
+    };
+    // Asked once per visit: reopening the wallet shows Withdraw straight away.
+    if (probeCache) apply(probeCache);
+    else fetch("/api/cashout/setup?probe=1").then((r) => r.json()).then((d) => { probeCache = d; apply(d); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +141,9 @@ export function WalletModal({
       ).toFixed(3)
     : "—";
   const shortAddress = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  // The exact balance, whole G$ (two decimals only for small amounts).
+  const balG = Number(formatUnits(balance, 18));
+  const balanceFull = balG.toLocaleString("en-US", { maximumFractionDigits: balG < 10 ? 2 : 0 });
 
   // Lifts the mobile send sheet clear of the on-screen keyboard.
   const kbInset = useKeyboardInset(sendOpen);
@@ -271,6 +298,8 @@ export function WalletModal({
               <CashOutPanel
                 address={address}
                 balance={balance}
+                available={inNigeria}
+                onSend={() => setSide("send")}
                 onClose={() => setSide(null)}
               />
             ) : (
@@ -292,7 +321,7 @@ export function WalletModal({
           aria-label="Wallet"
           tabIndex={-1}
           className={`outline-none panel-in w-full lg:w-[400px] lg:max-w-[calc(100vw-24px)] bg-white p-6
-            rounded-b-3xl lg:rounded-3xl flex-col gap-y-6
+            rounded-b-3xl lg:rounded-3xl flex-col gap-y-5
             ${sendOpen ? "hidden lg:flex" : "flex"}`}
           style={{ boxShadow: "0px 0px 12px 0px #0000000A" }}
         >
@@ -311,15 +340,21 @@ export function WalletModal({
                   address={address}
                   username={profile?.username}
                   preset={profile?.avatar}
-                  size={46}
+                  size={44}
                   ringColor="transparent"
                 />
               </button>
               <div className="min-w-0">
-                <div className="flex items-center gap-x-2 mb-4">
-                  <h3 className="text-lg/[100%] text-heading truncate">
-                    {profile?.username ?? shortAddress}
-                  </h3>
+                <div className="flex items-center gap-x-2 mb-2">
+                  {profile === undefined ? (
+                    <Skeleton className="h-4 w-28" />
+                  ) : profile?.username ? (
+                    <h3 className="text-base/[120%] text-heading truncate">{profile.username}</h3>
+                  ) : (
+                    <button type="button" onClick={() => setEditing(true)} className="text-base/[120%] text-nav-muted truncate cursor-pointer hover:text-heading">
+                      Add a username
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditing((e) => !e)}
                     title={profile?.username ? "Edit username" : "Set username"}
@@ -329,7 +364,7 @@ export function WalletModal({
                   </button>
                 </div>
                 <div className="flex items-center gap-x-2">
-                  <h3 className="text-nav-muted text-sm/[100%] truncate">
+                  <h3 className="text-nav-muted text-[13px]/[100%] truncate">
                     {shortAddress}
                   </h3>
                   <button
@@ -358,9 +393,9 @@ export function WalletModal({
               }}
               title="View my profile"
               aria-label="View my profile"
-              className="shrink-0 bg-surface rounded-full text-black w-[46px] h-[46px] flex justify-center items-center cursor-pointer hover:opacity-80 transition-opacity"
+              className="shrink-0 bg-surface rounded-full text-black w-10 h-10 flex justify-center items-center cursor-pointer hover:bg-[#ECECEC] transition-[transform,background-color] duration-150 active:scale-[0.94]"
             >
-              <ArrowRight className="w-6 h-6" />
+              <ArrowRight className="w-5 h-5" />
             </button>
           </div>
 
@@ -410,176 +445,120 @@ export function WalletModal({
             </div>
           )}
 
-          {/* ── Rows ─────────────────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-y-4">
-            {streakLoading ? (
-              /* Same footprint as the real row, so nothing shifts when it lands. */
-              <div className={ROW}>
-                <Skeleton className="w-[46px] h-[46px] shrink-0" />
-                <div className="flex flex-col gap-y-[14px] min-w-0 flex-1">
-                  <Skeleton className="h-[26px] w-[150px]" />
-                  <Skeleton className="h-[14px] w-[190px] max-w-full" />
-                </div>
-              </div>
-            ) : (
-              <div className={ROW}>
-                <div
-                  className={`bg-streak-ring w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0 ${!streak?.current ? "opacity-40" : ""}`}
+          {/* ── Balance: the one number people open this for ───────────────── */}
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 text-sm/none text-nav-muted">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/gdollartoken-logo.svg" alt="" className="w-5 h-5" />
+                G$ balance
+              </span>
+              {streakLoading ? (
+                <Skeleton className="h-6 w-24" />
+              ) : (
+                <span
+                  title={streak?.current ? `Best: ${streak.best} days` : "Claim a drop to start your streak"}
+                  className={`inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-xs/none ${streak?.current ? "bg-streak-bg text-streak" : "bg-surface text-nav-muted"}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/streak-flame.svg" className="w-6 h-6" alt="" />
-                </div>
-                <div className="flex flex-col gap-y-3 min-w-0">
-                  <div className="py-[6px] px-3 bg-streak-bg text-sm/[100%] text-streak w-fit rounded-full">
-                    {streak?.current
-                      ? `${streak.current} day hunting streak`
-                      : "No streak yet"}
-                  </div>
-                  <div className="text-nav-muted text-sm/[100%] truncate">
-                    {streak?.current
-                      ? `Best: ${streak.best} days · Keep hunting daily!`
-                      : "Claim a drop to start your streak"}
-                  </div>
-                </div>
-              </div>
+                  <img src="/streak-flame.svg" alt="" className={`w-3.5 h-3.5 ${streak?.current ? "" : "opacity-40 grayscale"}`} />
+                  {streak?.current ? `${streak.current}-day streak` : "No streak yet"}
+                </span>
+              )}
+            </div>
+            <div className="mt-3 flex items-baseline gap-2 min-w-0">
+              <span className="text-[34px]/none text-heading tracking-[-0.02em] tabular-nums truncate">{balanceFull}</span>
+              <span className="text-base/none text-nav-muted shrink-0">G$</span>
+            </div>
+            {cashOutOn && inNigeria && nairaPerG !== null && balG > 0 && (
+              <p className="mt-2.5 text-sm/none text-nav-muted tabular-nums">
+                ≈ ₦{Math.floor(balG * nairaPerG).toLocaleString("en-NG")} if you withdraw
+              </p>
             )}
+          </div>
 
-            <div className={`${ROW} justify-between`}>
-              <div className="flex items-center gap-4 min-w-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/gdollartoken-logo.svg"
-                  alt=""
-                  className="w-[46px] h-[46px] shrink-0"
-                />
-                <div className="flex flex-col gap-y-3 min-w-0">
-                  <div className="text-heading text-base/[100%]">
-                    G$ Balance
-                  </div>
-                  <div className="text-nav-muted text-sm/[100%]">
-                    Your wallet
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-y-3 text-right shrink-0">
-                <div className="text-heading text-base/[100%]">
-                  {formatG$(balance)}
-                </div>
-                <div className="text-nav-muted text-sm/[100%]">G$</div>
-              </div>
-            </div>
-
-            <div className={`${ROW} justify-between`}>
-              <div className="flex items-center gap-4 min-w-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/celo-logo.svg"
-                  alt=""
-                  className="w-[46px] h-[46px] shrink-0"
-                />
-                <div className="flex flex-col gap-y-3 min-w-0">
-                  <div className="text-heading text-base/[100%]">Celo</div>
-                  <div className="text-nav-muted text-sm/[100%]">
-                    Covers tiny sending costs
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-y-3 text-right shrink-0">
-                <div className="text-heading text-base/[100%]">{celoAmt}</div>
-                <div className="text-nav-muted text-sm/[100%]">CELO</div>
-              </div>
-            </div>
-
+          {/* ── Actions ──────────────────────────────────────────────────────── */}
+          <div className={`grid gap-2 ${cashOutOn ? "grid-cols-2" : "grid-cols-1"}`}>
             <button
               onClick={() => setSendOpen((v) => !v)}
-              className={`${ROW} w-full text-left cursor-pointer transition-colors ${side === "send" ? "bg-surface" : "hover:bg-surface"}`}
+              aria-pressed={side === "send"}
+              className={`h-12 rounded-full flex items-center justify-center gap-2 text-[15px]/none text-heading cursor-pointer transition-[transform,background-color] duration-150 active:scale-[0.97] ${side === "send" ? "bg-[#E6E6E6]" : "bg-surface hover:bg-[#ECECEC]"}`}
             >
-              <div className="bg-surface w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0">
-                <Send className="w-5 h-5 text-heading" />
-              </div>
-              <div className="flex flex-col gap-y-3 min-w-0">
-                <div className="text-heading text-base/[100%]">Send G$</div>
-                <div className="text-nav-muted text-sm/[100%]">
-                  Transfer G$ to any wallet
-                </div>
-              </div>
+              <Send className="w-4 h-4" />
+              Send
             </button>
-
             {cashOutOn && (
               <button
                 onClick={() => setSide((v) => (v === "cashout" ? null : "cashout"))}
-                className={`${ROW} w-full text-left cursor-pointer transition-colors ${side === "cashout" ? "bg-surface" : "hover:bg-surface"}`}
+                aria-pressed={side === "cashout"}
+                className={`h-12 rounded-full flex items-center justify-center gap-2 text-[15px]/none text-white cursor-pointer transition-[transform,background-color] duration-150 active:scale-[0.97] ${side === "cashout" ? "bg-brand/85" : "bg-brand hover:bg-brand/90"}`}
               >
-                <div className="bg-brand-soft w-[46px] h-[46px] rounded-full flex items-center justify-center shrink-0">
-                  <Landmark className="w-5 h-5 text-brand" />
-                </div>
-                <div className="flex flex-col gap-y-3 min-w-0">
-                  <div className="text-heading text-base/[100%]">Cash out to bank</div>
-                  <div className="text-nav-muted text-sm/[100%] truncate">
-                    G$ to naira, paid in minutes
-                  </div>
-                </div>
+                <Landmark className="w-4 h-4" />
+                Withdraw
               </button>
             )}
           </div>
 
-          {/* ── Verify nudge — only when they can't yet claim drops ───────────── */}
-          {!isVerified && (
-            <button
-              onClick={() => {
-                onOpenVerify();
-                onClose();
-              }}
-              className="w-full bg-streak-bg text-streak py-3 px-6 rounded-full text-sm/[100%] cursor-pointer hover:opacity-90 transition-opacity"
-            >
-              Verify your account to claim drops
-            </button>
-          )}
+          {/* ── Details: hairline rows, no boxes ─────────────────────────────── */}
+          <div className="border-t border-line divide-y divide-line -mb-2">
+            {!isVerified && (
+              <div className="flex items-center gap-3 py-3.5">
+                <span className="w-9 h-9 rounded-full bg-streak-bg flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-[18px] h-[18px] text-streak" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px]/[130%] text-heading">Verify your account</div>
+                  <div className="text-xs/[140%] text-nav-muted">Needed to claim drops</div>
+                </div>
+                <button
+                  onClick={() => { onOpenVerify(); onClose(); }}
+                  className="shrink-0 h-9 px-4 rounded-full bg-streak-bg text-streak text-sm/none cursor-pointer hover:opacity-90 transition-[opacity,transform] duration-150 active:scale-[0.96]"
+                >
+                  Verify
+                </button>
+              </div>
+            )}
 
-          {/* ── Daily UBI ────────────────────────────────────────────────────── */}
-          {isVerified && ubiStatus === "loading" && (
-            /* Matches the claim button's footprint (py-3 + 20px icon ⇒ 44px). */
-            <Skeleton className="self-center h-11 w-[220px] max-w-full" />
-          )}
-
-          {isVerified &&
-            ubiStatus !== "loading" &&
-            (ubiClaimDone ? (
-              <p className="self-center text-sm/[100%] text-nav-muted">
-                {ubiEntitlement
-                  ? `+${formatG$(ubiEntitlement)} G$ claimed today`
-                  : "UBI claimed today"}
-              </p>
-            ) : ubiStatus === "can_claim" ? (
-              <button
-                onClick={handleUbiClaim}
-                disabled={ubiClaiming}
-                className="self-center bg-brand py-3 px-6 rounded-full flex items-center gap-x-2 text-white cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-wait"
-              >
-                {ubiClaiming ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+            {isVerified && ubiStatus !== "not_whitelisted" && (
+              <div className="flex items-center gap-3 py-3.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/gdollartoken-logo.svg" alt="" className="w-9 h-9 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px]/[130%] text-heading">Daily UBI</div>
+                  <div className="text-xs/[140%] text-nav-muted">Free G$, every day</div>
+                </div>
+                {ubiStatus === "loading" ? (
+                  <Skeleton className="h-9 w-28 shrink-0" />
+                ) : ubiClaimDone ? (
+                  <span className="shrink-0 text-sm/none text-nav-muted">
+                    {ubiEntitlement ? `+${formatG$(ubiEntitlement)} G$ today` : "Claimed today"}
+                  </span>
+                ) : ubiStatus === "can_claim" ? (
+                  <button
+                    onClick={handleUbiClaim}
+                    disabled={ubiClaiming}
+                    className="shrink-0 h-9 px-4 rounded-full bg-brand-soft text-brand text-sm/none flex items-center gap-1.5 cursor-pointer hover:opacity-90 transition-[opacity,transform] duration-150 active:scale-[0.96] disabled:opacity-60 disabled:cursor-wait"
+                  >
+                    {ubiClaiming && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {ubiClaiming ? "Claiming…" : `Claim ${ubiEntitlement ? formatG$(ubiEntitlement) + " G$" : ""}`.trim()}
+                  </button>
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src="/money-dollar-circle.svg"
-                    alt=""
-                    className="w-5 h-5"
-                  />
+                  <span className="shrink-0 text-sm/none text-nav-muted">Claimed today</span>
                 )}
-                {ubiClaiming
-                  ? "Claiming…"
-                  : `Claim daily ${ubiEntitlement ? formatG$(ubiEntitlement) : "G$"} UBI`}
-              </button>
-            ) : ubiStatus === "already_claimed" ? (
-              <p className="self-center text-sm/[100%] text-nav-muted">
-                Daily G$ UBI already claimed
-              </p>
-            ) : null)}
-          {ubiErr && (
-            <p className="text-xs/[140%] text-danger text-center -mt-3">
-              {ubiErr}
-            </p>
-          )}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 py-3.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/celo-logo.svg" alt="" className="w-9 h-9 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px]/[130%] text-heading">CELO</div>
+                <div className="text-xs/[140%] text-nav-muted">Covers tiny sending costs</div>
+              </div>
+              <span className="shrink-0 text-[15px]/none text-heading tabular-nums">{celoAmt}</span>
+            </div>
+          </div>
+          {ubiErr && <p className="text-xs/[140%] text-danger -mt-3">{ubiErr}</p>}
 
           {/* ── Sign out ─────────────────────────────────────────────────────── */}
           <button

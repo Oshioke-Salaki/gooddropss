@@ -1,7 +1,7 @@
 "use client";
 import dynamic from "next/dynamic";
 import { MapPin } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAccount } from "wagmi";
 import { Nav } from "@/components/Nav";
 import { LandmarkCreator } from "@/components/LandmarkCreator";
@@ -156,9 +156,38 @@ export default function HomePage() {
     setSelectedSpot(spot);
   }, []);
 
+  // GPS fires about once a second while walking. Moves under ~5 m don't change
+  // anything on screen, so they don't re-render the page (and the map's markers).
+  const lastLoc = useRef<LatLng | null>(null);
   const handleUserLocation = useCallback((loc: LatLng) => {
+    const prev = lastLoc.current;
+    if (prev) {
+      const dLat = (loc.lat - prev.lat) * 111_320;
+      const dLng = (loc.lng - prev.lng) * 111_320 * Math.cos((loc.lat * Math.PI) / 180);
+      if (dLat * dLat + dLng * dLng < 25) return;
+    }
+    lastLoc.current = loc;
     setUserLoc(loc);
   }, []);
+
+  // Only live, public drops go on the map. Recomputed when the drops change or a
+  // minute passes (expiry), not on every render, so the map keeps its markers.
+  const [minuteTick, setMinuteTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setMinuteTick((n) => n + 1), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const mapDrops = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    return drops.filter((d) => {
+      // Must go through parseDropHint, not a startsWith: a riddle-locked
+      // private drop is "[R][P:…]", which no prefix test would catch.
+      if (parseDropHint(d.hint).isPrivate) return false;
+      // Claimed, reclaimed and expired pins only tease hunters with money that's gone.
+      return d.status === DROP_STATUS.Active && d.expiry > now;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drops, minuteTick]);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden">
@@ -167,15 +196,7 @@ export default function HomePage() {
       {/* Full-screen map — starts below header, ends above bottom nav on mobile */}
       <div className="absolute top-nav left-0 right-0 bottom-0">
         <MapView
-          drops={drops.filter((d) => {
-            // Must go through parseDropHint, not a startsWith: a riddle-locked
-            // private drop is "[R][P:…]", which no prefix test would catch.
-            if (parseDropHint(d.hint).isPrivate) return false;
-            // Only LIVE drops belong on the map. Claimed/reclaimed pins just add
-            // noise and tease hunters with money that's already gone — drop them
-            // the moment they're no longer claimable (also hides expired ones).
-            return d.status === DROP_STATUS.Active && d.expiry > Math.floor(Date.now() / 1000);
-          })}
+          drops={mapDrops}
           onDropClick={handleDropClick}
           userLocation={userLoc}
           onUserLocation={handleUserLocation}
@@ -265,12 +286,12 @@ export default function HomePage() {
       />
       )}
 
-      <ChainDropCreator
+      {showChain && <ChainDropCreator
         open={showChain}
         userLocation={userLoc}
         onClose={() => setShowChain(false)}
         onSuccess={() => { setShowChain(false); fetchDrops(); }}
-      />
+      />}
 
       <ClaimSheet
         drop={selectedDrop}

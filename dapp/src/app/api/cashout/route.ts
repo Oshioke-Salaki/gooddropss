@@ -26,9 +26,9 @@ const fail = (error: string, status: number, code?: string, extra?: Record<strin
 // itself signing the transaction. What we guard here is the daily cap (per
 // person, across all their linked wallets) and abuse of the name lookup.
 export async function POST(req: NextRequest) {
-  if (!cashOutEnabled()) return fail("Cash out isn't available yet.", 404);
+  if (!cashOutEnabled()) return fail("Withdrawals aren't available yet.", 404);
   const s = store();
-  if (!s) return fail("Cash out is busy right now. Please try again in a moment.", 503);
+  if (!s) return fail("Withdrawals are busy right now. Please try again in a moment.", 503);
 
   let b: Record<string, unknown>;
   try { b = await req.json(); } catch { return fail("Invalid request", 400); }
@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
       const left = Math.max(0, Math.floor(Number(formatUnits(capWei - (used > capWei ? capWei : used), 18))));
       return fail(
         left > 0
-          ? `You can cash out up to ${left.toLocaleString("en-US")} G$ more today.`
-          : `You've reached today's limit of ${DAILY_CAP_G.toLocaleString("en-US")} G$. You can cash out again tomorrow.`,
+          ? `You can withdraw up to ${left.toLocaleString("en-US")} G$ more today.`
+          : `You've reached today's limit of ${DAILY_CAP_G.toLocaleString("en-US")} G$. You can withdraw again tomorrow.`,
         400, "daily_limit", { leftTodayG: left },
       );
     }
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const accountName = name.data.accountName ?? "";
     if (!accountName) return fail("We couldn't find that account. Check the bank and the number.", 400, "bank_account_not_found");
     if (limits.ok && Number(amountG) > limits.data.maximumG) {
-      return fail(`The most you can cash out at once is ${limits.data.maximumG.toLocaleString("en-US")} G$.`, 400, "amount_too_large");
+      return fail(`The most you can withdraw at once is ${limits.data.maximumG.toLocaleString("en-US")} G$.`, 400, "amount_too_large");
     }
     const bankName = (bankList.ok ? bankList.data.find((x) => x.code === bankCode)?.name : undefined) ?? bankCode;
 
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
     const check = checkCashOutTx(c.transaction, c.order, amountWei, { testMode: gcConfig()!.mode === "test" });
     if (!check.ok) {
       console.error(`[cashout] refused GoodCash transaction for ${c.id}: ${check.reason}`);
-      return fail("Something didn't look right with this cash out, so we stopped it. Nothing was sent. Please try again.", 502, "unsafe_transaction");
+      return fail("Something didn't look right with this withdrawal, so we stopped it. Nothing was sent. Please try again.", 502, "unsafe_transaction");
     }
 
     const day = lagosDay();
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
     }, { status: 201, headers: NO_STORE });
   });
 
-  if (result === "busy") return fail("Your last cash out is still being set up. Give it a few seconds.", 409, "busy");
+  if (result === "busy") return fail("Your last withdrawal is still being set up. Give it a few seconds.", 409, "busy");
   return result;
 }
 

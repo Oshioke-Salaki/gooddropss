@@ -11,7 +11,7 @@ export async function GET() {
     const redis = getRedis();
     if (!redis) return NextResponse.json({ hidden: [] });
     const hidden = await redis.smembers(keys.hiddenDrops());
-    return NextResponse.json({ hidden: hidden ?? [] });
+    return NextResponse.json({ hidden: hidden ?? [] }, { headers: { "Cache-Control": "public, s-maxage=15, stale-while-revalidate=60" } });
   } catch (e) {
     console.error("[moderation/hidden]", e);
     return NextResponse.json({ hidden: [] });

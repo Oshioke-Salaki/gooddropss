@@ -59,7 +59,9 @@ function QueryCacheManager() {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  // 30 s: chain reads (balances, identity, limits) don't need refetching on every
+  // mount and tab focus; writes and claims refetch explicitly.
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }));
   // Uncaught client errors are reported to /api/client-error (see lib/clientErrors).
   useEffect(() => { installClientErrorReporter(); }, []);
 

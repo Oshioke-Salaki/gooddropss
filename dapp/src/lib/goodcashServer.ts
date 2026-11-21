@@ -36,12 +36,12 @@ export function cashOutEnabled(): boolean {
 export interface GcError { code: string; message: string; status: number; detail?: string }
 export type GcResult<T> = { ok: true; data: T; status: number } | { ok: false; error: GcError };
 
-const FALLBACK_MSG = "Cash out is busy right now. Please try again in a moment.";
+const FALLBACK_MSG = "Withdrawals are busy right now. Please try again in a moment.";
 
 /** One GoodCash call. Never throws; errors come back in GoodCash's own plain words. */
 export async function gc<T>(path: string, init: { method?: string; body?: unknown; idempotencyKey?: string; timeoutMs?: number } = {}): Promise<GcResult<T>> {
   const cfg = gcConfig();
-  if (!cfg) return { ok: false, error: { code: "not_configured", message: "Cash out isn't available yet.", status: 503 } };
+  if (!cfg) return { ok: false, error: { code: "not_configured", message: "Withdrawals aren't available yet.", status: 503 } };
   const headers: Record<string, string> = { Authorization: `Bearer ${cfg.key}`, Accept: "application/json" };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.idempotencyKey) headers["Idempotency-Key"] = init.idempotencyKey;
@@ -366,7 +366,7 @@ export async function webhookSecret(): Promise<string | null> {
 export async function connectWebhook(url: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const cfg = gcConfig();
   const s = store();
-  if (!cfg || !s) return { ok: false, error: "Cash out isn't configured." };
+  if (!cfg || !s) return { ok: false, error: "Withdrawals aren't configured." };
   const current = await gc<{ url: string | null; hasSecret?: boolean }>("/v1/webhooks");
   if (!current.ok) return { ok: false, error: current.error.message };
   const have = await webhookSecret();

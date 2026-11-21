@@ -25,7 +25,7 @@ export function useLiveDrops() {
 
   const fetchDrops = useCallback(async (opts?: { fresh?: boolean }) => {
     const fresh = opts?.fresh ?? loadedOnce.current;
-    setLoading(true);
+    if (!loadedOnce.current) setLoading(true);
     try {
       const res = await fetch(`/api/drops/live${fresh ? "?fresh=1" : ""}`, fresh ? { cache: "no-store" } : undefined);
       if (!res.ok) throw new Error(`live drops ${res.status}`);
@@ -49,7 +49,9 @@ export function useLiveDrops() {
   }, [fetchDrops]);
 
   useEffect(() => {
-    const tick = () => { if (document.visibilityState === "visible" && loadedOnce.current) fetchDrops(); };
+    // Background refreshes may use the 10 s CDN copy; only a claim or a new drop
+    // needs to skip it (those pass fresh: true).
+    const tick = () => { if (document.visibilityState === "visible" && loadedOnce.current) fetchDrops({ fresh: false }); };
     const id = window.setInterval(tick, REFRESH_MS);
     document.addEventListener("visibilitychange", tick);
     // A drop created anywhere in the app should appear without waiting a minute.

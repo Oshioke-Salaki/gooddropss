@@ -193,7 +193,7 @@ export function useCashOut() {
       }),
     });
     if (!created.ok) {
-      setPhase({ kind: "error", message: created.body.error ?? "Couldn't start the cash out. Nothing was sent.", code: created.body.code });
+      setPhase({ kind: "error", message: created.body.error ?? "Couldn't start the withdrawal. Nothing was sent.", code: created.body.code });
       return;
     }
     const { cashOut, transaction, order } = created.body;
@@ -202,7 +202,7 @@ export function useCashOut() {
     const check = checkCashOutTx(transaction, order, amountWei, { testMode: args.mode === "test" });
     if (!check.ok) {
       console.error("[cashout] refused transaction:", check.reason);
-      setPhase({ kind: "error", message: "Something didn't look right with this cash out, so we stopped it. Nothing was sent.", code: "unsafe_transaction" });
+      setPhase({ kind: "error", message: "Something didn't look right with this withdrawal, so we stopped it. Nothing was sent.", code: "unsafe_transaction" });
       return;
     }
     rememberAccount(wallet, args.account);
@@ -213,7 +213,7 @@ export function useCashOut() {
       write(ACTIVE_KEY(wallet), cashOut.id);
       setPhase({ kind: "sending", id: cashOut.id });
       const sim = await api<{ cashOut: CashOutView }>(`/api/cashout/${cashOut.id}/simulate`, { method: "POST" });
-      if (!sim.ok) { setPhase({ kind: "error", message: sim.body.error ?? "The test cash out didn't start." }); return; }
+      if (!sim.ok) { setPhase({ kind: "error", message: sim.body.error ?? "The test withdrawal didn't start." }); return; }
       void watch(cashOut.id, sim.body.cashOut);
       return;
     }
@@ -242,7 +242,7 @@ export function useCashOut() {
       await publicClient.simulateContract({ ...params, account: wallet });
     } catch (e) {
       const fe = friendlyClaimError(e);
-      setPhase({ kind: "error", message: fe.kind === "network" ? fe.message : "This cash out wouldn't go through right now. Nothing was sent. Please try again." });
+      setPhase({ kind: "error", message: fe.kind === "network" ? fe.message : "This withdrawal wouldn't go through right now. Nothing was sent. Please try again." });
       return;
     }
 
@@ -269,7 +269,7 @@ export function useCashOut() {
       if (!hash) {
         // Nothing on chain after ~30 s. The order closes on its own; nothing was taken.
         write(ACTIVE_KEY(wallet), null);
-        setPhase({ kind: "error", message: "Your cash out didn't go through. Nothing left your wallet. Please try again." });
+        setPhase({ kind: "error", message: "Your withdrawal didn't go through. Nothing left your wallet. Please try again." });
         return;
       }
     }

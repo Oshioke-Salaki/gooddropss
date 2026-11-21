@@ -24,7 +24,7 @@ export function CashOutsCard() {
   const load = () => fetch("/api/admin/cashouts")
     .then(async (r) => { if (!r.ok) throw new Error(); return r.json(); })
     .then(setData)
-    .catch(() => setErr("Couldn't load cash outs. Refresh to try again."));
+    .catch(() => setErr("Couldn't load withdrawals. Refresh to try again."));
   useEffect(() => { void load(); }, []);
 
   const connect = async () => {
@@ -48,12 +48,12 @@ export function CashOutsCard() {
   return (
     <Card className="mb-6">
       <p className="text-sm/[145%] text-nav-muted mb-5">
-        Valued in naira at the moment of each cash out. Counted once GoodCash confirms the bank was paid.
+        Valued in naira at the moment of each withdrawal. Counted once GoodCash confirms the bank was paid.
       </p>
       <Hint text={err} tone="bad" className="mb-3" />
 
       {data && !data.configured ? (
-        <EmptyState icon={Landmark} title="Cash out isn't switched on" body="GOODCASH_SECRET_KEY must be a GoodCash secret key (it starts with gc_sk_live_). A publishable key (gc_pk_) won't work here." />
+        <EmptyState icon={Landmark} title="Withdrawals aren't switched on" body="GOODCASH_SECRET_KEY must be a GoodCash secret key (it starts with gc_sk_live_). A publishable key (gc_pk_) won't work here." />
       ) : (
         <>
           {h && (
@@ -70,7 +70,7 @@ export function CashOutsCard() {
                 )}
               </div>
               {!h.webhookReady && !hookMsg && (
-                <p className="text-sm/[145%] text-nav-muted">Connect the webhook so cash outs are confirmed the moment the bank is paid. Our server uses its own key; no secret is shown to anyone.</p>
+                <p className="text-sm/[145%] text-nav-muted">Connect the webhook so withdrawals are confirmed the moment the bank is paid. Our server uses its own key; no secret is shown to anyone.</p>
               )}
               {hookMsg && <Hint text={hookMsg.text} tone={hookMsg.tone} />}
               {h.partnerFeePercent !== null && h.partnerFeePercent > 0 && (
@@ -79,14 +79,14 @@ export function CashOutsCard() {
             </div>
           )}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-            <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total cashed out" />
+            <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
             <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
-            <Stat loading={loading} value={g(data?.count ?? 0)} label="Cash outs" />
+            <Stat loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" />
             <Stat loading={loading} value={g(data?.people ?? 0)} label="People" />
           </div>
 
           {data && (data.recent?.length ?? 0) === 0 ? (
-            <p className="text-sm/[145%] text-nav-muted text-center py-6">No cash outs yet. They&apos;ll show here as soon as the first bank is paid.</p>
+            <p className="text-sm/[145%] text-nav-muted text-center py-6">No withdrawals yet. They&apos;ll show here as soon as the first bank is paid.</p>
           ) : data ? (
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-sm/[140%] min-w-[520px]">
@@ -138,15 +138,15 @@ export function CashOutsSummary() {
   return (
     <Card className="mb-6">
       <div className="flex items-center justify-between gap-3 mb-5">
-        <SectionTitle>Cash outs to bank</SectionTitle>
+        <SectionTitle>Withdrawals to bank</SectionTitle>
         <Link href="/admin/cashouts" className="inline-flex items-center gap-1 text-sm/none text-brand hover:underline">
           See all <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total cashed out" />
+        <Stat tone="accent" loading={loading} value={`${g(data?.g ?? 0)} G$`} label="Total withdrawn" />
         <Stat loading={loading} value={formatNaira(data?.naira ?? 0)} label="Naira paid out" />
-        <Stat loading={loading} value={g(data?.count ?? 0)} label="Cash outs" sub={data ? `${g(data.people ?? 0)} ${data.people === 1 ? "person" : "people"}` : undefined} />
+        <Stat loading={loading} value={g(data?.count ?? 0)} label="Withdrawals" sub={data ? `${g(data.people ?? 0)} ${data.people === 1 ? "person" : "people"}` : undefined} />
       </div>
     </Card>
   );

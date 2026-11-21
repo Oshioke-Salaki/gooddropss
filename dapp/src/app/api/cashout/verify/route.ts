@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 // The bank's own name for the account, shown before anyone confirms. Rate
 // limited per IP: an open name lookup is something people would abuse.
 export async function POST(req: NextRequest) {
-  if (!cashOutEnabled()) return NextResponse.json({ error: "Cash out isn't available yet." }, { status: 404 });
+  if (!cashOutEnabled()) return NextResponse.json({ error: "Withdrawals aren't available yet." }, { status: 404 });
   let body: { bankCode?: unknown; accountNumber?: unknown };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid request" }, { status: 400 }); }
   const bankCode = typeof body.bankCode === "string" ? body.bankCode.trim() : "";
