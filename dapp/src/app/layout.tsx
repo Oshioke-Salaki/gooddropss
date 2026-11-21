@@ -101,14 +101,20 @@ const jsonLd = {
   ],
 };
 
+const NO_SESSION_SCRIPT = `try{var s=localStorage.getItem("gd:signed-in")==="1";if(!s){var w=JSON.parse(localStorage.getItem("wagmi.store")||"null");var st=w&&w.state;s=!!(st&&st.current&&st.connections&&st.connections.value&&st.connections.value.length)}if(!s)document.documentElement.classList.add("gd-no-session")}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Before first paint: if this browser has no session to restore, hide the
+            session loader at once, so a new visitor never sees it while the app
+            loads. Mirrors hadSavedSession() in hooks/useSessionRestore. */}
+        <script dangerouslySetInnerHTML={{ __html: NO_SESSION_SCRIPT }} />
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         {FONT_PRELOADS.map((href) => (
           <link key={href} rel="preload" href={href} as="font" type="font/woff2" crossOrigin="anonymous" />

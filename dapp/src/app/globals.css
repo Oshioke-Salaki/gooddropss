@@ -429,3 +429,5 @@
 
 /* The session-restore loader fades in after a short beat (AuthLoadingGate). */
 @keyframes gd-gate-in { from { opacity: 0; } to { opacity: 1; } }
+/* Nothing to restore (set before first paint in layout.tsx): no loader at all. */
+.gd-no-session [aria-label="Loading GoodDrops"] { display: none; }
