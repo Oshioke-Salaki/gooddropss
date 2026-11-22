@@ -32,35 +32,7 @@ import { MapZoomControls } from "@/components/MapZoomControls";
 import { MyLocationButton } from "@/components/MyLocationButton";
 import { InAppLocationHelp } from "@/components/InAppLocationHelp";
 import { isValoraBrowser } from "@/lib/valora";
-import type { StyleSpecification } from "maplibre-gl";
-import { lightFor, skyFor, type DayPhase } from "@/components/maplab/brandStyle";
 import { addBuildings } from "@/components/map/buildings";
-
-/**
- * Map-lab options (the /map-lab preview only). Absent on the real map, where
- * nothing below changes behaviour. Markers are never touched: the lab only
- * swaps the base style and adds layers under them.
- */
-export interface MapLab {
-  /** Resolved style (GoodDrops Night or the original). Change it by remounting. */
-  style: StyleSpecification | string;
-  /** Brand-blue 3D buildings (the default) or the classic dark grey. */
-  brandBuildings: boolean;
-  buildings: boolean;
-  /** Sky and light for a tilted map; null leaves the style's own. */
-  sky: DayPhase | null;
-  /** Lite tier: the map's own light mode (flat camera, no buildings, capped DPR). */
-  lite: boolean;
-  /** The style is a globe: give the sky its atmosphere. */
-  globe?: boolean;
-  /** Where the camera starts (default: the world view). */
-  start?: { center: [number, number]; zoom: number };
-  /** Camera for the first fly-to the hunter's location (e.g. the globe dive). */
-  firstFlight?: { zoom: number; pitch: number; bearing: number; duration: number; curve?: number };
-  /** The loaded map, for the lab's own layers and effects. */
-  onReady?: (map: maplibregl.Map) => void;
-  onStats?: (s: { fps: number; zoom: number }) => void;
-}
 
 type LocPerm = "unknown" | "prompt" | "granted" | "denied";
 
@@ -217,8 +189,6 @@ interface Props {
    *  landmark placement) instead of doing nothing. */
   pickingMode?: boolean;
   onMapPick?: (lat: number, lng: number) => void;
-  /** Preview-only extras for /map-lab. */
-  lab?: MapLab;
 }
 
 type DropFeatureProps = { dropIndex: number };
@@ -253,12 +223,8 @@ export default function MapView({
   spots = [], onSpotClick, landmarks = [], events = [], onEventClick,
   heatmapPoints = [], showHeatmap = false, focus = null,
   interactiveLandmarks = false, onLandmarkClick,
-  pickingMode = false, onMapPick, lab,
+  pickingMode = false, onMapPick,
 }: Props) {
-  // Read once at init: the lab remounts the map to change style.
-  const labRef = useRef(lab);
-  labRef.current = lab;
-
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef       = useRef<maplibregl.Map | null>(null);
   const lightRef = useRef(false);
@@ -336,13 +302,13 @@ export default function MapView({
     // Light mode (Data Saver, 2G, low-RAM or low-core phones): no 3D buildings,
     // a flat camera and a capped render resolution — the three biggest GPU and
     // battery costs on an entry-level Android. See lib/deviceTier.
-    lightRef.current = isLightDevice() || !!labRef.current?.lite;
+    lightRef.current = isLightDevice();
     flatRef.current = lightRef.current || prefersReducedMotion();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: labRef.current?.style ?? MAP_STYLE,
-      center: labRef.current?.start?.center ?? [0, 20],
-      zoom: labRef.current?.start?.zoom ?? 2.4,
+      style: MAP_STYLE,
+      center: [0, 20],
+      zoom: 2.4,
       maxPitch: flatRef.current ? 0 : 62,
       attributionControl: false,
       ...(lightRef.current
@@ -417,18 +383,9 @@ export default function MapView({
         },
       });
 
-      // Brand-blue 3D buildings (shared with every map). Light mode and the
-      // lab's "buildings off" skip them; the lab can also ask for classic grey.
-      if (!lightRef.current && !(labRef.current && !labRef.current.buildings)) {
-        addBuildings(map, { mode: "3d", brand: labRef.current?.brandBuildings ?? true, force: true });
-      }
-
-      // Lab only: a hook for browser tests (dev builds, or ?labdebug on the lab page).
-      if (labRef.current && (process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("labdebug"))) {
-        (window as unknown as { __labMap?: maplibregl.Map }).__labMap = map;
-      }
+      // Brand-blue 3D buildings (shared with every map). Light mode skips them.
+      if (!lightRef.current) addBuildings(map, { mode: "3d", brand: true, force: true });
       setMapReady(true);
-      labRef.current?.onReady?.(map);
     });
 
     return () => {
@@ -437,28 +394,6 @@ export default function MapView({
       setMapReady(false);
     };
   }, []);
-
-  // ── Map lab only: sky and frame stats ────────────────────────────────────────
-  // Every effect here returns at once on the real map (no `lab` prop).
-  const labSky = lab?.sky ?? null;
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map || !labRef.current || !labSky) return;
-    try { map.setSky(skyFor(labSky, { globe: labRef.current.globe })); map.setLight(lightFor(labSky)); } catch { /* optional */ }
-  }, [mapReady, labSky]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!mapReady || !map || !labRef.current?.onStats) return;
-    let frames = 0;
-    const onRender = () => { frames++; };
-    map.on("render", onRender);
-    const t = setInterval(() => {
-      labRef.current?.onStats?.({ fps: frames, zoom: map.getZoom() });
-      frames = 0;
-    }, 1000);
-    return () => { map.off("render", onRender); clearInterval(t); };
-  }, [mapReady]);
 
   // ── Drop clustering + markers ───────────────────────────────────────────────
   const renderDropMarkers = useCallback(() => {
@@ -822,11 +757,7 @@ export default function MapView({
           const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           onUserLocation(loc);
           setLocPerm("granted");
-          // The lab can ask for its own first flight (the globe dive).
-          const ff = labRef.current?.firstFlight;
-          mapRef.current?.flyTo(ff && !flatRef.current
-            ? { center: [loc.lng, loc.lat], ...ff, essential: true }
-            : { center: [loc.lng, loc.lat], zoom: 16, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1800 });
+          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 16, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1800 });
         },
         (err) => {
           if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
