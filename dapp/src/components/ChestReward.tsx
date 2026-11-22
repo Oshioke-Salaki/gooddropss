@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { m, AnimatePresence } from "framer-motion";
+import { buzz, playCoinChime, primeAudio } from "@/lib/sound";
 
 interface Reward { amount: string; rarity: "common" | "uncommon" | "rare" | "legendary" }
 
@@ -16,6 +17,9 @@ const GOLD = { body: "#c99b26", bodyDark: "#87640f", lid: "#e0b73a", band: "#ffe
 export function ChestReward() {
   const [reward, setReward] = useState<Reward | null>(null);
 
+  // Unlock sound on the person's first tap, so the chime can play later.
+  useEffect(() => { primeAudio(); }, []);
+
   useEffect(() => {
     const onClaim = (e: Event) => {
       const d = (e as CustomEvent).detail as Reward | undefined;
@@ -27,8 +31,11 @@ export function ChestReward() {
 
   useEffect(() => {
     if (!reward) return;
+    // Sound and touch land on the same frame as the coins bursting out
+    // (.chest-reward-coin starts at 0.7s, as the lid swings open).
+    const chime = setTimeout(() => { playCoinChime(); buzz(35); }, 720);
     const t = setTimeout(() => setReward(null), 2700);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(chime); clearTimeout(t); };
   }, [reward]);
 
   // Coin particles — fixed spread so it looks intentional, not random noise.

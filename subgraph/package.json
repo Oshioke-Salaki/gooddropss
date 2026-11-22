@@ -4,7 +4,8 @@
   "scripts": {
     "codegen": "graph codegen",
     "build":   "graph build",
-    "deploy":  "goldsky subgraph deploy gooddrops/1.0.1 --path ."
+    "deploy":  "goldsky subgraph deploy gooddrops/1.1.0 --path .",
+    "verify":  "node scripts/verify-totals.mjs"
   },
   "dependencies": {
     "@graphprotocol/graph-ts": "^0.35.1"

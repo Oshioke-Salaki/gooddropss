@@ -153,6 +153,8 @@ NGOs, governments, and impact organizations want to distribute aid to specific c
 | **Campaign analytics (drops, claims, G$ hidden)** | ✅ |
 | **Withdraw G$ to a Nigerian bank account (via GoodCash)** | ✅ |
 | **Send G$ to a username or wallet address** | ✅ |
+| **Win cards for WhatsApp Status, with an invite QR** | ✅ |
+| **City vs city weekly rankings** | ✅ |
 | Email and Google sign-in with a built-in wallet (Magic), plus WalletConnect and browser wallets | ✅ |
 
 ---

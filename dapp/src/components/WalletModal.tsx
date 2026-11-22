@@ -21,7 +21,7 @@ import { useProfile, invalidateProfile } from "@/hooks/useProfile";
 import { Avatar } from "@/components/Avatar";
 import { SendGModal } from "@/components/SendGModal";
 import { CashOutPanel } from "@/components/cashout/CashOutPanel";
-import { GOODDROPS_FEE_PERCENT } from "@/lib/goodcash";
+import { getWithdrawAvailability, getWithdrawInfo, peekWithdrawInfo } from "@/lib/withdrawInfo";
 import { getStreak, peekStreak } from "@/lib/streakCache";
 import { useRouter } from "next/navigation";
 import { formatG$ } from "@/lib/utils";
@@ -43,9 +43,6 @@ function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-full bg-line ${className}`} />;
 }
 
-let nairaRateCache: number | null = null;
-let probeCache: { enabled?: boolean; country?: string | null } | null = null;
-
 export function WalletModal({
   address,
   isVerified,
@@ -66,33 +63,21 @@ export function WalletModal({
   const sendOpen = side !== null;
   const setSendOpen = (v: boolean | ((x: boolean) => boolean)) =>
     setSide((cur) => ((typeof v === "function" ? v(cur === "send") : v) ? "send" : null));
-  const [cashOutOn, setCashOutOn] = useState(!!probeCache?.enabled);
-  // Withdrawals pay Nigerian bank accounts only: by connection country, or by
-  // device time zone (Lagos time) when the country isn't known.
-  const [inNigeria, setInNigeria] = useState(true);
-  // Naira per G$ after all fees, from GoodCash's live quote, so the balance can
-  // show what it's worth in the bank. One fetch per page view.
-  const [nairaPerG, setNairaPerG] = useState<number | null>(nairaRateCache);
+  // Withdrawals: on or off, Nigeria only (connection country or Lagos time),
+  // and the naira value of the balance (lib/withdrawInfo, asked once per page
+  // view). Known answers render at once, so reopening the wallet never pops in.
+  const [cashOutOn, setCashOutOn] = useState(() => !!peekWithdrawInfo()?.enabled);
+  const [inNigeria, setInNigeria] = useState(() => peekWithdrawInfo()?.inNigeria ?? true);
+  const [nairaPerG, setNairaPerG] = useState<number | null>(() => peekWithdrawInfo()?.nairaPerG ?? null);
   useEffect(() => {
     let cancelled = false;
-    const apply = (d: { enabled?: boolean; country?: string | null }) => {
+    // Availability first (the Withdraw button), then the rate (the ₦ line).
+    getWithdrawAvailability().then((a) => {
       if (cancelled) return;
-      setCashOutOn(!!d.enabled);
-      let tz = "";
-      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { /* unknown */ }
-      setInNigeria(d.country === "NG" || tz === "Africa/Lagos");
-      if (d.enabled && nairaRateCache === null) {
-        fetch("/api/cashout/quote?amountG=100000").then((r) => r.json()).then((q) => {
-          // GoodDrops keeps 1% before GoodCash converts the rest.
-          const rate = q?.receive?.naira > 0 ? (q.receive.naira / 100000) * (1 - GOODDROPS_FEE_PERCENT / 100) : null;
-          nairaRateCache = rate;
-          if (!cancelled) setNairaPerG(rate);
-        }).catch(() => {});
-      }
-    };
-    // Asked once per visit: reopening the wallet shows Withdraw straight away.
-    if (probeCache) apply(probeCache);
-    else fetch("/api/cashout/setup?probe=1").then((r) => r.json()).then((d) => { probeCache = d; apply(d); }).catch(() => {});
+      setCashOutOn(a.enabled);
+      setInNigeria(a.inNigeria);
+    });
+    getWithdrawInfo().then((i) => { if (!cancelled) setNairaPerG(i.nairaPerG); });
     return () => { cancelled = true; };
   }, []);
   const inputRef = useRef<HTMLInputElement>(null);

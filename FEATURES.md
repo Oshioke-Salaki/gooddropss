@@ -753,3 +753,58 @@ Starter limits ran out. This cuts subgraph traffic to a trickle, keeps the
 leaderboards and profiles fast as drops grow, and keeps the map truthful even
 while the indexer is down. Covered by unit tests (`dropMirror`, `subgraph`,
 `subgraphClient`, `chainDrops`, `adminAnalytics`, `weekActivity`, `serverCache`).
+
+---
+
+## 22. Win cards: an ad in every claim
+
+**What it is.** The moment a hunter wins, their **win card** is drawn and shown as
+a preview: a 1080x1920 image made for WhatsApp and Instagram Status
+(`lib/winCard.ts`, drawn in the browser, no server). Flat brand blue and tight
+DM Sans, the open gold chest from the claim moment, the exact amount ("1,000 G$",
+never abbreviated), the naira it's worth in the bank for players in Nigeria
+(live GoodCash rate), the clue, and a white panel with a QR code that carries
+the hunter's invite link. **Share my win** opens the phone's share sheet with
+the image attached; on a computer it saves the card and copies the message.
+Tapping the preview opens it full size.
+
+**Why it matters.** Every win becomes a post with a scannable invite on it, at
+the moment the hunter is happiest to share.
+
+---
+
+## 23. The claim moment: sound and touch
+
+**What it is.** The gold chest now chimes: a short two-note coin sound made in
+code (no audio file), quiet, played with a phone buzz on the exact frame the
+coins burst out (`lib/sound.ts`). Audio unlocks on the player's first tap, as
+phones require; where sound isn't allowed it simply stays silent.
+
+---
+
+## 24. City vs city
+
+**What it is.** A **Cities** tab on Rankings: this week's G$ found per city
+(Monday 00:00 WAT onward, the same week as the quests), with finds, hunters
+(counted by identity) and drops hidden. The leader wears the crown; each city's
+bar shows how close it is to first; the visitor's own city is marked "You" when
+they've already allowed location (it never asks). Cities come from where drops
+really are (`lib/cities.ts`; 99% of drops fall in a listed city), and the board
+is built from the shared drop mirror at most once a minute
+(`/api/board/cities`).
+
+**Why it matters.** Local pride is the strongest growth loop for a real-world
+game: Kaduna vs Lafia vs Hyderabad gives every hunter a team without anyone
+having to form one.
+
+---
+
+## 25. Subgraph running totals (ready to deploy)
+
+**What it is.** The indexer now also keeps `GlobalStats`, `DailyStats` and
+per-wallet `Account` totals, updated as each drop is created, claimed or
+reclaimed (`subgraph/`). The `Drop` entity is unchanged, so every current query
+keeps working. It deploys as a separate version (`npm run deploy` in
+`subgraph/`, `gooddrops/1.1.0`), and `npm run verify -- <url>` checks every
+total against a full count of drops before anyone switches the app to it.
+

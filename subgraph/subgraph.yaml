@@ -15,6 +15,9 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - Drop
+        - GlobalStats
+        - DailyStats
+        - Account
       abis:
         - name: GoodDrops
           file: ./abis/GoodDrops.json

@@ -7,10 +7,12 @@ export interface Rank {
   count: number;
 }
 
-export type Tab = "droppers" | "hunters";
+/** The people boards. */
+export type PersonTab = "droppers" | "hunters";
+export type Tab = PersonTab | "cities";
 
 /** Copy that swaps with the tab, kept in one place so the two views can't drift. */
-export const TAB_COPY: Record<Tab, {
+export const TAB_COPY: Record<PersonTab, {
   unit: string;
   totalLabel: string;
   activeLabel: string;

@@ -15,3 +15,49 @@ type Drop @entity {
   createdAt: BigInt!
   createdTx: Bytes!
 }
+
+# ── Running totals (v2) ──────────────────────────────────────────────────────
+# Kept up to date by the handlers, so stats are one small query instead of a
+# scan of every drop. `Drop` above is unchanged: existing queries keep working.
+
+# Whole-app totals. A single row, id "global".
+type GlobalStats @entity {
+  id: ID!
+  drops:        BigInt!   # every drop ever created
+  claims:       BigInt!
+  reclaims:     BigInt!
+  droppedWei:   BigInt!
+  claimedWei:   BigInt!
+  reclaimedWei: BigInt!
+  activeCount:  BigInt!   # not yet claimed or reclaimed (includes expired)
+  activeWei:    BigInt!
+  droppers:     BigInt!   # wallets that created at least one drop
+  hunters:      BigInt!   # wallets that claimed at least one drop
+  updatedAt:    BigInt!
+}
+
+# Totals per UTC day. id = day number (unix seconds / 86400).
+type DailyStats @entity {
+  id: ID!
+  day:          Int!
+  date:         BigInt!   # unix seconds at the start of the day
+  drops:        BigInt!
+  claims:       BigInt!
+  reclaims:     BigInt!
+  droppedWei:   BigInt!
+  claimedWei:   BigInt!
+  reclaimedWei: BigInt!
+}
+
+# Totals per wallet. id = lowercase address. Identity-root grouping stays in the
+# app (GoodDollar identity is off-chain to this contract).
+type Account @entity {
+  id: ID!
+  dropsCreated:    BigInt!
+  droppedWei:      BigInt!
+  claims:          BigInt!
+  claimedWei:      BigInt!
+  biggestClaimWei: BigInt!
+  firstActivityAt: BigInt!  # unix seconds of the first drop or claim
+  lastActivityAt:  BigInt!
+}

@@ -12,6 +12,8 @@ import { Podium } from "./components/Podium";
 import { RankRow, RankRowSkeleton } from "./components/RankRow";
 import { MeBar } from "./components/MeBar";
 import { fullG } from "./components/format";
+import { CityBoard } from "./components/CityBoard";
+import { useCityBoard, useMyCity } from "./useCityBoard";
 import { TAB_COPY, type Tab } from "./components/types";
 
 const TAB_KEY = "gd:leaderboardTab";
@@ -41,14 +43,22 @@ export default function LeaderboardPage() {
   // render would break hydration.
   useEffect(() => {
     const saved = sessionStorage.getItem(TAB_KEY);
-    if (saved === "droppers" || saved === "hunters") setTab(saved);
+    if (saved === "droppers" || saved === "hunters" || saved === "cities") setTab(saved);
   }, []);
   useEffect(() => {
     sessionStorage.setItem(TAB_KEY, tab);
   }, [tab]);
 
+  const isCities = tab === "cities";
   const entries = tab === "droppers" ? droppers : hunters;
-  const copy = TAB_COPY[tab];
+  const copy = TAB_COPY[tab === "droppers" ? "droppers" : "hunters"];
+
+  // City vs city: loaded the first time the tab opens.
+  const cities = useCityBoard(isCities);
+  const myCity = useMyCity();
+  const cityRows = cities.data?.rows ?? [];
+  const foundThisWeek = cityRows.reduce((sum, r) => sum + r.foundWei, 0n);
+  const findsThisWeek = cityRows.reduce((sum, r) => sum + r.claims, 0);
 
   // One batched request for every ranked wallet's username — needed to render the
   // rows AND to search by name. Without it each row would fetch its own profile.
@@ -106,14 +116,30 @@ export default function LeaderboardPage() {
           <div className="flex flex-col-reverse lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
             <LeaderboardToggle tab={tab} onChange={setTab} />
             <TotalCard
-              value={fullG(tab === "droppers" ? droppedWei : claimedWei)}
-              label={copy.totalLabel}
-              loading={loading}
+              value={fullG(isCities ? foundThisWeek : tab === "droppers" ? droppedWei : claimedWei)}
+              label={isCities ? "Found this week" : copy.totalLabel}
+              loading={isCities ? cities.loading : loading}
             />
           </div>
 
           {/* Board */}
           <div className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden">
+            {isCities ? (
+              <>
+                <div className="p-6 flex items-center justify-center lg:justify-start gap-x-2 lg:gap-x-4">
+                  <StatChip value={cityRows.length} label="Cities hunting" shortLabel="Cities" loading={cities.loading} />
+                  <StatChip value={findsThisWeek} label="Finds this week" shortLabel="Finds" loading={cities.loading} />
+                </div>
+                <CityBoard
+                  rows={cityRows}
+                  loading={cities.loading}
+                  error={cities.error && !cities.data}
+                  myCity={myCity}
+                  endsAt={cities.data?.endsAt ?? null}
+                  onRetry={cities.refresh}
+                />
+              </>
+            ) : (<>
             <div className="p-6 flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
               <div className="flex items-center justify-center lg:justify-start gap-x-2 lg:gap-x-4 w-full lg:w-auto lg:overflow-x-auto no-scrollbar">
                 <StatChip
@@ -229,12 +255,13 @@ export default function LeaderboardPage() {
                 )}
               </>
             )}
+            </>)}
           </div>
         </div>
       </div>
 
       {/* Your standing — only once the board is real and you're actually on it. */}
-      {!loading && myRow && (
+      {!isCities && !loading && myRow && (
         <MeBar
           rank={myRow.rank}
           entry={myRow.entry}
