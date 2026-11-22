@@ -59,3 +59,10 @@ describe("time of day", () => {
     }
   });
 });
+
+describe("skyFor with the globe", () => {
+  it("adds an atmosphere that fades out as the camera comes down", () => {
+    expect(skyFor("night")["atmosphere-blend"]).toBe(0);
+    expect(skyFor("night", { globe: true })["atmosphere-blend"]).toEqual(["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 7, 0]);
+  });
+});

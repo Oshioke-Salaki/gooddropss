@@ -61,24 +61,33 @@ export function LabPanel({ settings, onChange, quality, stats, onClose }: {
   onClose: () => void;
 }) {
   const set = <K extends keyof LabSettings>(k: K, v: LabSettings[K]) => onChange({ ...settings, [k]: v });
+  const lite = quality.tier === "lite";
 
   return (
     <Sheet title="Map lab" onClose={onClose} width={420}>
       <div className="flex flex-col gap-5">
         <Segmented label="Base map" value={settings.look} onChange={(v) => set("look", v)}
-          options={[{ value: "original", label: "Original" }, { value: "night", label: "GoodDrops Night" }]} />
+          options={[{ value: "midnight", label: "Midnight" }, { value: "night", label: "Night" }, { value: "original", label: "Original" }]} />
 
         <div className="flex flex-col divide-y divide-line">
-          <Toggle label="3D buildings" hint={quality.tier === "lite" ? "Off in Lite to save battery" : undefined}
-            checked={quality.tier !== "lite" && settings.buildings} disabled={quality.tier === "lite"} onChange={(v) => set("buildings", v)} />
+          <Toggle label="Globe intro" hint="Open on the Earth, then dive to your street"
+            checked={settings.globe} onChange={(v) => set("globe", v)} />
+          <Toggle label="Treasure light" hint={lite ? "Gold halos only in Lite (no ripple)" : "Gold halos and ripples; beams over rare finds"}
+            checked={settings.treasure} onChange={(v) => set("treasure", v)} />
+          <Toggle label="Idle drift" hint={lite ? "Off in Lite to save battery" : "The camera slowly circles when you stop touching"}
+            checked={!lite && settings.drift} disabled={lite} onChange={(v) => set("drift", v)} />
+          <Toggle label="3D buildings" hint={lite ? "Off in Lite to save battery" : undefined}
+            checked={!lite && settings.buildings} disabled={lite} onChange={(v) => set("buildings", v)} />
+          <Toggle label="Terrain" hint={lite ? "Off in Lite to save data" : "Real hills and valleys. Uses more data"}
+            checked={!lite && settings.terrain} disabled={lite} onChange={(v) => set("terrain", v)} />
         </div>
 
         <Segmented label="Building colour" value={settings.buildingColor} onChange={(v) => set("buildingColor", v)}
-          disabled={quality.tier === "lite" || !settings.buildings}
+          disabled={lite || !settings.buildings}
           options={[{ value: "brand", label: "Brand blue" }, { value: "classic", label: "Classic grey" }]} />
 
         <Segmented label="Sky" value={settings.sky} onChange={(v) => set("sky", v)}
-          options={[{ value: "auto", label: "Auto" }, { value: "day", label: "Day" }, { value: "dusk", label: "Dusk" }, { value: "night", label: "Night" }]} />
+          options={[{ value: "auto", label: "Real sun" }, { value: "day", label: "Day" }, { value: "dusk", label: "Dusk" }, { value: "night", label: "Night" }]} />
 
         <div className="rounded-2xl bg-surface p-4 flex flex-col gap-2 text-sm/[140%]">
           <div className="flex justify-between gap-3"><span className="text-nav-muted">Device tier</span><span className="text-heading">{TIER_LABEL[quality.tier]}</span></div>

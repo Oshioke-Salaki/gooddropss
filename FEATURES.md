@@ -754,3 +754,34 @@ leaderboards and profiles fast as drops grow, and keeps the map truthful even
 while the indexer is down. Covered by unit tests (`dropMirror`, `subgraph`,
 `subgraphClient`, `chainDrops`, `adminAnalytics`, `weekActivity`, `serverCache`).
 
+
+---
+
+## 22. Map lab: Midnight, the globe dive and treasure light (preview)
+
+**What it is.** A private preview at `/map-lab` (unlinked, not indexed) of the
+next map, built on the real map's markers, controls and claim sheet. Nothing on
+the real map changes until it graduates.
+
+- **Midnight** (`components/maplab/midnight.ts`): the city at night from a drone.
+  The world is drawn only in shades of brand blue (roads as light, glowing
+  coastlines, buildings lit by height), so gold means treasure and nothing else.
+  Markers and controls get matching dark glass, gold value chips and blue
+  landmark pins (`midnightMarkers.ts`, scoped to the lab page).
+- **Globe intro** (`globe.ts`): opens on a slowly turning Earth with an
+  atmosphere, then dives in one cinematic flight to the player's street.
+- **Treasure light** (`treasureLight.ts`, `beams.ts`): every live drop glows as a
+  soft gold bloom with a staggered sonar ripple; rare and legendary drops raise a
+  beam of gold light visible from blocks away.
+- **Real sun** (`sun.ts`): the light on the buildings comes from the actual sun
+  position for the player's place and time.
+- **Idle drift** (`orbit.ts`): when the player stops touching the map at street
+  level, the camera slowly circles; the first touch stops it.
+- **Terrain** (`terrain.ts`): optional real elevation (off by default: extra data).
+- **Performance:** Lite phones (low memory, 2G, Data Saver) get a still version
+  (no spin, ripple, drift, buildings or terrain); reduced motion rests everything.
+
+**Why it matters.** The map is the game board. A board that looks like a night
+city full of glowing gold makes people want to go out and look, and makes every
+share screenshot an advert. Covered by unit tests (sun, Midnight style, treasure
+data, beams, style loading).

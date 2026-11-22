@@ -102,8 +102,12 @@ export function phaseForHour(hour: number): DayPhase {
   return "night";
 }
 
-/** Horizon colours seen when the map is tilted. Land stays dark in every phase. */
-export function skyFor(phase: DayPhase): SkySpecification {
+/**
+ * Horizon colours seen when the map is tilted. Land stays dark in every phase.
+ * `globe`: also a glowing atmosphere around the Earth when zoomed out, fading
+ * away as the camera comes down to street level.
+ */
+export function skyFor(phase: DayPhase, { globe = false }: { globe?: boolean } = {}): SkySpecification {
   const p = {
     day: { sky: "#3B47E8", horizon: "#8E97FF", fog: "#141766" },
     dusk: { sky: "#25207A", horizon: "#FF9825", fog: "#2A1A55" },
@@ -116,7 +120,7 @@ export function skyFor(phase: DayPhase): SkySpecification {
     "sky-horizon-blend": 0.6,
     "horizon-fog-blend": 0.7,
     "fog-ground-blend": 0.25,
-    "atmosphere-blend": 0,
+    "atmosphere-blend": globe ? ["interpolate", ["linear"], ["zoom"], 0, 1, 5, 1, 7, 0] : 0,
   };
 }
 

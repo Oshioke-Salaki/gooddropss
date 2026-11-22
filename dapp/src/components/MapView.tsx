@@ -51,6 +51,14 @@ export interface MapLab {
   sky: DayPhase | null;
   /** Lite tier: the map's own light mode (flat camera, no buildings, capped DPR). */
   lite: boolean;
+  /** The style is a globe: give the sky its atmosphere. */
+  globe?: boolean;
+  /** Where the camera starts (default: the world view). */
+  start?: { center: [number, number]; zoom: number };
+  /** Camera for the first fly-to the hunter's location (e.g. the globe dive). */
+  firstFlight?: { zoom: number; pitch: number; bearing: number; duration: number; curve?: number };
+  /** The loaded map, for the lab's own layers and effects. */
+  onReady?: (map: maplibregl.Map) => void;
   onStats?: (s: { fps: number; zoom: number }) => void;
 }
 
@@ -333,8 +341,8 @@ export default function MapView({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: labRef.current?.style ?? MAP_STYLE,
-      center: [0, 20],
-      zoom: 2.4,
+      center: labRef.current?.start?.center ?? [0, 20],
+      zoom: labRef.current?.start?.zoom ?? 2.4,
       maxPitch: flatRef.current ? 0 : 62,
       attributionControl: false,
       ...(lightRef.current
@@ -420,6 +428,7 @@ export default function MapView({
         (window as unknown as { __labMap?: maplibregl.Map }).__labMap = map;
       }
       setMapReady(true);
+      labRef.current?.onReady?.(map);
     });
 
     return () => {
@@ -435,7 +444,7 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map || !labRef.current || !labSky) return;
-    try { map.setSky(skyFor(labSky)); map.setLight(lightFor(labSky)); } catch { /* optional */ }
+    try { map.setSky(skyFor(labSky, { globe: labRef.current.globe })); map.setLight(lightFor(labSky)); } catch { /* optional */ }
   }, [mapReady, labSky]);
 
   useEffect(() => {
@@ -813,7 +822,11 @@ export default function MapView({
           const loc: LatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           onUserLocation(loc);
           setLocPerm("granted");
-          mapRef.current?.flyTo({ center: [loc.lng, loc.lat], zoom: 16, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1800 });
+          // The lab can ask for its own first flight (the globe dive).
+          const ff = labRef.current?.firstFlight;
+          mapRef.current?.flyTo(ff && !flatRef.current
+            ? { center: [loc.lng, loc.lat], ...ff, essential: true }
+            : { center: [loc.lng, loc.lat], zoom: 16, pitch: flatRef.current ? 0 : 48, duration: flatRef.current ? 0 : 1800 });
         },
         (err) => {
           if (err.code === err.PERMISSION_DENIED) setLocPerm("denied");
