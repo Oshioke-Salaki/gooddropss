@@ -9,7 +9,7 @@ import { BigAmountInput } from "@/components/ui/BigAmountInput";
 import { useEscapeLayer, useFocusReturn } from "@/components/ui/layers";
 import { formatG$ } from "@/lib/utils";
 import { track } from "@/lib/analytics";
-import { formatNaira, splitAmount, GOODDROPS_FEE_PERCENT, MAX_WITHDRAW_G, type Bank, type CashOutView, type Quote } from "@/lib/goodcash";
+import { formatNaira, splitAmount, GOODDROPS_FEE_PERCENT, withdrawCapG, type Bank, type CashOutView, type Quote } from "@/lib/goodcash";
 import { forgetAccount, loadSavedAccounts, rememberAccount, useCashOut, type SavedAccount, type Setup } from "@/hooks/useCashOut";
 
 interface Props {
@@ -127,7 +127,7 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
   // ── What stops them continuing ─────────────────────────────────────────────
   const balanceG = Number(formatUnits(balance, 18));
   // The most one withdrawal can take: Max and the quick amounts never go above it.
-  const maxG = setup?.maximumG ?? MAX_WITHDRAW_G;
+  const maxG = setup?.maximumG ?? withdrawCapG(address);
   const amountProblem = (() => {
     if (!amount || !(amountNum > 0)) return "";
     if (amountNum > balanceG) return "That's more G$ than you have.";

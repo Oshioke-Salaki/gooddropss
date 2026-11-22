@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { createHmac } from "crypto";
 import { encodeFunctionData, parseAbi, parseUnits, type Hex } from "viem";
-import { checkCashOutTx, encodeOrderData, GOODCASH_ROUTER, TRANSFER_AND_CALL_ABI, type CashOutOrder } from "@/lib/goodcash";
+import { checkCashOutTx, encodeOrderData, GOODCASH_ROUTER, GOODDROPS_FEE_WALLET, MAX_WITHDRAW_G, TRANSFER_AND_CALL_ABI, withdrawCapG, type CashOutOrder } from "@/lib/goodcash";
 import { classify } from "@/lib/sponsorPolicy";
 import { G_TOKEN_ADDRESS } from "@/lib/contracts";
 
@@ -174,5 +174,15 @@ describe("GoodDrops' 1% fee split", () => {
     const erc20 = parseAbi(["function transfer(address,uint256)"]);
     const data = encodeFunctionData({ abi: erc20, functionName: "transfer", args: [GOODDROPS_FEE_WALLET, 10n] });
     expect(classify({ target: G_TOKEN_ADDRESS, value: 0n, data })).toBe("transfer");
+  });
+});
+
+describe("withdrawCapG", () => {
+  it("caps everyone at MAX_WITHDRAW_G except the GoodDrops wallet (any letter case)", () => {
+    expect(withdrawCapG("0x1111111111111111111111111111111111111111")).toBe(MAX_WITHDRAW_G);
+    expect(withdrawCapG(undefined)).toBe(MAX_WITHDRAW_G);
+    expect(withdrawCapG("")).toBe(MAX_WITHDRAW_G);
+    expect(withdrawCapG(GOODDROPS_FEE_WALLET)).toBe(Infinity);
+    expect(withdrawCapG(GOODDROPS_FEE_WALLET.toLowerCase())).toBe(Infinity);
   });
 });

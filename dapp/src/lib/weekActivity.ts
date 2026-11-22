@@ -2,13 +2,14 @@ import type { Redis } from "@upstash/redis";
 import { keys } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { liveStreakDays, type WeekActivity, type WeekBounds } from "@/lib/quests";
-import type { HunterStreak } from "@/types";
+import type { Drop, HunterStreak } from "@/types";
+import { fetchDropsForAddress } from "@/lib/subgraph";
 
 // Raw numbers for one person's week, for the quests endpoint and the weekly
-// recap. Deliberately narrow: two filtered subgraph queries (this person's
-// claims and drops inside the window) instead of paging the whole drop history.
+// recap: this person's claims and drops inside the window, read from the drop
+// mirror (lib/subgraph), so the recap's loop over every subscriber costs no
+// extra subgraph requests.
 
-const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
 const ADDR_RE = /^0x[0-9a-f]{40}$/;
 
 export interface WeekActivityDetail extends WeekActivity {
@@ -17,27 +18,14 @@ export interface WeekActivityDetail extends WeekActivity {
   gFoundWei: bigint;
 }
 
-interface Row { amount: string }
-
-async function windowRows(wallets: string[], week: WeekBounds): Promise<{ claimed: Row[]; created: Row[] }> {
-  if (!SUBGRAPH_URL) return { claimed: [], created: [] };
-  const list = JSON.stringify(wallets);
-  // `status: 1` = Claimed. 1000 is far beyond what one person does in a week;
-  // it only bounds a pathological account.
-  const query = `{
-    claimed: drops(first: 1000, where: { claimer_in: ${list}, status: 1, claimedAt_gte: "${week.start}", claimedAt_lt: "${week.end}" }) { amount }
-    created: drops(first: 1000, where: { dropper_in: ${list}, createdAt_gte: "${week.start}", createdAt_lt: "${week.end}" }) { amount }
-  }`;
-  const res = await fetch(SUBGRAPH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error(`subgraph ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error(json.errors[0].message);
-  return { claimed: json.data?.claimed ?? [], created: json.data?.created ?? [] };
+/** This person's claims and drops with timestamps inside [start, end). */
+export function windowActivity(drops: Drop[], wallets: string[], week: WeekBounds): { claimed: Drop[]; created: Drop[] } {
+  const set = new Set(wallets.map((w) => w.toLowerCase()));
+  const inWeek = (t: number) => t >= week.start && t < week.end;
+  return {
+    claimed: drops.filter((d) => d.status === 1 && set.has(d.claimer.toLowerCase()) && inWeek(d.claimedAt)),
+    created: drops.filter((d) => set.has(d.dropper.toLowerCase()) && inWeek(d.createdAt)),
+  };
 }
 
 export async function fetchWeekActivity(
@@ -55,7 +43,7 @@ export async function fetchWeekActivity(
   const wallets = [...new Set([addr, root.toLowerCase()])];
 
   const [rows, referrals, streakRaw] = await Promise.all([
-    windowRows(wallets, week),
+    fetchDropsForAddress(wallets).then((ds) => windowActivity(ds, wallets, week)),
     redis
       ? redis.zcount(keys.referralCredited(root), week.start, week.end - 1).catch(() => 0)
       : Promise.resolve(0),
@@ -68,7 +56,7 @@ export async function fetchWeekActivity(
   return {
     root,
     claims: rows.claimed.length,
-    gFoundWei: rows.claimed.reduce((s, r) => s + BigInt(r.amount || "0"), 0n),
+    gFoundWei: rows.claimed.reduce((sum, d) => sum + d.amount, 0n),
     dropsHidden: rows.created.length,
     referrals: Number(referrals) || 0,
     streak: liveStreakDays(streak, nowS, week),

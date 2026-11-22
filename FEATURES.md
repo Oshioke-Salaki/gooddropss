@@ -370,7 +370,9 @@ Run them with `npm test`.
 
 **What it is.** A **Health** tab (`/admin/health`) that shows, at a glance, the
 status of every external dependency the app relies on — Redis (with a live ping),
-the subgraph (with its current indexed block), web-push/VAPID, and each secret
+the subgraph (its indexed block against the chain's latest block, flagged
+**Stalled** with minutes behind when it falls more than ~5 minutes back, plus the
+server's drop-mirror size), web-push/VAPID, and each secret
 (internal notify, Goldsky webhook, cron) — each flagged OK / Warn / Error / Off,
 plus live counts (push subscribers, hunters sharing location, reported/hidden
 drops, landmarks). It's admin-cookie gated and never exposes secret values.
@@ -567,9 +569,10 @@ possible without redeploying). Tracked as a follow-up.
 
 ## 15. Send G$ — a wallet, not just a scoreboard
 
-**What it is.** The account modal now has a **Send G$** panel: paste a recipient
-wallet, enter an amount (with a one-tap **Max**), and transfer G$ straight from
-your balance. It's a plain ERC-20 `transfer` on the G$ token — **send-only** by
+**What it is.** The account modal now has a **Send G$** panel: type a GoodDrops
+**username** or paste any **wallet address** (the recipient is shown as a card
+before you send), enter an amount (quick amounts and a one-tap **Max**), and
+transfer G$ straight from your balance. It's a plain ERC-20 `transfer` on the G$ token — **send-only** by
 design (no receive/swap/buy surface to build, secure, or explain). Client-side
 guards reject a malformed address, sending to yourself, zero/over-balance
 amounts, and it surfaces a friendly "top up a little CELO for gas" message when
@@ -606,6 +609,13 @@ also how new users get their first G$ and first taste of the app.
     `Authorization: Bearer <CRON_SECRET>`.
 - See `dapp/.env.example` for the full, commented list of environment variables.
 - Push features reuse the existing VAPID/web-push setup and Upstash Redis.
+- **Withdrawals** switch on with `GOODCASH_SECRET_KEY` (server-only, Sensitive in
+  Vercel). After the first deploy, open **Admin → Withdrawals** and press
+  **Connect webhook** once. See section 19.
+- **Subgraph:** set `SUBGRAPH_URL` (server-only; `NEXT_PUBLIC_SUBGRAPH_URL` still
+  works as a fallback) to the exact deployed version's endpoint, and update it on
+  every subgraph redeploy. Watch **Admin → Health** after any Goldsky change. See
+  section 21.
 
 ---
 
@@ -645,3 +655,102 @@ merchant acquisition + loyalty tool — the revenue-facing phase of the roadmap.
 verified-human customers, provable redemption), while admin approval keeps the map
 trustworthy. Security holds end-to-end: single-use dynamic QR (a photo is useless
 a minute later), owner-only approval, GPS still required, and a fail-closed claim gate.
+
+---
+
+## 19. Withdraw G$ to a Nigerian bank (GoodCash)
+
+**What it is.** A **Withdraw** button in the account modal turns G$ into naira in
+the player's own bank account, powered by GoodCash. Pick an amount (25%, 50% or
+Max chips), choose the bank and account number (the bank's own name for the
+account is shown before anything is signed, and accounts can be saved for next
+time), review, and sign **one** transaction. Progress is shown in plain steps
+until the money lands; recent withdrawals are listed in a collapsible section.
+
+- **One signature, fee included.** GoodDrops' 1% is taken in G$ in the same
+  transaction (a batched call), straight to the GoodDrops wallet; GoodCash's
+  partner fee is 0%. Email and Google players pay no gas (sponsored).
+- **Limits.** At most 200,000 G$ per withdrawal, no daily limit. The GoodDrops
+  wallet (`0xB291…b1C7`) has no GoodDrops cap; GoodCash's own per-withdrawal
+  maximum still applies to everyone. Enforced on the server (`withdrawCapG` in
+  `lib/goodcash.ts`), mirrored in the UI.
+- **Nigeria only.** Shown to visitors in Nigeria (Vercel's country header, with
+  the device time zone as a fallback); everyone else sees a short, clean message.
+- **Safety.** The router address is fixed in code (never taken from an API), every
+  transaction is checked before it's reported to GoodCash, the webhook is
+  HMAC-verified, and test-mode orders never touch production Redis.
+- **Admin.** **Admin → Withdrawals** shows central totals (G$ withdrawn and the
+  naira paid out), every order with its status, and the webhook connection.
+  Receipts are admin-only, to keep the player's screen simple.
+
+**Why it matters.** Players can finally turn what they found into money they can
+spend, without leaving the app or learning how an exchange works, and GoodDrops
+earns 1% on every withdrawal.
+
+---
+
+## 20. Faster sign-in and smoother loading
+
+**What it is.**
+- **Magic loads only when it's needed.** The email/Google wallet SDK used to load
+  (with its iframe) for every visitor. Now it loads for someone signing in, or
+  for a returning signed-in player restoring their session; a new visitor
+  downloads none of it (`lib/lazyMagicConnector.ts`). Together with the other
+  first-load trimming, the home page's first load went from 381 KB to about 306 KB.
+- **No "Sign in" flash for signed-in players.** While a saved session restores,
+  the nav shows a neutral placeholder, and a full-screen brand loader covers the
+  app from the very first frame (no flicker). New visitors never see the loader.
+  The rules live inline in the page head, so they apply before any stylesheet.
+- **One loading screen for Google sign-in.** Returning from Google shows the same
+  brand loader ("Signing you in"), never a second, different loader on top.
+- **Toasts** are light cards matching the app: bottom-centre on large screens
+  (clear of the nav, the wallet panel and the map controls), top on phones
+  (clear of bottom sheets). A message is never shown twice (e.g. "Sent" appears
+  only if the Send window was closed before the transfer confirmed).
+
+**Why it matters.** The first seconds decide whether a new player stays. Less
+code to download and no flicker or double loaders make the app feel instant and
+trustworthy.
+
+---
+
+## 21. Drop data engine — fast, frugal and resilient
+
+**What it is.** Every screen that shows drops (map, profiles, rankings, stats,
+quests, events, competition, admin analytics, sponsor dashboard) reads from a
+**server-side drop mirror** instead of asking Goldsky directly.
+
+- **Incremental.** The mirror loads all drops once, then refreshes with ONE small
+  query for "drops changed since block N" (graph-node's `_change_block` filter).
+  A full scan of the ~11k drops used to take 12 requests and ~19 s and ran for
+  every profile, ranking and stats rebuild; a refresh is now one request.
+- **Warm starts.** A compressed snapshot (~360 KB) in Redis lets a new server
+  start with one read plus one change query. A full reload runs hourly in the
+  background, so no visitor ever waits for it.
+- **Never hangs.** Fast screens (map, My Drops, ticker, referral checks) use a
+  hedged request on a cold server: the mirror and a small direct query run
+  together and the first good answer wins. Every Goldsky call has a timeout and
+  a short retry that respects rate limits (`lib/subgraphClient.ts`).
+- **Rate-limit safe.** Goldsky's Starter plan allows 20 requests per 10 s per
+  project. Concurrent requests share one sync, `?fresh=1` can't force rebuilds
+  more than every few seconds, rankings and stats share one leaderboard build
+  (`lib/boardSnapshot.ts`), and quests and the weekly recap read the mirror
+  instead of one query per person.
+- **Survives an indexer outage.** When the subgraph falls more than ~5 minutes
+  behind the chain, the map is corrected from the contract (found chests leave,
+  new ones appear), My Drops re-reads its active drops' status, and the drop page
+  always takes its state from the contract (`lib/chainDrops.ts`). An outage can
+  no longer read as "this player hasn't done anything" (referrals return
+  "try again" instead).
+- **Browsers never call Goldsky.** The drop page, sticker, sponsor dashboard,
+  referral check and admin analytics go through cached API routes
+  (`/api/drops/[id]`, `/api/sponsor/drops`, `/api/referral/activity`,
+  `/api/admin/analytics`); the endpoint is no longer in the browser bundle, and
+  the admin and sponsor pages no longer download the whole drop history.
+
+**Why it matters.** Goldsky paused the project in November 2026 after the
+Starter limits ran out. This cuts subgraph traffic to a trickle, keeps the
+leaderboards and profiles fast as drops grow, and keeps the map truthful even
+while the indexer is down. Covered by unit tests (`dropMirror`, `subgraph`,
+`subgraphClient`, `chainDrops`, `adminAnalytics`, `weekActivity`, `serverCache`).
+

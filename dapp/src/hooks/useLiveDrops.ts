@@ -55,12 +55,20 @@ export function useLiveDrops() {
     const id = window.setInterval(tick, REFRESH_MS);
     document.addEventListener("visibilitychange", tick);
     // A drop created anywhere in the app should appear without waiting a minute.
-    const onCreated = () => fetchDrops({ fresh: true });
+    // The indexer needs a few seconds to see the new transaction, so look again
+    // shortly after, rather than only once (usually before it's indexed).
+    const timers: number[] = [];
+    const onCreated = () => {
+      fetchDrops({ fresh: true });
+      timers.push(window.setTimeout(() => fetchDrops({ fresh: true }), 6_000));
+      timers.push(window.setTimeout(() => fetchDrops({ fresh: true }), 15_000));
+    };
     window.addEventListener("gd:drop-created", onCreated);
     return () => {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", tick);
       window.removeEventListener("gd:drop-created", onCreated);
+      timers.forEach((t) => window.clearTimeout(t));
     };
   }, [fetchDrops]);
 

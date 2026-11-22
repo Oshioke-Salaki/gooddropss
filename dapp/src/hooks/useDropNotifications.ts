@@ -24,7 +24,9 @@ export function useDropNotifications() {
     prevClaimedIdsRef.current = new Set();
     if (!address) return;
     fetchDrops({ fresh: false });
-    const tick = () => { if (document.visibilityState === "visible") fetchDrops({ fresh: true }); };
+    // A background check: the server's copy is at most seconds old, so there's
+    // no need to bypass its cache (the push webhook is the fast path anyway).
+    const tick = () => { if (document.visibilityState === "visible") fetchDrops({ fresh: false }); };
     const id = window.setInterval(tick, POLL_MS);
     return () => window.clearInterval(id);
   }, [address, fetchDrops]);

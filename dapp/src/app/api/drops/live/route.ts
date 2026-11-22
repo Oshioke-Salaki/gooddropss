@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchLiveDrops } from "@/lib/subgraph";
+import { mirrorInfo, mirrorPeek } from "@/lib/dropMirror";
+import { indexerLag, patchLiveFromChain } from "@/lib/chainDrops";
 import { memo } from "@/lib/serverCache";
 import { toDropJson } from "@/lib/dropJson";
 import { parseDropHint } from "@/lib/utils";
@@ -42,11 +44,32 @@ export const runtime = "nodejs";
  *
  * Short CDN cache; `?fresh=1` (sent right after a claim or a new drop) skips the
  * instance cache so the change shows immediately.
+ *
+ * If the indexer has stalled (more than ~5 minutes behind the chain), the list is
+ * corrected from the contract: found chests leave the map and new ones appear,
+ * even while Goldsky is down. If that check itself fails, the indexer's list is
+ * served as before.
  */
+async function liveDrops(): Promise<Drop[]> {
+  // The lag check runs alongside the query (it's cached for 15 s anyway).
+  const [indexed, lag] = await Promise.all([fetchLiveDrops(), indexerLag().catch(() => null)]);
+  try {
+    if (!lag?.stale) return indexed;
+    const info = mirrorInfo();
+    const maxKnown = info?.maxId ?? indexed.reduce((m, d) => (d.id > m ? d.id : m), 0n);
+    const patched = await patchLiveFromChain(indexed, { maxId: maxKnown, peek: (id) => mirrorPeek(id) ?? indexed.find((d) => d.id.toString() === id) });
+    console.warn(`[drops/live] indexer ${lag.behind} blocks behind; served ${patched.length} live drops from the chain`);
+    return patched;
+  } catch (e) {
+    console.error("[drops/live] chain correction failed, serving indexer data", e);
+    return indexed;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const fresh = req.nextUrl.searchParams.get("fresh") === "1";
   try {
-    const drops = await memo("drops:live", 10_000, () => fetchLiveDrops(), { fresh });
+    const drops = await memo("drops:live", 10_000, liveDrops, { fresh });
     const visible = drops.filter((d) => !parseDropHint(d.hint).isPrivate);
     const body = (await withoutLockedEventDrops(visible)).map(toDropJson);
     return NextResponse.json(

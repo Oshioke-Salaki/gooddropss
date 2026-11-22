@@ -146,11 +146,14 @@ NGOs, governments, and impact organizations want to distribute aid to specific c
 | Push notifications (drop appeared near you) | ✅ |
 | Hunter leaderboard | ✅ |
 | My Drops dashboard with QR share | ✅ |
-| Subgraph indexing (Goldsky) | ✅ |
+| Subgraph indexing (Goldsky), with a server-side drop mirror and on-chain fallback | ✅ |
 | Reclaim expired drops | ✅ |
 | **Sponsored campaigns (business dashboard)** | ✅ |
 | **Branded drop pins + sponsor banner** | ✅ |
 | **Campaign analytics (drops, claims, G$ hidden)** | ✅ |
+| **Withdraw G$ to a Nigerian bank account (via GoodCash)** | ✅ |
+| **Send G$ to a username or wallet address** | ✅ |
+| Email and Google sign-in with a built-in wallet (Magic), plus WalletConnect and browser wallets | ✅ |
 
 ---
 
@@ -204,12 +207,15 @@ Identity:  GoodDollar IIdentityV2 (0xC361A6E67822a0EDc17D899227dd9FC50BD62F42)
 | Blockchain | Celo (EVM, mobile-first, $0.001 tx fees) |
 | Smart contract | Solidity 0.8.24 · OpenZeppelin 5.x · Hardhat |
 | Frontend | Next.js 15 (App Router) · React 19 · TypeScript |
-| Wallet | Wagmi 2 · Viem 2 · Privy |
-| Maps | Leaflet · react-leaflet · Stadia Maps |
-| Indexing | The Graph (Goldsky) |
-| Push notifications | Web Push · Upstash Redis |
+| Wallet & sign-in | Wagmi 2 · Viem 2 · Magic (email / Google) · WalletConnect · browser wallets |
+| Maps | MapLibre GL · OpenFreeMap (3D buildings) |
+| Indexing | The Graph (Goldsky), read through a server-side drop mirror |
+| Storage & caching | Upstash Redis |
+| Push notifications | Web Push |
 | Identity | GoodDollar Citizen SDK · Identity SDK |
+| Withdrawals | GoodCash (G$ to naira bank payouts) |
 | Animations | Framer Motion |
+| Tests | Vitest |
 | Hosting | Vercel |
 
 ---
@@ -226,13 +232,17 @@ npm install
 
 # Configure
 cp .env.example .env.local
-# Set NEXT_PUBLIC_WC_PROJECT_ID, NEXT_PUBLIC_SUBGRAPH_URL, VAPID keys
+# Set SUBGRAPH_URL, the Upstash Redis keys, NEXT_PUBLIC_MAGIC_KEY and the
+# rest; every variable is explained in .env.example
+
+# Test
+npm test
 
 # Run
 npm run dev
 ```
 
-The app runs against Celo mainnet by default. To test locally without spending real G$, point `NEXT_PUBLIC_SUBGRAPH_URL` at a local Graph node and deploy the contract to Alfajores testnet.
+The app runs against Celo mainnet by default. To test locally without spending real G$, point `SUBGRAPH_URL` at a local Graph node and deploy the contract to Alfajores testnet.
 
 **Smart contract:**
 ```bash

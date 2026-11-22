@@ -11,8 +11,7 @@ import {
   Mail, MapPin, PartyPopper, CalendarDays,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { fetchDropByDropId } from "@/lib/subgraph";
-import { publicClient } from "@/lib/publicClient";
+import { loadDrop } from "@/lib/loadDrop";
 import { eventLockTitle } from "@/lib/claimErrors";
 import { confirmTx } from "@/lib/txOutcome";
 import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
@@ -146,40 +145,18 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   } as const;
 
   // ── Fetch drop ─────────────────────────────────────────────────────────────
-  // Tries subgraph first; falls back to direct contract read so freshly-created
-  // private drops (not yet indexed) are visible immediately after creation.
+  // Our API (indexer + contract, so a just-created or just-claimed drop is
+  // right), with a direct contract read if our server can't be reached. After an
+  // action on this page (reloadKey > 0) the short cache is skipped.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoadErr(false);
-      const fromGraph = await fetchDropByDropId(dropId).catch(() => null);
-      if (fromGraph) { if (!cancelled) setDrop(fromGraph); return; }
       try {
-        const id = BigInt(dropId);
-        const r  = await publicClient.readContract({
-          address: GOOD_DROPS_ADDRESS,
-          abi:     GOOD_DROPS_ABI,
-          functionName: "getDrop",
-          args: [id],
-        });
-        // Unknown ids come back as an all-zero struct, not a revert.
-        if (/^0x0{40}$/i.test(r.dropper)) { if (!cancelled) setDrop(null); return; }
-        if (!cancelled) setDrop({
-          id,
-          dropper:   r.dropper,
-          amount:    BigInt(r.amount),
-          claimer:   r.claimer,
-          expiry:    Number(r.expiry),
-          claimedAt: Number(r.claimedAt),
-          createdAt: 0,
-          status:    Number(r.status),
-          lat:       Number(r.lat),
-          lng:       Number(r.lng),
-          hint:      r.hint,
-        });
+        const d = await loadDrop(dropId, { fresh: reloadKey > 0 });
+        if (!cancelled) setDrop(d);
       } catch {
-        // Unknown ids come back as zeros (handled above), so a throw here is
-        // the connection, not the link.
+        // Neither path answered: the connection, not the link.
         if (!cancelled) setLoadErr(true);
       }
     }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { banks, cashOutEnabled, gc, gcConfig, type GcLimits } from "@/lib/goodcashServer";
-import { MAX_WITHDRAW_G } from "@/lib/goodcash";
+import { withdrawCapG } from "@/lib/goodcash";
 
 export const runtime = "nodejs";
 
@@ -36,8 +36,8 @@ export async function GET(req: NextRequest) {
     enabled: true,
     mode: gcConfig()!.mode,
     minimumG: limits.data.minimumG,
-    // Our own per-withdrawal ceiling, or GoodCash's if that is ever lower.
-    maximumG: Math.min(limits.data.maximumG, MAX_WITHDRAW_G),
+    // Our own per-withdrawal ceiling for this wallet, or GoodCash's if lower.
+    maximumG: Math.min(limits.data.maximumG, withdrawCapG(req.nextUrl.searchParams.get("wallet"))),
     feePercent: limits.data.feePercent,
     banks: bankList.data,
   }, { headers: { "Cache-Control": "private, no-store" } });

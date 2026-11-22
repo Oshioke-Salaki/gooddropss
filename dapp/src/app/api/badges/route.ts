@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   try {
     const [root, profile, defs, sets] = await Promise.all([
       resolveIdentityRoot(address),
-      fetchHunterProfile(address),
+      fetchHunterProfile(address, { fresh }),
       loadDefs(redis),
       loadSets(redis),
     ]);

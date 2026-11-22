@@ -1,8 +1,6 @@
 // Server-only (reads Redis and the subgraph).
-import { fetchAllDrops } from "@/lib/subgraph";
-import { resolveRoots } from "@/lib/roots";
 import { memo } from "@/lib/serverCache";
-import { buildBoard } from "@/lib/board";
+import { getBoardSnapshot } from "@/lib/boardSnapshot";
 import { getRedis, keys } from "@/lib/redis";
 import { getEvents, statsFor } from "@/lib/eventStore";
 import { circulatedG } from "@/lib/circulation";
@@ -38,14 +36,8 @@ const whole = (wei: bigint) => Number(wei / 10n ** 18n);
  */
 export function getPublicStats(): Promise<PublicStats> {
   return memo("public-stats", 60_000, async () => {
-    const drops = await fetchAllDrops();
-    const addrs = new Set<string>();
-    for (const d of drops) {
-      addrs.add(d.dropper.toLowerCase());
-      if (d.claimer !== ZERO) addrs.add(d.claimer.toLowerCase());
-    }
-    const roots = await resolveRoots([...addrs]);
-    const board = buildBoard(drops, roots);
+    // The same leaderboard /api/board serves (built once, shared).
+    const { drops, roots, board } = await getBoardSnapshot();
     // Total users, by identity: a hunter who also drops, or one person on two
     // wallets, counts once. (The board's lists name each person by their latest
     // wallet, so merging those could count someone twice.)

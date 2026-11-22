@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { SUBGRAPH_URL } from "@/lib/subgraphClient";
+import { indexerLag } from "@/lib/chainDrops";
+import { mirrorInfo } from "@/lib/dropMirror";
 import { createPublicClient, http, formatEther, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
@@ -39,23 +42,19 @@ export async function GET() {
     }
   }
 
-  // ── Subgraph (drops data) ────────────────────────────────────────────────
-  const subUrl = process.env.NEXT_PUBLIC_SUBGRAPH_URL;
-  if (!has(subUrl)) {
-    checks.push({ key: "subgraph", label: "Subgraph", status: "error", detail: "NEXT_PUBLIC_SUBGRAPH_URL missing." });
+  // ── Subgraph (drops data): reachable, and keeping up with the chain ───────
+  if (!has(SUBGRAPH_URL)) {
+    checks.push({ key: "subgraph", label: "Subgraph", status: "error", detail: "SUBGRAPH_URL / NEXT_PUBLIC_SUBGRAPH_URL missing." });
   } else {
     try {
-      const ctrl = AbortSignal.timeout(5000);
-      const res = await fetch(subUrl!, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: "{ _meta { block { number } } }" }),
-        signal: ctrl,
-      });
-      const j = await res.json().catch(() => null);
-      const block = j?.data?._meta?.block?.number;
-      if (res.ok && block) checks.push({ key: "subgraph", label: "Subgraph", status: "ok", detail: `Indexed to block ${block}.` });
-      else checks.push({ key: "subgraph", label: "Subgraph", status: "warn", detail: "Reachable but no _meta — check the URL." });
+      const lag = await indexerLag();
+      const mirror = mirrorInfo();
+      const mins = Math.round(lag.behind / 60); // Celo: ~1 block per second
+      const where = `Indexed to block ${lag.indexedBlock.toLocaleString("en-US")}, chain at ${lag.headBlock.toLocaleString("en-US")}`;
+      const cache = mirror ? ` Server copy: ${mirror.size.toLocaleString("en-US")} drops.` : "";
+      checks.push(lag.stale
+        ? { key: "subgraph", label: "Subgraph", status: "error", detail: `Stalled: about ${mins} min behind (${where}). The map is being corrected from the contract; check Goldsky (plan limits, paused or failed deployment).${cache}` }
+        : { key: "subgraph", label: "Subgraph", status: "ok", detail: `In sync. ${where}.${cache}` });
     } catch {
       checks.push({ key: "subgraph", label: "Subgraph", status: "error", detail: "Unreachable." });
     }

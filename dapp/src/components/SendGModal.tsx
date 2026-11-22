@@ -44,6 +44,10 @@ type Recipient =
  */
 export function SendGModal({ address, balance, onClose }: Props) {
   const busyRef = useRef(false);
+  // Still on screen? Its own success view says "sent"; a toast only for someone
+  // who closed it before the send confirmed, so it's never said twice.
+  const onScreen = useRef(true);
+  useEffect(() => { onScreen.current = true; return () => { onScreen.current = false; }; }, []);
   const { sheetRef, sheetStyle, handleProps } = useSheetDrag({ onDismiss: () => { if (!busyRef.current) onClose(); } });
 
   const [to, setTo] = useState("");
@@ -147,7 +151,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
     try {
       await confirmTx(hash);
       setStatus("done");
-      toast.success(`Sent ${fmtG(Number(amount))} G$ to ${label}`);
+      if (!onScreen.current) toast.success(`Sent ${fmtG(Number(amount))} G$ to ${label}`);
       window.dispatchEvent(new Event("gd:verified"));
     } catch (e) {
       if (e instanceof StillPendingError) { setStatus("pending"); setErr(""); return; }

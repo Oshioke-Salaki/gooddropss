@@ -20,7 +20,7 @@ import { formatG$, parseDropHint } from "@/lib/utils";
 
 // formatG$ renders 0n as "0.0000" (it assumes a sub-G$ value); a zero stat reads better bare.
 const gLabel = (wei: bigint) => (wei === 0n ? "0 G$" : `${formatG$(wei)} G$`);
-import { fetchAllDrops } from "@/lib/subgraph";
+import { fromDropJson, type DropJson } from "@/lib/dropJson";
 import { DROP_STATUS, type Campaign, type Drop } from "@/types";
 
 // Stored on the campaign and painted on its pins, so the values are data —
@@ -252,11 +252,14 @@ export default function SponsorPage() {
     setLoadingData(true);
     setLoadErr(false);
     try {
-      const [campRes, drops] = await Promise.all([
-        fetch(`/api/campaigns?owner=${address}`).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))),
-        fetchAllDrops(),
-      ]);
+      const campRes = await fetch(`/api/campaigns?owner=${address}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))));
       const fetched: Campaign[] = campRes.campaigns ?? [];
+      // Only this sponsor's campaign drops, filtered on the server.
+      const drops: Drop[] = fetched.length === 0 ? [] : await fetch(
+        `/api/sponsor/drops?campaigns=${encodeURIComponent(fetched.map((c) => c.id).join(","))}`,
+      ).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((j: { drops: DropJson[] }) => j.drops.map(fromDropJson));
       setCampaigns(fetched);
       setAllDrops(drops);
       if (fetched.length > 0) {

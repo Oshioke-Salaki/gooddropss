@@ -90,7 +90,12 @@ export async function POST(req: NextRequest) {
   // And they must have actually done a task (claimed or created a drop) — we credit
   // active humans, not bare sign-ups. The client only calls after a task; this is the
   // server-side backstop, and the exact bar the referral competition pays out on.
-  if (!(await fetchHasActivity(invitee)))
+  // An outage must not read as "hasn't done anything" (that would refuse a real
+  // referral); say "try again" instead.
+  let active: boolean;
+  try { active = await fetchHasActivity(invitee); }
+  catch { return NextResponse.json({ error: "Couldn't check right now. Please try again." }, { status: 503 }); }
+  if (!active)
     return NextResponse.json({ error: "Do a task first — claim or create a drop.", needsTask: true }, { status: 409 });
 
   const [inviteeRoot, referrerRoot] = await Promise.all([

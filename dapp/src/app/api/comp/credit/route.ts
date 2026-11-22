@@ -50,7 +50,10 @@ export async function POST(req: NextRequest) {
   if (!(await isVerifiedHuman(invAddr))) {
     return NextResponse.json({ error: `@${invInput} isn't a verified GoodDollar human yet — can't credit.` }, { status: 409 });
   }
-  if (!(await fetchHasActivity(invAddr))) {
+  let active: boolean;
+  try { active = await fetchHasActivity(invAddr); }
+  catch { return NextResponse.json({ error: "Couldn't reach the drop index just now. Try again in a minute." }, { status: 503 }); }
+  if (!active) {
     return NextResponse.json({ error: `@${invInput} hasn't claimed or created a drop yet — doesn't qualify.` }, { status: 409 });
   }
 

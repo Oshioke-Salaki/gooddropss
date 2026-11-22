@@ -2,9 +2,7 @@
 import { useEffect, useState, use } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Printer, Link2, Search, QrCode } from "lucide-react";
-import { fetchDropByDropId } from "@/lib/subgraph";
-import { publicClient } from "@/lib/publicClient";
-import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
+import { loadDrop } from "@/lib/loadDrop";
 import { formatG$, getDropRarity, RARITY, parseDropHint } from "@/lib/utils";
 import { Logo } from "@/components/Logo";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
@@ -20,27 +18,7 @@ export default function StickerPage({ params }: { params: Promise<{ id: string }
 
   useEffect(() => {
     async function load() {
-      const fromGraph = await fetchDropByDropId(id);
-      if (fromGraph) { setDrop(fromGraph); return; }
-      try {
-        const raw = await publicClient.readContract({
-          address: GOOD_DROPS_ADDRESS, abi: GOOD_DROPS_ABI,
-          functionName: "getDrop", args: [BigInt(id)],
-        });
-        setDrop({
-          id: BigInt(id),
-          dropper:   raw.dropper,
-          amount:    BigInt(raw.amount),
-          claimer:   raw.claimer,
-          expiry:    Number(raw.expiry),
-          claimedAt: Number(raw.claimedAt),
-          createdAt: 0,
-          status:    Number(raw.status),
-          lat:       Number(raw.lat),
-          lng:       Number(raw.lng),
-          hint:      raw.hint,
-        });
-      } catch { setDrop(null); }
+      try { setDrop(await loadDrop(id)); } catch { setDrop(null); }
     }
     load();
   }, [id]);

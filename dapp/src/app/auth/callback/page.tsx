@@ -3,8 +3,9 @@ import { magicOf } from "@/lib/lazyMagicConnector";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
-import { Loader2, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { BrandLoader } from "@/components/BrandLoader";
 import { track } from "@/lib/analytics";
 
 // Google OAuth returns here — a single, fixed URL, because Google matches
@@ -118,6 +119,10 @@ export default function AuthCallbackPage() {
     })();
   }, [isConnected, connectors, connectAsync, router]);
 
+  // While it works: the app's own loading screen, so Google → GoodDrops is one
+  // continuous brand screen. Only a problem gets the card.
+  if (!err) return <BrandLoader status="Signing you in" label="Signing you in" />;
+
   return (
     <div className="min-h-dvh bg-surface font-sans flex items-center justify-center p-5">
       <div
@@ -128,33 +133,19 @@ export default function AuthCallbackPage() {
       >
         <Logo size="md" />
 
-        {err ? (
-          <>
-            <span className="w-14 h-14 rounded-full bg-surface text-danger flex items-center justify-center">
-              <AlertCircle className="w-7 h-7" strokeWidth={1.75} />
-            </span>
-            <p className="text-base/[140%] text-heading">{err}</p>
-            {code && <p className="-mt-2 text-xs/none text-nav-muted">Error code: {code}</p>}
-            <button
-              type="button"
-              onClick={() => router.replace(dest)}
-              className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
-                motion-safe:transition-colors hover:bg-brand/90"
-            >
-              Back to GoodDrops
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="w-14 h-14 rounded-full bg-brand-soft text-brand flex items-center justify-center">
-              <Loader2 className="w-7 h-7 animate-spin" strokeWidth={1.75} />
-            </span>
-            <p className="text-xl/none text-heading">Signing you in…</p>
-            <p className="text-sm/[140%] text-nav-muted">
-              Setting up your wallet. This only takes a second.
-            </p>
-          </>
-        )}
+        <span className="w-14 h-14 rounded-full bg-surface text-danger flex items-center justify-center">
+          <AlertCircle className="w-7 h-7" strokeWidth={1.75} />
+        </span>
+        <p className="text-base/[140%] text-heading">{err}</p>
+        {code && <p className="-mt-2 text-xs/none text-nav-muted">Error code: {code}</p>}
+        <button
+          type="button"
+          onClick={() => router.replace(dest)}
+          className="mt-2 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+            motion-safe:transition-colors hover:bg-brand/90"
+        >
+          Back to GoodDrops
+        </button>
       </div>
     </div>
   );

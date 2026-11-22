@@ -103,6 +103,8 @@ const jsonLd = {
 
 const NO_SESSION_SCRIPT = `try{var s=localStorage.getItem("gd:signed-in")==="1";if(!s){var w=JSON.parse(localStorage.getItem("wagmi.store")||"null");var st=w&&w.state;s=!!(st&&st.current&&st.connections&&st.connections.value&&st.connections.value.length)}if(!s)document.documentElement.classList.add("gd-no-session")}catch(e){}`;
 
+const GATE_CSS = `.gd-no-session [aria-label="Loading GoodDrops"]{display:none}html:not(.gd-no-session) [aria-label="Loading GoodDrops"]{animation:none!important;opacity:1}`;
+
 export default function RootLayout({
   children,
 }: {
@@ -115,6 +117,11 @@ export default function RootLayout({
             session loader at once, so a new visitor never sees it while the app
             loads. Mirrors hadSavedSession() in hooks/useSessionRestore. */}
         <script dangerouslySetInnerHTML={{ __html: NO_SESSION_SCRIPT }} />
+        {/* Inline, not in globals.css, so it applies on the very first paint even
+            before the stylesheet loads: nothing to restore = no loader; a session
+            to restore = the loader from frame one (no fade-in), so the app never
+            flashes before it. */}
+        <style dangerouslySetInnerHTML={{ __html: GATE_CSS }} />
         <link rel="preconnect" href="https://tiles.openfreemap.org" crossOrigin="anonymous" />
         {FONT_PRELOADS.map((href) => (
           <link key={href} rel="preload" href={href} as="font" type="font/woff2" crossOrigin="anonymous" />

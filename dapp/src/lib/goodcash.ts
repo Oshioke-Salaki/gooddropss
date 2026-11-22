@@ -21,7 +21,7 @@ import { G_TOKEN_ADDRESS } from "@/lib/contracts";
 export const GOODCASH_ROUTER = "0x546698368a246539Df5e641EdC2b79c5782ea359" as const;
 export const CELO_CHAIN_ID = 42220;
 
-/** The most one withdrawal may take (there's no daily limit). */
+/** The most one withdrawal may take (there's no daily limit). See withdrawCapG. */
 export const MAX_WITHDRAW_G = 200_000;
 
 export const TRANSFER_AND_CALL_ABI = parseAbi([
@@ -158,6 +158,14 @@ export const CASH_OUT_PAID_EVENT = parseAbi([
 
 export const GOODDROPS_FEE_WALLET = "0xB2914810724FE2Fb871960eB200Dea427854b1C7" as const;
 export const GOODDROPS_FEE_PERCENT = 1;
+
+/** Wallets GoodDrops doesn't cap (the GoodDrops wallet). GoodCash's own maximum still applies. */
+const UNCAPPED_WALLETS = new Set([GOODDROPS_FEE_WALLET.toLowerCase()]);
+
+/** GoodDrops' per-withdrawal ceiling for this wallet, in whole G$ (Infinity = no cap of ours). */
+export function withdrawCapG(wallet: string | null | undefined): number {
+  return wallet && UNCAPPED_WALLETS.has(wallet.toLowerCase()) ? Infinity : MAX_WITHDRAW_G;
+}
 
 /**
  * Split what the person cashes out into our fee and the part GoodCash turns

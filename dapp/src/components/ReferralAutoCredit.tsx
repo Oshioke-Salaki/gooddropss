@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { useReferral } from "@/hooks/useReferral";
-import { fetchHasActivity } from "@/lib/subgraph";
 
 // Headless — replaces the old tap-to-credit card. An invited newcomer's referrer
 // is credited automatically once the newcomer (a) is a verified human AND (b) has
@@ -21,12 +20,15 @@ export function ReferralAutoCredit() {
   const tried = useRef(false);
 
   // Detect the basic task instantly: a claim fires gd:streak-updated / gd:claim-success,
-  // a drop fires gd:drop-created. Also a cheap subgraph check on mount catches
+  // a drop fires gd:drop-created. Also a cheap server check on mount catches
   // anything already done in a prior session.
   useEffect(() => {
     if (!canAccept || !address || didTask) return;
     let alive = true;
-    fetchHasActivity(address).then((has) => { if (alive && has) setDidTask(true); }).catch(() => {});
+    fetch(`/api/referral/activity?address=${address}`)
+      .then((r) => (r.ok ? (r.json() as Promise<{ active: boolean }>) : null))
+      .then((j) => { if (alive && j?.active) setDidTask(true); })
+      .catch(() => {});
     const onAction = () => setDidTask(true);
     window.addEventListener("gd:streak-updated", onAction);
     window.addEventListener("gd:claim-success", onAction);

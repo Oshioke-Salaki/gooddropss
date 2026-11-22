@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { MARK_G_TOP, MARK_G_BOTTOM, MARK_DROP, BRAND_SPARK } from "@/lib/brandMark";
-import { fetchDropById } from "@/lib/subgraph";
+import { fetchDropByDropId } from "@/lib/subgraph";
 import { formatG$, parseDropHint, getDropRarity, RARITY } from "@/lib/utils";
 import { DROP_STATUS } from "@/types";
 
@@ -38,7 +38,7 @@ export default async function DropOgImage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const drop = await fetchDropById(id);
+  const drop = await fetchDropByDropId(id); // null on unknown or unreachable: the fallback card
 
   // Fallback if drop not found
   if (!drop) {

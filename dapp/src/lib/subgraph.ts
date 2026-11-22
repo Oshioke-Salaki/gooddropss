@@ -1,116 +1,80 @@
+// Drop data for the server, from the Goldsky subgraph. SERVER ONLY: browsers
+// go through our API routes (cached, rate-limit safe), never to Goldsky.
+//
+// Most reads come from the in-memory drop mirror (lib/dropMirror): kept current
+// with one small "what changed" request, so a profile, the rankings or a quest
+// no longer pages through every drop ever made.
+//
+// Screens that must answer fast (the map, My Drops, the ticker, referral checks)
+// use `quick()`: the mirror if it's loaded; on a cold server, a hedged request:
+// the small targeted query they always used runs alongside the mirror's load and
+// the first good answer wins, so nobody ever waits for a full load.
+
 import type { Drop } from "@/types";
 import { resolveRoots } from "@/lib/roots";
+import { memo } from "@/lib/serverCache";
+import { gql } from "@/lib/subgraphClient";
+import { mirrorDrops, mirrorPeek, mirrorReady, toDrop, type SubgraphDrop } from "@/lib/dropMirror";
 
-const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+const FIELDS = "id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint";
+const ADDR_RE = /^0x[0-9a-f]{40}$/;
 
-// NB: order by `id` and cursor by `id_gt` on the SAME field. Ordering by a
-// different field (e.g. dropId) than the cursor makes id_gt re-return rows
-// already seen — silently duplicating every drop past the first 1000-row page,
-// which inflated every subgraph-derived stat (claimed G$, leaderboard, etc.).
-const DROPS_QUERY = `
-  query GetDrops($lastId: ID!) {
-    drops(
-      first: 1000
-      orderBy: id
-      orderDirection: asc
-      where: { id_gt: $lastId }
-    ) {
-      id
-      dropId
-      dropper
-      amount
-      claimer
-      expiry
-      claimedAt
-      createdAt
-      status
-      lat
-      lng
-      hint
-    }
-  }
-`;
-
-interface SubgraphDrop {
-  id:        string;
-  dropId:    string;
-  dropper:   string;
-  amount:    string;
-  claimer:   string;
-  expiry:    string;
-  claimedAt: string;
-  createdAt: string;
-  status:    number;
-  lat:       number;
-  lng:       number;
-  hint:      string;
+function serverOnly(fn: string) {
+  if (typeof window !== "undefined") throw new Error(`${fn} is server-only; call an /api route instead`);
 }
 
-function toDrop(d: SubgraphDrop): Drop {
-  return {
-    id:        BigInt(d.dropId),
-    dropper:   d.dropper as `0x${string}`,
-    amount:    BigInt(d.amount),
-    claimer:   d.claimer as `0x${string}`,
-    expiry:    Number(d.expiry),
-    claimedAt: Number(d.claimedAt),
-    createdAt: Number(d.createdAt),
-    status:    d.status,
-    lat:       d.lat,
-    lng:       d.lng,
-    hint:      d.hint,
-  };
+/**
+ * Mirror if loaded. Cold: start the mirror's load (shared, it keeps going for
+ * the next caller) AND the direct query; the first to succeed answers. Fails
+ * only if both fail, with the direct query's error.
+ */
+async function quick<T>(fromMirror: (all: Drop[]) => T, direct: () => Promise<T>, fresh = false): Promise<T> {
+  if (mirrorReady()) return fromMirror(await mirrorDrops({ fresh }));
+  try {
+    return await Promise.any([mirrorDrops().then(fromMirror), direct()]);
+  } catch (e) {
+    const errs = (e as AggregateError).errors ?? [e];
+    throw errs[errs.length - 1];
+  }
 }
 
-const DROP_BY_ID_QUERY = `
-  query GetDrop($id: ID!) {
-    drop(id: $id) {
-      id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint
-    }
+/** Page a filtered query (cursor on id). Used only while the mirror is cold. */
+async function directWhere(where: string, vars: Record<string, string>): Promise<Drop[]> {
+  const varDecl = Object.keys(vars).map((k) => `, $${k}: String!`).join("");
+  const query = `query Q($lastId: ID!${varDecl}) {
+    drops(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $lastId, ${where} }) { ${FIELDS} }
+  }`;
+  const out: Drop[] = [];
+  let lastId = "";
+  for (let page = 0; page < 50; page++) {
+    const { drops } = await gql<{ drops: SubgraphDrop[] }>(query, { lastId, ...vars });
+    out.push(...drops.map(toDrop));
+    if (drops.length < 1000) break;
+    lastId = drops[drops.length - 1].id;
   }
-`;
+  return out;
+}
 
+// ─── One drop ────────────────────────────────────────────────────────────────
+
+/**
+ * One drop by its on-chain id (the subgraph's entity id is the same number), or
+ * null if the indexer doesn't have it. From the mirror when loaded, else one
+ * primary-key lookup. Throws only on a subgraph failure.
+ */
 export async function fetchDropById(id: string): Promise<Drop | null> {
-  if (!SUBGRAPH_URL) return null;
-  const res = await fetch(SUBGRAPH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: DROP_BY_ID_QUERY, variables: { id } }),
-    next: { revalidate: 30 },
-  });
-  if (!res.ok) return null;
-  const json = await res.json();
-  const d: SubgraphDrop | null = json.data?.drop ?? null;
-  return d ? toDrop(d) : null;
+  serverOnly("fetchDropById");
+  if (!/^\d{1,30}$/.test(id)) return null;
+  const hit = mirrorPeek(id);
+  if (hit) return hit;
+  const { drop } = await gql<{ drop: SubgraphDrop | null }>(`query D($id: ID!) { drop(id: $id) { ${FIELDS} } }`, { id }, { timeoutMs: 6_000 });
+  return drop ? toDrop(drop) : null;
 }
 
-const DROP_BY_DROPID_QUERY = `
-  query GetDropByDropId($dropId: String!) {
-    drops(where: { dropId: $dropId }, first: 1) {
-      id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint
-    }
-  }
-`;
-
-// Fetch a single drop by its on-chain numeric dropId.
-// Falls back to contract read if the subgraph hasn't indexed it yet.
+/** Same as fetchDropById, never throws (null when unknown or unreachable). */
 export async function fetchDropByDropId(dropId: string): Promise<Drop | null> {
-  if (SUBGRAPH_URL) {
-    try {
-      const res = await fetch(SUBGRAPH_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: DROP_BY_DROPID_QUERY, variables: { dropId } }),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const drops: SubgraphDrop[] = json.data?.drops ?? [];
-        if (drops.length > 0) return toDrop(drops[0]);
-      }
-    } catch {}
-  }
-  return null;
+  try { return await fetchDropById(dropId); } catch { return null; }
 }
 
 // ─── Recent activity ─────────────────────────────────────────────────────────
@@ -123,52 +87,34 @@ export interface ActivityItem {
   timestamp: number;
 }
 
-const ACTIVITY_QUERY = `
-  query RecentActivity {
-    newDrops: drops(first: 6, orderBy: dropId, orderDirection: desc) {
-      id dropId dropper amount createdAt
-    }
-    newClaims: drops(
-      first: 6, orderBy: claimedAt, orderDirection: desc
-      where: { status: 1, claimedAt_gt: "0" }
-    ) {
-      id dropId claimer amount claimedAt
-    }
-  }
-`;
+function toActivity(newDrops: Drop[], newClaims: Drop[]): ActivityItem[] {
+  const items: ActivityItem[] = [
+    ...newDrops.map((d) => ({ type: "drop" as const, id: `drop-${d.id}`, address: d.dropper, amount: d.amount, timestamp: d.createdAt })),
+    ...newClaims.map((c) => ({ type: "claim" as const, id: `claim-${c.id}`, address: c.claimer, amount: c.amount, timestamp: c.claimedAt })),
+  ];
+  return items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 8);
+}
 
+/** The newest drops and finds, for the ticker. Empty on failure. */
 export async function fetchRecentActivity(): Promise<ActivityItem[]> {
-  if (!SUBGRAPH_URL) return [];
+  serverOnly("fetchRecentActivity");
   try {
-    const res = await fetch(SUBGRAPH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: ACTIVITY_QUERY }),
-    });
-    const json = await res.json();
-    const drops: Array<{ id: string; dropId: string; dropper: string; amount: string; createdAt: string }> =
-      json.data?.newDrops ?? [];
-    const claims: Array<{ id: string; dropId: string; claimer: string; amount: string; claimedAt: string }> =
-      json.data?.newClaims ?? [];
-
-    const items: ActivityItem[] = [
-      ...drops.map((d) => ({
-        type: "drop" as const,
-        id: `drop-${d.id}`,
-        address: d.dropper,
-        amount: BigInt(d.amount),
-        timestamp: Number(d.createdAt),
-      })),
-      ...claims.map((c) => ({
-        type: "claim" as const,
-        id: `claim-${c.id}`,
-        address: c.claimer,
-        amount: BigInt(c.amount),
-        timestamp: Number(c.claimedAt),
-      })),
-    ];
-
-    return items.sort((a, b) => b.timestamp - a.timestamp).slice(0, 8);
+    return await quick(
+      (all) => {
+        const byNewest = (k: "id" | "claimedAt") => (a: Drop, b: Drop) =>
+          k === "id" ? (b.id > a.id ? 1 : b.id < a.id ? -1 : 0) : b.claimedAt - a.claimedAt;
+        const newDrops = [...all].sort(byNewest("id")).slice(0, 6);
+        const newClaims = all.filter((d) => d.status === 1 && d.claimedAt > 0).sort(byNewest("claimedAt")).slice(0, 6);
+        return toActivity(newDrops, newClaims);
+      },
+      async () => {
+        const data = await gql<{ newDrops: SubgraphDrop[]; newClaims: SubgraphDrop[] }>(`{
+          newDrops: drops(first: 6, orderBy: dropId, orderDirection: desc) { ${FIELDS} }
+          newClaims: drops(first: 6, orderBy: claimedAt, orderDirection: desc, where: { status: 1, claimedAt_gt: "0" }) { ${FIELDS} }
+        }`, {}, { timeoutMs: 6_000 });
+        return toActivity(data.newDrops.map(toDrop), data.newClaims.map(toDrop));
+      },
+    );
   } catch {
     return [];
   }
@@ -184,60 +130,55 @@ export interface HunterStats {
 
 // IDENTITY-SCOPED so the profile matches the (identity-scoped) leaderboard: a
 // person's drops/claims across ALL their linked GoodDollar wallets are summed
-// under one identity. A single-wallet query would undercount anyone who dropped
-// or claimed from a connected wallet (which is exactly what made a profile show
-// 22k while the leaderboard showed 134k for the same person).
-export async function fetchHunterProfile(address: string): Promise<HunterStats | null> {
-  if (!SUBGRAPH_URL) return null;
+// under one identity. Shared for 30 s per address, so the profile's stats and
+// badges (two routes, opened together) build it once.
+export async function fetchHunterProfile(address: string, opts: { fresh?: boolean } = {}): Promise<HunterStats | null> {
+  serverOnly("fetchHunterProfile");
+  const a = address.toLowerCase();
   try {
-    const all = await fetchAllDrops();
-
-    // Resolve every participating wallet → its identity root (batched multicall).
-    const wallets = new Set<string>([address.toLowerCase()]);
-    for (const d of all) {
-      wallets.add(d.dropper.toLowerCase());
-      if (d.claimer && d.claimer.toLowerCase() !== ZERO_ADDR) wallets.add(d.claimer.toLowerCase());
-    }
-    const roots = await resolveRoots([...wallets]);
-    const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
-    const target = rootOf(address);
-
-    const dropsCreated = all.filter((d) => rootOf(d.dropper) === target);
-    const dropsClaimed = all.filter(
-      (d) => d.status === 1 && d.claimer.toLowerCase() !== ZERO_ADDR && rootOf(d.claimer) === target,
-    );
-    return { address, dropsCreated, dropsClaimed };
+    return await memo(`hunter:${a}`, 30_000, async () => {
+      const all = await mirrorDrops({ fresh: opts.fresh });
+      // Resolve every participating wallet → its identity root (memory/Redis cached).
+      const wallets = new Set<string>([a]);
+      for (const d of all) {
+        wallets.add(d.dropper.toLowerCase());
+        if (d.claimer && d.claimer.toLowerCase() !== ZERO_ADDR) wallets.add(d.claimer.toLowerCase());
+      }
+      const roots = await resolveRoots([...wallets]);
+      const rootOf = (x: string) => roots.get(x.toLowerCase()) ?? x.toLowerCase();
+      const target = rootOf(a);
+      const dropsCreated = all.filter((d) => rootOf(d.dropper) === target);
+      const dropsClaimed = all.filter(
+        (d) => d.status === 1 && d.claimer.toLowerCase() !== ZERO_ADDR && rootOf(d.claimer) === target,
+      );
+      return { address, dropsCreated, dropsClaimed };
+    }, { fresh: opts.fresh });
   } catch {
     return null;
   }
 }
 
-// Cheap "has this wallet done a basic task yet?" check — true if it has claimed
-// a drop OR created one. Used to gate referral crediting on real activity (not a
-// bare sign-up), so ambassadors only get credit for hunters who actually engage.
-// Queries the connected wallet directly (a fresh invitee uses one wallet), so it
-// stays a tiny 2-row lookup rather than the full identity-root aggregation.
+// ─── Activity checks (referrals) ─────────────────────────────────────────────
+
+/**
+ * Has this wallet claimed or created a drop? Gates referral credit on real
+ * activity. THROWS when the subgraph can't be reached, so callers never mistake
+ * an outage for "hasn't done anything yet".
+ */
 export async function fetchHasActivity(address: string): Promise<boolean> {
-  if (!SUBGRAPH_URL) return false;
+  serverOnly("fetchHasActivity");
   const a = address.toLowerCase();
-  if (!/^0x[0-9a-f]{40}$/.test(a)) return false;
-  const query = `{
-    claimed: drops(first: 1, where: { claimer: "${a}", status: 1 }) { id }
-    created: drops(first: 1, where: { dropper: "${a}" }) { id }
-  }`;
-  try {
-    const res = await fetch(SUBGRAPH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    if (!res.ok) return false;
-    const json = await res.json();
-    const d = json.data ?? {};
-    return (d.claimed?.length ?? 0) > 0 || (d.created?.length ?? 0) > 0;
-  } catch {
-    return false;
-  }
+  if (!ADDR_RE.test(a)) return false;
+  return quick(
+    (all) => all.some((d) => d.dropper.toLowerCase() === a || (d.status === 1 && d.claimer.toLowerCase() === a)),
+    async () => {
+      const d = await gql<{ claimed: { id: string }[]; created: { id: string }[] }>(`query H($a: String!) {
+        claimed: drops(first: 1, where: { claimer: $a, status: 1 }) { id }
+        created: drops(first: 1, where: { dropper: $a }) { id }
+      }`, { a }, { timeoutMs: 6_000 });
+      return d.claimed.length > 0 || d.created.length > 0;
+    },
+  );
 }
 
 /**
@@ -246,147 +187,76 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
  * the subgraph can't be reached, so callers can tell "new" from "unknown".
  */
 export async function fetchFirstActivityAt(addresses: string[]): Promise<number | null> {
-  if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
-  const list = [...new Set(addresses.map((a) => a.toLowerCase()))].filter((a) => /^0x[0-9a-f]{40}$/.test(a));
+  serverOnly("fetchFirstActivityAt");
+  const list = [...new Set(addresses.map((x) => x.toLowerCase()))].filter((x) => ADDR_RE.test(x));
   if (!list.length) return null;
-  const inList = JSON.stringify(list);
-  const query = `{
-    claimed: drops(first: 1, orderBy: claimedAt, orderDirection: asc, where: { claimer_in: ${inList}, status: 1 }) { claimedAt }
-    created: drops(first: 1, orderBy: createdAt, orderDirection: asc, where: { dropper_in: ${inList} }) { createdAt }
-  }`;
-  const res = await fetch(SUBGRAPH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  if (!res.ok) throw new Error(`subgraph ${res.status}`);
-  const json = await res.json();
-  if (json.errors?.length) throw new Error("subgraph query failed");
-  const times = [Number(json.data?.claimed?.[0]?.claimedAt), Number(json.data?.created?.[0]?.createdAt)]
-    .filter((t) => Number.isFinite(t) && t > 0);
-  return times.length ? Math.min(...times) : null;
+  const set = new Set(list);
+  const earliest = (times: number[]) => {
+    const t = times.filter((x) => Number.isFinite(x) && x > 0);
+    return t.length ? Math.min(...t) : null;
+  };
+  return quick(
+    (all) => {
+      const times: number[] = [];
+      for (const d of all) {
+        if (d.status === 1 && set.has(d.claimer.toLowerCase())) times.push(d.claimedAt);
+        if (set.has(d.dropper.toLowerCase())) times.push(d.createdAt);
+      }
+      return earliest(times);
+    },
+    async () => {
+      const d = await gql<{ claimed: { claimedAt: string }[]; created: { createdAt: string }[] }>(`query F($l: [String!]!) {
+        claimed: drops(first: 1, orderBy: claimedAt, orderDirection: asc, where: { claimer_in: $l, status: 1 }) { claimedAt }
+        created: drops(first: 1, orderBy: createdAt, orderDirection: asc, where: { dropper_in: $l }) { createdAt }
+      }`, { l: list }, { timeoutMs: 6_000 });
+      return earliest([Number(d.claimed[0]?.claimedAt), Number(d.created[0]?.createdAt)]);
+    },
+  );
 }
 
-// Fetches all drops using cursor pagination (1 000 per page).
-// Server-only micro-cache. Profile pages (/hunter/[address]) and /api/badges both
-// pull the ENTIRE drop set + resolve roots on every render — crawlers and bursts
-// then re-run that full scan back to back, which is the main driver of Vercel
-// Active CPU. Reusing one fetch+parse per serverless instance for a short window
-// collapses those repeats. The browser (live map) is never cached — a just-claimed
-// drop must reflect immediately (useDrops re-fetches to confirm the claim).
-let _allDropsCache: { at: number; data: Drop[] } | null = null;
-const ALL_DROPS_TTL_MS = 45_000;
-// Browser: the map, the leaderboard and the profile all need the full set, and
-// a person moving between them within seconds was paying for the whole
-// multi-page scan each time. A short window collapses that; anything that
-// must see a fresh chain state (confirming a claim) passes `fresh`.
-const CLIENT_TTL_MS = 20_000;
-let _clientInflight: Promise<Drop[]> | null = null;
+// ─── Sets of drops ───────────────────────────────────────────────────────────
 
+/** Every drop ever made (from the mirror). Server only. */
 export async function fetchAllDrops(opts: { fresh?: boolean } = {}): Promise<Drop[]> {
-  if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
-
-  const isServer = typeof window === "undefined";
-  const ttl = isServer ? ALL_DROPS_TTL_MS : CLIENT_TTL_MS;
-  if (!opts.fresh && _allDropsCache && Date.now() - _allDropsCache.at < ttl) {
-    return _allDropsCache.data;
-  }
-  // Two components mounting together (map + nav stats) share one scan.
-  if (!isServer && !opts.fresh && _clientInflight) return _clientInflight;
-
-  const run = fetchAllDropsUncached();
-  if (!isServer) {
-    _clientInflight = run;
-    run.finally(() => { _clientInflight = null; });
-  }
-  return run;
-}
-
-async function fetchAllDropsUncached(): Promise<Drop[]> {
-
-  const all: Drop[] = [];
-  let lastId = "0";
-
-  while (true) {
-    const res = await fetch(SUBGRAPH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: DROPS_QUERY, variables: { lastId } }),
-    });
-
-    if (!res.ok) throw new Error(`Subgraph request failed: ${res.status}`);
-
-    const json = await res.json();
-    if (json.errors?.length) throw new Error(json.errors[0].message);
-
-    const page: SubgraphDrop[] = json.data?.drops ?? [];
-    all.push(...page.map(toDrop));
-
-    if (page.length < 1000) break;
-    lastId = page[page.length - 1].id;
-  }
-
-  // Safety net: even if a future query change reintroduces overlap, never let a
-  // duplicated drop double-count in any aggregate. Keyed by dropId (the on-chain
-  // identity), last write wins.
-  const byId = new Map<string, Drop>();
-  for (const d of all) byId.set(d.id.toString(), d);
-  const deduped = [...byId.values()];
-  _allDropsCache = { at: Date.now(), data: deduped };
-  return deduped;
-}
-
-// ── Targeted queries ──────────────────────────────────────────────────────────
-// The full scan above pages through every drop ever made. These ask the
-// subgraph only for what a screen needs, so a phone never has to.
-
-const FIELDS = "id dropId dropper amount claimer expiry claimedAt createdAt status lat lng hint";
-
-/** Page through drops matching a GraphQL `where` body (cursor on id, as above). */
-async function fetchDropsWhere(where: string, vars: Record<string, string>): Promise<Drop[]> {
-  if (!SUBGRAPH_URL) throw new Error("NEXT_PUBLIC_SUBGRAPH_URL is not set");
-  const varDecl = Object.keys(vars).map((k) => `, $${k}: String!`).join("");
-  const query = `query Q($lastId: ID!${varDecl}) {
-    drops(first: 1000, orderBy: id, orderDirection: asc, where: { id_gt: $lastId, ${where} }) { ${FIELDS} }
-  }`;
-  const out: Drop[] = [];
-  let lastId = "0";
-  for (let page = 0; page < 50; page++) {
-    const res = await fetch(SUBGRAPH_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables: { lastId, ...vars } }),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`Subgraph request failed: ${res.status}`);
-    const json = await res.json();
-    if (json.errors?.length) throw new Error(json.errors[0].message);
-    const rows: SubgraphDrop[] = json.data?.drops ?? [];
-    out.push(...rows.map(toDrop));
-    if (rows.length < 1000) break;
-    lastId = rows[rows.length - 1].id;
-  }
-  return out;
+  serverOnly("fetchAllDrops");
+  return mirrorDrops(opts);
 }
 
 /** Drops that can still be claimed right now (active and not expired). */
-export function fetchLiveDrops(nowSec = Math.floor(Date.now() / 1000)): Promise<Drop[]> {
-  return fetchDropsWhere("status: 0, expiry_gt: $now", { now: String(nowSec) });
+export function fetchLiveDrops(nowSec = Math.floor(Date.now() / 1000), opts: { fresh?: boolean } = {}): Promise<Drop[]> {
+  serverOnly("fetchLiveDrops");
+  return quick(
+    (all) => all.filter((d) => d.status === 0 && d.expiry > nowSec),
+    () => directWhere("status: 0, expiry_gt: $now", { now: String(nowSec) }),
+    opts.fresh,
+  );
 }
 
-/** Every drop a wallet created or claimed, newest first, de-duplicated. */
-export async function fetchDropsForAddress(address: string): Promise<Drop[]> {
-  const a = address.toLowerCase();
-  const [made, found] = await Promise.all([
-    fetchDropsWhere("dropper: $a", { a }),
-    fetchDropsWhere("claimer: $a", { a }),
-  ]);
-  const byId = new Map<string, Drop>();
-  for (const d of [...made, ...found]) byId.set(d.id.toString(), d);
-  return [...byId.values()].sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+/** Every drop these wallets created or claimed, newest first, de-duplicated. */
+export async function fetchDropsForAddress(address: string | string[], opts: { fresh?: boolean } = {}): Promise<Drop[]> {
+  serverOnly("fetchDropsForAddress");
+  const list = [...new Set((Array.isArray(address) ? address : [address]).map((x) => x.toLowerCase()))];
+  const set = new Set(list);
+  const sortNewest = (ds: Drop[]) => {
+    const byId = new Map<string, Drop>();
+    for (const d of ds) byId.set(d.id.toString(), d);
+    return [...byId.values()].sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  };
+  return quick(
+    (all) => sortNewest(all.filter((d) => set.has(d.dropper.toLowerCase()) || set.has(d.claimer.toLowerCase()))),
+    async () => {
+      const parts = await Promise.all(list.flatMap((a) => [directWhere("dropper: $a", { a }), directWhere("claimer: $a", { a })]));
+      return sortNewest(parts.flat());
+    },
+    opts.fresh,
+  );
 }
 
 /** Every drop tagged for an event ([E:…] in its clue, possibly under [R]). */
 export function fetchEventDrops(): Promise<Drop[]> {
-  return fetchDropsWhere("hint_contains: $tag", { tag: "[E:" });
+  serverOnly("fetchEventDrops");
+  return quick(
+    (all) => all.filter((d) => d.hint.includes("[E:")),
+    () => directWhere("hint_contains: $tag", { tag: "[E:" }),
+  );
 }

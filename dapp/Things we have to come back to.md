@@ -175,3 +175,13 @@ Twelve 3D faces live in `public/avatars/` (Fluent Emoji, MIT — see LICENSE.md
 there) and are listed in `AVATAR_IMAGES` (`src/lib/avatarPresets.ts`). To swap
 or add art: drop a 256px+ transparent PNG in that folder and add a row. Never
 reuse an id. The old emoji presets stay valid for people who already chose one.
+
+## Drop data and sign-in (November 2026)
+
+| What | Why it was parked | What it needs |
+|---|---|---|
+| **Running totals in the subgraph** ("Step 2") | Needs a subgraph redeploy and a full re-index. | Add `GlobalStats`, per-wallet `User`, `DailyStats` entities and indexed `eventId` / `campaignId` fields on `Drop`. Deploy next to the current version, compare totals with today's, then switch `SUBGRAPH_URL`. Profiles, stats and analytics then become one small query each. |
+| **Subgraph version names don't match** | Found during the audit. | `subgraph/package.json` deploys `gooddrops/1.0.1`, while the app reads `gooddrops/0.2.0`. Confirm which deployment is live, delete unused deployments in Goldsky (each one burns worker hours), and keep the two in step. |
+| **My Drops during an indexer outage** | The contract can't list drops by wallet, so drops created while the subgraph is down only appear once it catches up. Their state (found, reclaimed) is already corrected from the contract. | Acceptable for short outages. If outages recur, read `DropCreated` logs from the stall block. |
+| **Email code inside our own sheet** | Magic's white-label email code (`showUI: false`) is rejected for our Magic app with error -32603, so email sign-in still shows Magic's own code screen. | Enable white-label email OTP for the app in the Magic dashboard (it may depend on the plan), then re-apply the in-sheet code step. |
+| **`@privy-io/react-auth` is installed but unused** | Out of scope for this change. | Remove the dependency after confirming nothing imports it. |

@@ -1,19 +1,14 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useReadContract } from "wagmi";
 import { Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
-import { fetchAllDrops } from "@/lib/subgraph";
-import { resolveRoots } from "@/lib/roots";
+import { analyticsFromJson, type AdminAnalytics, type AdminAnalyticsJson } from "@/lib/adminAnalytics";
 import { formatG$ } from "@/lib/utils";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
-import { DROP_STATUS, type Drop } from "@/types";
 import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import { AdminPage, Card, Hint, SectionTitle, Stat } from "./ui";
 import { DropLimitsCard } from "./DropLimitsCard";
 import { CashOutsSummary } from "./CashOutsCard";
-import { REWARDS_WEI } from "@/lib/circulation";
-
-const ZERO = "0x0000000000000000000000000000000000000000";
 
 // G$ circulated uses the app-wide definition in lib/circulation (drops + rewards).
 
@@ -48,10 +43,8 @@ function Bars({
   );
 }
 
-/** Admin · Analytics — live numbers from the subgraph and the contract. */
+/** Admin · Analytics — live numbers from the drop index (via our server) and the contract. */
 export function AnalyticsBody() {
-  const [drops, setDrops] = useState<Drop[] | null>(null);
-  const [roots, setRoots] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState("");
 
   const { data: totalLocked } = useReadContract({
@@ -65,108 +58,21 @@ export function AnalyticsBody() {
     functionName: "identityRequired",
   });
 
+  // Totals are computed on the server from the shared drop mirror (one small
+  // response instead of every drop ever made); see lib/adminAnalytics.
+  const [m, setM] = useState<AdminAnalytics | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchAllDrops()
-      .then((d) => {
-        if (!cancelled) setDrops(d);
-        return d;
+    fetch("/api/admin/analytics", { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || `Analytics ${r.status}`);
+        return analyticsFromJson((j as { analytics: AdminAnalyticsJson }).analytics);
       })
-      .then((d) => {
-        const addrs = new Set<string>();
-        for (const x of d) {
-          addrs.add(x.dropper.toLowerCase());
-          if (x.claimer !== ZERO) addrs.add(x.claimer.toLowerCase());
-        }
-        return resolveRoots([...addrs]);
-      })
-      .then((m) => {
-        if (!cancelled) setRoots(m);
-      })
-      .catch((e) => {
-        if (!cancelled) setError((e as Error).message);
-      });
-    return () => {
-      cancelled = true;
-    };
+      .then((a) => { if (!cancelled) setM(a); })
+      .catch((e) => { if (!cancelled) setError((e as Error).message); });
+    return () => { cancelled = true; };
   }, []);
-
-  const m = useMemo(() => {
-    if (!drops) return null;
-    const now = Math.floor(Date.now() / 1000);
-    const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
-
-    let claimedWei = 0n, reclaimedWei = 0n, activeWei = 0n;
-    let active = 0, claimed = 0, reclaimed = 0, expiredUnclaimed = 0;
-    const droppers = new Set<string>();
-    const hunters = new Set<string>();
-    const humans = new Set<string>();
-    const perDay: Record<string, number> = {};
-    const claimedWeiPerDay: Record<string, bigint> = {};
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const activeToday = new Set<string>();
-    let ttcSum = 0, ttcCount = 0;
-
-    for (const d of drops) {
-      droppers.add(rootOf(d.dropper));
-      humans.add(rootOf(d.dropper));
-      const day = new Date(d.createdAt * 1000).toISOString().slice(0, 10);
-      perDay[day] = (perDay[day] ?? 0) + 1;
-
-      if (d.status === DROP_STATUS.Claimed) {
-        claimed++;
-        claimedWei += d.amount;
-        if (d.claimer !== ZERO) {
-          hunters.add(rootOf(d.claimer));
-          humans.add(rootOf(d.claimer));
-        }
-        if (d.claimedAt > 0 && d.createdAt > 0 && d.claimedAt >= d.createdAt) {
-          ttcSum += d.claimedAt - d.createdAt;
-          ttcCount++;
-        }
-        if (d.claimedAt > 0) {
-          const cday = new Date(d.claimedAt * 1000).toISOString().slice(0, 10);
-          claimedWeiPerDay[cday] = (claimedWeiPerDay[cday] ?? 0n) + d.amount;
-          if (cday === todayStr && d.claimer !== ZERO) activeToday.add(rootOf(d.claimer));
-        }
-      } else if (d.status === DROP_STATUS.Reclaimed) {
-        reclaimed++;
-        reclaimedWei += d.amount;
-      } else {
-        active++;
-        activeWei += d.amount;
-        if (d.expiry < now) expiredUnclaimed++;
-      }
-    }
-
-    const settled = claimed + reclaimed;
-    const claimRate = settled > 0 ? Math.round((claimed / settled) * 100) : 0;
-
-    // Last 14 days of drop creation.
-    const days: { day: string; n: number }[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-      days.push({ day, n: perDay[day] ?? 0 });
-    }
-    const maxDay = Math.max(1, ...days.map((x) => x.n));
-
-    // Last 14 days of G$ CLAIMED (velocity), and average time from drop → find.
-    const claimedDays: { day: string; wei: bigint }[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-      claimedDays.push({ day, wei: claimedWeiPerDay[day] ?? 0n });
-    }
-    const maxClaimedWei = claimedDays.reduce((mx, x) => (x.wei > mx ? x.wei : mx), 1n);
-    const avgTtcSec = ttcCount ? Math.round(ttcSum / ttcCount) : 0;
-
-    return {
-      total: drops.length, active, claimed, reclaimed, expiredUnclaimed,
-      claimedWei, reclaimedWei, activeWei,
-      circulatedWei: drops.reduce((sum, d) => sum + d.amount, 0n) + REWARDS_WEI, // lib/circulation
-      droppers: droppers.size, hunters: hunters.size, humans: humans.size,
-      claimRate, days, maxDay, activeToday: activeToday.size, avgTtcSec, claimedDays, maxClaimedWei,
-    };
-  }, [drops, roots]);
 
   const loading = !m;
   const protection = identityRequired === undefined ? "loading" : identityRequired === true ? "on" : "off";

@@ -14,9 +14,16 @@ interface Entry<T> { at: number; value: T }
 const values = new Map<string, Entry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
+/**
+ * `fresh` (a refresh button, or right after a claim) skips the TTL but still
+ * reuses a value built in the last few seconds, so a public `?fresh=1` can't be
+ * looped into back-to-back rebuilds.
+ */
+const FRESH_FLOOR_MS = 3_000;
+
 export async function memo<T>(key: string, ttlMs: number, load: () => Promise<T>, opts: { fresh?: boolean } = {}): Promise<T> {
   const hit = values.get(key) as Entry<T> | undefined;
-  if (!opts.fresh && hit && Date.now() - hit.at < ttlMs) return hit.value;
+  if (hit && Date.now() - hit.at < (opts.fresh ? Math.min(ttlMs, FRESH_FLOOR_MS) : ttlMs)) return hit.value;
 
   const running = inflight.get(key) as Promise<T> | undefined;
   if (running) return running;
