@@ -45,6 +45,14 @@ describe("liveRewards", () => {
     expect((await run("0xHunter")).map((x) => x.dropId)).toEqual(["1"]);
   });
 
+  it("returns ids as strings even when storage hands them back as numbers", async () => {
+    await add("11247", "Pay", {});
+    r.m.set(keys.taskDropsBySpot("spot1"), { v: [11247], exp: null });   // how Upstash returns "11247"
+    const out = await run();
+    expect(out.map((x) => x.dropId)).toEqual(["11247"]);
+    expect(typeof out[0].dropId).toBe("string");
+  });
+
   it("lists a reward once even if its id was pushed twice", async () => {
     await add("1", "Buy any coffee", {});
     await r.lpush(keys.taskDropsBySpot("spot1"), "1");

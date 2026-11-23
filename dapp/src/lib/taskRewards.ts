@@ -36,7 +36,9 @@ export async function liveRewards(
     now?: number;
   },
 ): Promise<LiveReward[]> {
-  const ids = (await redis.lrange<string>(keys.taskDropsBySpot(spotId), 0, REWARDS_SCAN - 1)) ?? [];
+  // Upstash turns number-like strings into numbers on read ("11247" → 11247),
+  // so ids are normalized back to strings before anything else touches them.
+  const ids = ((await redis.lrange<string | number>(keys.taskDropsBySpot(spotId), 0, REWARDS_SCAN - 1)) ?? []).map(String);
   const unique = [...new Set(ids)].filter((id) => /^\d+$/.test(id));
   if (unique.length === 0) return [];
 

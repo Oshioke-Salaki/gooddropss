@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 import {
   ArrowLeft, Check, Clock, Coins, Compass, Flag, Flame, Gift, Hourglass, IdCard, Link2, Loader2,
   MapPin, Navigation, Puzzle, RefreshCw, Search, Star, Tag, Target, Trophy, Zap,
-  CalendarDays, Lock,
+  CalendarDays, Lock, Store,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
@@ -63,6 +63,8 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   onHunt?: (drop: Drop) => void;
+  /** Open a shop's pay sheet (shop rewards: paying is often the task). */
+  onOpenShop?: (spotId: string) => void;
 }
 
 /** Small pill tag used in the header rows (rarity, flash, chain, riddle, time). */
@@ -225,7 +227,7 @@ export function ClaimSuccessCard({
   );
 }
 
-export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: Props) {
+export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt, onOpenShop }: Props) {
   const { address } = useAccount();
   const profile     = useProfile(address);
   const myUsername  = profile?.username ?? null;
@@ -721,6 +723,20 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       style={canClaim ? { boxShadow: "0 8px 24px rgba(39,39,226,0.3)" } : undefined}
                     >
                       {claimLabel()}
+                    </button>
+                  )}
+
+                  {/* A shop reward sits on the shop's own pin, covering it on the
+                      map, so the way to pay the shop has to live here too. */}
+                  {isTaskDrop && onOpenShop && parsed?.taskMerchantId && !isSelfDrop && !taskUnlocked && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenShop(parsed.taskMerchantId!)}
+                      className="w-full h-12 rounded-full border border-line bg-white text-base/none text-heading
+                        flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface"
+                    >
+                      <Store className="w-[18px] h-[18px]" strokeWidth={2} />
+                      Pay at this shop
                     </button>
                   )}
 

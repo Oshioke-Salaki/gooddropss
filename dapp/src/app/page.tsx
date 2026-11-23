@@ -161,6 +161,14 @@ export default function HomePage() {
     setSelectedSpot(spot);
   }, []);
 
+  // From a shop reward's sheet to that shop's pay sheet (the reward's chest sits
+  // on the shop's pin, so the pin itself can't be tapped). Same path as a
+  // ?spot= deep link: the loaded list first, else fetched by id.
+  const openShop = useCallback((spotId: string) => {
+    setSelectedDrop(null);
+    setSpotDeepLinkId(spotId);
+  }, []);
+
   useEffect(() => {
     const t = window.setTimeout(() => { void loadDropG(); void loadChain(); void loadHunt(); }, 4000);
     return () => window.clearTimeout(t);
@@ -309,6 +317,7 @@ export default function HomePage() {
         onClose={() => setSelectedDrop(null)}
         onSuccess={() => { if (selectedDrop) markClaimed(selectedDrop.id); setSelectedDrop(null); checkBadgesAfterClaim(address); }}
         onHunt={(drop) => { setSelectedDrop(null); setHuntingDrop(drop); }}
+        onOpenShop={openShop}
       />
 
       {/* GoodSpots — proximity-gated G$ checkout at merchant locations */}

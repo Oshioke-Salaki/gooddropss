@@ -26,3 +26,9 @@ describe("taskLock helpers", () => {
     expect(a).not.toBe(b);
   });
 });
+
+describe("newNonce", () => {
+  it("is never all digits (storage would read it back as a number)", () => {
+    for (let i = 0; i < 2000; i++) expect(newNonce()).toMatch(/[a-f]/);
+  });
+});

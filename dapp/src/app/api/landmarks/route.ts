@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { recoverMessageAddress } from "viem";
 import { getRedis, keys } from "@/lib/redis";
 import { isAdminAddress } from "@/lib/admins";
+import { isAdminAuthed } from "@/lib/adminAuth";
 import { isVerifiedHuman } from "@/lib/identityRoot";
 import {
   cleanLandmarkName, isLandmarkCategory, landmarkCreateMessage,
@@ -24,9 +25,15 @@ function parseLandmark(raw: string | Landmark | null): Landmark | null {
 }
 
 // GET /api/landmarks            → active landmarks (lean payload for the map)
-// GET /api/landmarks?scope=all  → every landmark incl. hidden (admin management)
+// GET /api/landmarks?scope=all  → every landmark incl. hidden and pending
+//                                 suggestions (admin session only: suggestions
+//                                 carry the suggester's wallet)
 export async function GET(req: NextRequest) {
   try {
+    const isPublic = req.nextUrl.searchParams.get("scope") !== "all";
+    if (!isPublic && !(await isAdminAuthed())) {
+      return NextResponse.json({ error: "Not authorised" }, { status: 403 });
+    }
     const redis = getRedis();
     if (!redis) return NextResponse.json({ landmarks: [] });
 
@@ -38,15 +45,15 @@ export async function GET(req: NextRequest) {
       .map(parseLandmark)
       .filter((l): l is Landmark => l !== null);
 
-    const isPublic = req.nextUrl.searchParams.get("scope") !== "all";
     if (isPublic) {
       landmarks = landmarks.filter((l) => l.status === "active");
     }
-    // The public map skeleton changes rarely — let the CDN serve it for 5 min so
-    // it isn't re-fetched from a function on every visit. Admin (scope=all) stays live.
+    // CDN-cached so the map doesn't invoke a function on every visit, but only
+    // briefly: a place an admin just approved should show up in the drop screen
+    // within about a minute. Admin (scope=all) stays live.
     return NextResponse.json({ landmarks }, isPublic
-      ? { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } }
-      : undefined);
+      ? { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } }
+      : { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     console.error("[landmarks/get]", e);
     return NextResponse.json({ landmarks: [] });

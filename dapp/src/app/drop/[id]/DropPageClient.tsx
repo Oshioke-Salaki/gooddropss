@@ -828,6 +828,14 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
               </button>
             )}
 
+            {/* Shop reward: paying is often the task, and the reward's chest
+                covers the shop's pin on the map, so link straight to paying. */}
+            {isTaskDrop && parsedHint?.taskMerchantId && isActive && !isSelf && !taskUnlocked && (
+              <a href={`/?spot=${encodeURIComponent(parsedHint.taskMerchantId)}`} className={`${SECONDARY} w-full`}>
+                Pay at this shop
+              </a>
+            )}
+
             <SafetyNote />
           </>
         )}

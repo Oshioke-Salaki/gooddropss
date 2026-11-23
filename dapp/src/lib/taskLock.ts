@@ -9,8 +9,14 @@ export { approveMessage, taskCreateMessage } from "./taskCreateMsg";
 
 // 16 bytes of entropy — unguessable, so a QR nonce can't be forged, only minted.
 // Server-only (node:crypto), which is why it's not in taskShared.
+// Never all digits: Upstash reads a digits-only value back as a NUMBER (losing
+// precision), which would break the code → nonce lookup. ~1 in 3 million mints
+// would hit it; those are simply drawn again.
 export function newNonce(): string {
-  return randomBytes(16).toString("hex");
+  for (;;) {
+    const n = randomBytes(16).toString("hex");
+    if (!/^\d+$/.test(n)) return n;
+  }
 }
 
 /** Six random digits for the typed fallback. Only the shop's owner can redeem it. */
