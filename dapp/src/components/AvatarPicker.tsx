@@ -1,14 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
-import { Avatar } from "@/components/Avatar";
+import { Check, Loader2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
-import { AVATAR_IMAGES } from "@/lib/avatarPresets";
+import { AvatarStudio } from "@/components/avatar/AvatarStudio";
+import { avatarId, resolveAvatar, type AvatarChoice } from "@/lib/avatars";
 import { useProfile, refreshProfile } from "@/hooks/useProfile";
 
 // Global avatar picker. Mounted once (in Nav); opened from anywhere by dispatching
 //   window.dispatchEvent(new CustomEvent("gd:editAvatar"))
-// Picking one signs a tiny message and saves the preset id to the profile —
+// Saving signs a tiny message and stores the avatar id on the profile:
 // no uploads, no gas, no moderation.
 export function AvatarPicker() {
   const { address } = useAccount();
@@ -16,23 +17,25 @@ export function AvatarPicker() {
   const { signMessageAsync } = useSignMessage();
 
   const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState<string | null>(null); // preset id being saved ("__default__" for reset)
+  const [choice, setChoice] = useState<AvatarChoice | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    const onOpen = () => { setErr(""); setOpen(true); };
+    const onOpen = () => { setErr(""); setSaved(false); setChoice(null); setOpen(true); };
     window.addEventListener("gd:editAvatar", onOpen);
     return () => window.removeEventListener("gd:editAvatar", onOpen);
   }, []);
 
-  if (!open) return null;
+  const current = resolveAvatar(profile?.avatar, address ?? "");
+  const value = choice ?? current;
+  const changed = avatarId(value) !== (profile?.avatar ?? "");
 
-  const current = profile?.avatar ?? "";
-
-  async function choose(id: string) {
-    if (!address || saving) return;
-    const avatar = id === "__default__" ? "" : id;
-    setSaving(id); setErr("");
+  const save = useCallback(async () => {
+    if (!address || saving || !changed) return;
+    const avatar = avatarId(value);
+    setSaving(true); setErr("");
     try {
       const timestamp = Date.now();
       const message = `GoodDrops: set avatar "${avatar}" at ${timestamp}`;
@@ -42,81 +45,43 @@ export function AvatarPicker() {
         body: JSON.stringify({ address, avatar, signature, timestamp }),
       });
       const d = await res.json().catch(() => ({}));
-      if (!res.ok) { setErr(d.error ?? "Couldn't save — try again."); return; }
+      if (!res.ok) { setErr(d.error ?? "Couldn't save. Try again."); return; }
       refreshProfile(address);
-      setTimeout(() => setOpen(false), 220);
+      setSaved(true);
+      setTimeout(() => setOpen(false), 600);
     } catch (e: unknown) {
       const m = (e as { shortMessage?: string; message?: string }).shortMessage ?? "";
-      setErr(/reject|denied/i.test(m) ? "Cancelled." : "Couldn't save — try again.");
+      setErr(/reject|denied|cancel/i.test(m) ? "" : "Couldn't save. Try again.");
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
-  }
+  }, [address, saving, changed, value, signMessageAsync]);
+
+  if (!open || !address) return null;
+  const busy = saving || saved;
 
   return (
     // Above the edit-profile sheet (1400), which is where this usually opens from.
-    <Sheet title="Choose your avatar" onClose={() => setOpen(false)} dismissible={!saving} width={560} zIndex={1500}>
-      <p className="text-sm/[140%] text-nav-muted mt-3">
-        No uploads — just pick one. It shows everywhere you do.
-      </p>
-
-      {err && (
-        <p role="alert" className="text-sm/none text-danger mt-4">{err}</p>
-      )}
-
-      <div className="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-6 gap-2 mt-6">
-        <PresetTile
-          label="default"
-          selected={current === ""}
-          busy={saving === "__default__"}
-          disabled={!!saving}
-          onClick={() => choose("__default__")}
-        >
-          <Avatar address={address ?? "0x0"} size={56} ringColor="transparent" />
-        </PresetTile>
-
-        {AVATAR_IMAGES.map((a) => (
-          <PresetTile
-            key={a.id}
-            label={a.name}
-            selected={current === a.id}
-            busy={saving === a.id}
-            disabled={!!saving}
-            onClick={() => choose(a.id)}
-          >
-            <Avatar address={address ?? "0x0"} preset={a.id} size={56} ringColor="transparent" />
-          </PresetTile>
-        ))}
+    <Sheet title="Your avatar" onClose={() => setOpen(false)} dismissible={!busy} width={480} zIndex={1500}>
+      <div className="pt-6">
+        <AvatarStudio value={value} onChange={setChoice} disabled={busy} />
       </div>
-    </Sheet>
-  );
-}
 
-function PresetTile({
-  children, label, selected, busy, disabled, onClick,
-}: {
-  children: React.ReactNode; label: string; selected: boolean; busy: boolean; disabled: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={selected}
-      title={label}
-      className={`flex flex-col items-center gap-2 p-2 rounded-2xl cursor-pointer min-w-0
-        motion-safe:transition-colors disabled:cursor-wait
-        ${selected ? "bg-surface" : "hover:bg-surface/60"}`}
-    >
-      <span
-        className={`rounded-full leading-none ${selected ? "ring-2 ring-brand ring-offset-2 ring-offset-white" : ""}
-          ${busy ? "opacity-50" : ""}`}
+      <p role="status" aria-live="polite" className="h-4 mt-4 text-sm/none text-center text-danger truncate">{err}</p>
+
+      <button
+        type="button"
+        onClick={save}
+        disabled={!changed || busy}
+        className={`mt-3 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
+          flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
+          disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]
+          ${saved ? "disabled:!bg-brand" : ""}`}
       >
-        {children}
-      </span>
-      <span className="text-xs/none text-nav-muted truncate max-w-full">
-        {busy ? "Saving…" : label}
-      </span>
-    </button>
+        {saved ? <><Check className="w-5 h-5" /> Saved</>
+          : saving ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</>
+          : "Save avatar"}
+      </button>
+    </Sheet>
   );
 }

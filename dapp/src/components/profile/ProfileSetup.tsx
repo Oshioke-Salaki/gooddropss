@@ -4,7 +4,8 @@ import { usePathname } from "next/navigation";
 import { useAccount, useSignMessage } from "wagmi";
 import { AtSign, Check, Loader2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
-import { AVATAR_IMAGES } from "@/lib/avatarPresets";
+import { AvatarStudio } from "@/components/avatar/AvatarStudio";
+import { avatarId, isValidAvatarId, resolveAvatar, type AvatarChoice } from "@/lib/avatars";
 import { useProfile, invalidateProfile, refreshProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/hooks/useAuth";
 import { track } from "@/lib/analytics";
@@ -60,7 +61,9 @@ export function ProfileSetup() {
     offeredFor.current = address;
 
     const next: Step | null =
-      !profile?.avatar && !snoozed("avatar", address) ? "avatar"
+      // No explorer chosen yet (new account, or a retired avatar): offer the
+      // picker, opened on the explorer they already show.
+      !isValidAvatarId(profile?.avatar ?? "") && !snoozed("avatar", address) ? "avatar"
       : !profile?.username && !snoozed("name", address) ? "name"
       : null;
     if (!next) return;
@@ -112,23 +115,26 @@ export function AvatarStep({
   address, onDone, onSkip,
 }: { address: string; onDone: () => void; onSkip: () => void }) {
   const { signMessageAsync } = useSignMessage();
-  const [picked, setPicked] = useState<string | null>(null);
+  // Starts on the explorer they already have (their address default), so
+  // "Next" works straight away and any tweak is just a tap.
+  const [picked, setPicked] = useState<AvatarChoice>(() => resolveAvatar(null, address));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   const save = useCallback(async () => {
-    if (!picked || saving) return;
+    if (saving) return;
+    const avatar = avatarId(picked);
     setSaving(true);
     setError("");
     try {
       const timestamp = Date.now();
-      const message = `GoodDrops: set avatar "${picked}" at ${timestamp}`;
+      const message = `GoodDrops: set avatar "${avatar}" at ${timestamp}`;
       const signature = await signMessageAsync({ message });
       const res = await fetch("/api/profile/avatar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, avatar: picked, signature, timestamp }),
+        body: JSON.stringify({ address, avatar, signature, timestamp }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setError(data.error ?? "Couldn't save your avatar. Try again."); return; }
@@ -150,7 +156,7 @@ export function AvatarStep({
 
   return (
     <Sheet
-      title="Choose an avatar"
+      title="Pick your explorer"
       onClose={onSkip}
       dismissible={!busy}
       zIndex={1600}
@@ -166,7 +172,9 @@ export function AvatarStep({
         </button>
       }
     >
-      <AvatarGrid value={picked} onChange={setPicked} disabled={busy} className="pt-6" />
+      <div className="pt-6">
+        <AvatarStudio value={picked} onChange={setPicked} disabled={busy} />
+      </div>
 
       <p
         role="status"
@@ -179,7 +187,7 @@ export function AvatarStep({
       <button
         type="button"
         onClick={save}
-        disabled={!picked || busy}
+        disabled={busy}
         className="mt-3 w-full h-14 rounded-full bg-brand text-white text-base/none cursor-pointer
           flex items-center justify-center gap-2 motion-safe:transition-colors hover:bg-brand/90
           disabled:bg-[#A4A4A4] disabled:cursor-not-allowed disabled:hover:bg-[#A4A4A4]"
@@ -193,47 +201,6 @@ export function AvatarStep({
         You can always change your avatar within your profile page.
       </p>
     </Sheet>
-  );
-}
-
-/** The 3-up picker (4-up on phones so it fits without scrolling). */
-export function AvatarGrid({
-  value, onChange, disabled, className = "",
-}: { value: string | null; onChange: (id: string) => void; disabled?: boolean; className?: string }) {
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Choose an avatar"
-      className={`grid grid-cols-4 lg:grid-cols-3 gap-4 lg:gap-5 ${className}`}
-    >
-      {AVATAR_IMAGES.map((a) => {
-        const on = value === a.id;
-        return (
-          <button
-            key={a.id}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            aria-label={a.name}
-            disabled={disabled}
-            onClick={() => onChange(a.id)}
-            className={`relative aspect-square w-full rounded-full overflow-hidden cursor-pointer
-              motion-safe:transition-[box-shadow,transform] disabled:cursor-wait
-              ${on ? "ring-2 ring-brand" : "hover:ring-2 hover:ring-line motion-safe:hover:scale-[1.03]"}`}
-            style={{ background: a.bg }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={a.src}
-              alt=""
-              draggable={false}
-              onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
-              className="absolute inset-0 w-full h-full object-cover select-none"
-            />
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

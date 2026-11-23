@@ -5,7 +5,8 @@ import { AtSign } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
 import { Avatar } from "@/components/Avatar";
-import { AvatarGrid } from "./ProfileSetup";
+import { AvatarStudio } from "@/components/avatar/AvatarStudio";
+import { avatarId, resolveAvatar } from "@/lib/avatars";
 import { useProfile, invalidateProfile, refreshProfile } from "@/hooks/useProfile";
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,24}$/;
@@ -149,7 +150,13 @@ export function EditProfileModal({ address, onClose }: Props) {
     <Sheet title="Edit your profile" onClose={onClose} dismissible={!saving}>
       {/* ── Avatar ─────────────────────────────────────────────────────────── */}
       {picking ? (
-        <AvatarGrid value={selected} onChange={setAvatar} disabled={saving} className="pt-6 pb-6" />
+        <div className="pt-6 pb-6">
+          <AvatarStudio
+            value={resolveAvatar(selected, address)}
+            onChange={(c) => setAvatar(avatarId(c))}
+            disabled={saving}
+          />
+        </div>
       ) : (
         <div className="flex flex-col items-center pt-6 pb-6">
           <Avatar

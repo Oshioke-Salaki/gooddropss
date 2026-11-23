@@ -5,7 +5,7 @@ import { useAccount } from "wagmi";
 export interface Profile {
   username?: string;
   createdAt?: number;
-  /** chosen preset avatar id (see lib/avatarPresets). Absent = generated avatar. */
+  /** chosen explorer avatar id `ex-cNN-tN-bN` (see lib/avatars). Absent or retired = address default. */
   avatar?: string;
 }
 

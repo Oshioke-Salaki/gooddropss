@@ -473,8 +473,8 @@ map. Special drops layer badges on the chest (⚡ flash, 🔗 chain, ⭐ campaig
 🧩 riddle), and a cluster of drops renders as a 💰 hoard with a count. Drop
 markers are crisp inline SVG, so they stay sharp at any zoom.
 
-People now have **generated avatars** too — deterministic two-tone gradients
-with a monogram, shown on the profile and leaderboard. On the profile the avatar
+People have **avatars** too (since Nov 2026, the explorer set: see section 27),
+shown on the profile and leaderboard. On the profile the avatar
 carries a **rank ring + badge that levels up** (🌟 → 🔥 → 👑 as claims grow), so
 status is visible at a glance.
 
@@ -863,3 +863,31 @@ wallet signature for every customer. Now:
 instead of five means customers actually finish, and a busy shop can serve a
 queue without a wallet prompt per person. Covered by unit tests (`taskCode`,
 `taskApprove`, `taskRewards`, `sound`).
+
+---
+
+## 27. Explorer avatars
+
+**What it is.** Every person is now a GoodDrops explorer: 12 illustrated
+characters (women and men, bucket hats, braids, headwraps, binoculars, maps),
+each in 4 skin tones, on 4 backgrounds (brand blue, orange, mint, lilac). The
+picker shows a live preview, skin tone and background swatches, and the twelve
+explorers redrawn in whatever tone and background you pick, so what you tap is
+what you get. It is the same component in onboarding, Edit profile and the
+global avatar sheet. A choice is one id (`ex-c07-t3-b2`) saved through the
+existing signed endpoint.
+
+**Old avatars.** Anyone who picked a retired emoji or 3D avatar, or never picked
+one, is shown an explorer derived from their address: random-looking, but always
+the same for that person, with no profile rewrite. They also get the "Pick your
+explorer" sheet once (opened on that explorer), which they can skip.
+
+**Assets.** Transparent busts in `public/avatars/explorer/` (512px, ~20 KB) plus
+128px copies in `sm/` that avatars of 64px or less use (leaderboards, lists).
+Generated with gpt-image-2 (one sheet per character, all four tones on it, so
+the face is identical across tones) and cut out locally.
+
+**Why it matters.** The old set (3D busts and emoji gradients) didn't look like
+GoodDrops. Explorers match the brand and the game, and the skin tones let
+everyone see themselves in it. Covered by `lib/avatars.test.ts`.
+

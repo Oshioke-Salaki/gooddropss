@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Redis } from "@upstash/redis";
 import { verifyMessage } from "viem";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
-import { isValidAvatarPreset } from "@/lib/avatarPresets";
+import { isValidAvatarId } from "@/lib/avatars";
 
 const redis = Redis.fromEnv({ retry: { retries: 1, backoff: () => 300 } });
 const SIG_WINDOW = 24 * 60 * 60 * 1000; // 24h — cosmetic, anti-replay only
@@ -22,8 +22,9 @@ export async function POST(req: NextRequest) {
   if (!address || !signature || !timestamp) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
-  // "" clears the avatar; anything else must be a known preset.
-  if (avatar !== "" && !isValidAvatarPreset(avatar)) {
+  // "" clears the choice (back to the address default); anything else must be
+  // a current explorer id (`ex-cNN-tN-bN`).
+  if (avatar !== "" && !isValidAvatarId(avatar)) {
     return NextResponse.json({ error: "Unknown avatar" }, { status: 400 });
   }
   if (Math.abs(Date.now() - timestamp) > SIG_WINDOW) {
