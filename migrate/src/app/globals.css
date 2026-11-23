@@ -1,33 +1,52 @@
 @import "tailwindcss";
 
-:root {
-  --cream: #f5f4f0;
-  --lime: #bffd00;
-  --ink: #111111;
+/* The GoodDrops 2026 design language, shared with the main app (dapp/):
+   DM Sans, brand blue, white rounded cards on a soft grey page, pill controls.
+   Token names and values match dapp/src/app/globals.css so classes read the same. */
+
+/* Self-hosted DM Sans (SIL Open Font License 1.1, see /public/fonts/LICENSE.txt). */
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/dm-sans-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/dm-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --color-brand: #2727E2;
+  --color-brand-soft: #E9E9FC;
+  --color-heading: #121607;
+  --color-nav-muted: #6B6E63;
+  --color-nav-active: #1B1B1B;
+  --color-nav-controls: #ECECEC;
+  --color-line: #F0F0F0;
+  --color-surface: #F5F5F5;
+  --color-success: #16A34A;
+  --color-danger: #C81E1E;
 }
 
 html, body {
-  background: var(--cream);
-  color: var(--ink);
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-heading);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   margin: 0;
 }
 
-* { box-sizing: border-box; }
-
-@keyframes spin { to { transform: rotate(360deg); } }
-.spin { animation: spin 0.8s linear infinite; }
-
-@keyframes pop {
-  0% { transform: scale(0) rotate(-10deg); opacity: 0; }
-  60% { transform: scale(1.12) rotate(4deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0); opacity: 1; }
-}
-.pop { animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-
-@keyframes rise {
-  from { transform: translateY(12px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-.rise { animation: rise 0.4s ease both; }
+/* Gentle entrances; everything rests for people who prefer less motion. */
+@keyframes rise { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rise { animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.06); opacity: 1; } 100% { transform: none; } }
+.pop { animation: pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@media (prefers-reduced-motion: reduce) { .rise, .pop { animation: none; } }

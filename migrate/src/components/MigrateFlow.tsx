@@ -513,704 +513,585 @@ export function MigrateFlow() {
   const ctaReady = magicValid && !magicSameAsOld;
 
   return (
-    <div style={{ width: "100%", maxWidth: 440 }}>
-      {/* Top-right connected-wallet pill — copy address to request gas */}
-      {oldAddress && (
-        <button
-          onClick={() => setAddrOpen(true)}
-          style={{
-            position: "fixed", top: 16, right: 16, zIndex: 90,
-            display: "flex", alignItems: "center", gap: 8,
-            background: "#fff", border: "2px solid #111", borderRadius: 100,
-            boxShadow: "2px 2px 0 #111", padding: "7px 12px 7px 14px",
-            fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: 13,
-            color: "#111", cursor: "pointer",
-          }}
-          title="Copy your wallet address"
-        >
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
-          <span style={{ fontFamily: "ui-monospace, monospace" }}>{short(oldAddress)}</span>
-          <span style={{
-            marginLeft: 2, padding: "2px 7px", background: "#111", color: "#BFFD00",
-            borderRadius: 100, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap",
-          }}>
-            {fmtG$(oldBalance)} G$
-          </span>
-        </button>
-      )}
-
-      <AnimatePresence mode="wait">
-        {/* STEP: email */}
-        {step === "email" && (
-          <motion.div key="email" className="rise" style={card}>
-            <Badge icon={<ShieldCheck size={13} />}>{renewMode ? "Renew" : "Welcome back"}</Badge>
-            {renewMode ? (
-              <>
-                <h1 style={h1}>Renew your verification</h1>
-                <p style={sub}>
-                  Your GoodDrops account is linked to the wallet you first verified with (for example on
-                  Focus Pet). GoodDollar renews it on that wallet. Sign in with the email you used there and
-                  we&apos;ll open the face scan. Your GoodDrops account is covered again straight after.
-                </p>
-              </>
-            ) : (
-              <>
-                <h1 style={h1}>Bring your verified account to GoodDrops</h1>
-                <p style={sub}>
-                  You already face-verified with GoodDollar. Link it to your new GoodDrops wallet
-                  in under 2 minutes, with no new face scan.
-                </p>
-              </>
-            )}
-            <label style={fieldLabel}>Your email</label>
-            <div style={{ position: "relative" }}>
-              <Mail size={18} style={inputIcon} />
-              <input
-                type="email" value={email} autoFocus disabled={busy}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && emailValid && !busy && handleEmail()}
-                placeholder="you@email.com" style={input}
-              />
-            </div>
-            {err && <ErrorLine>{err}</ErrorLine>}
-            <button onClick={handleEmail} disabled={!emailValid || busy} style={btn(emailValid && !busy)}>
-              {busy ? <><Loader2 size={18} className="spin" /> Checking your account…</>
-                    : <>Continue <ArrowRight size={18} /></>}
-            </button>
-
-            {/* Alternative: skip the email lookup and connect the verified wallet
-                directly via Privy's wallet modal (MetaMask, WalletConnect, …). */}
-            <div style={dividerRow}><span style={dividerLine} /><span style={dividerText}>or</span><span style={dividerLine} /></div>
-            {/* Not disabled on privyPending: if the user cancels Privy's modal we
-                must let them click again (otherwise the button stays stuck). */}
-            <button onClick={connectWallet} disabled={busy} style={secondaryBtn}>
-              {privyPending ? <Loader2 size={16} className="spin" /> : <Wallet size={16} />}
-              Connect a wallet instead
-            </button>
-
-            <p style={fine}>Use the same email as your previous app (like Focus Pet), or connect the wallet you verified with.</p>
-          </motion.div>
-        )}
-
-        {/* STEP: connect old wallet */}
-        {step === "connectOld" && (
-          <motion.div key="connect" className="rise" style={card}>
-            <Badge icon={<Wallet size={13} />}>Step 1 of 2</Badge>
-            <h1 style={h1}>Sign in to your old wallet</h1>
-            <p style={sub}>
-              We found your account. Sign in with your{" "}
-              <b>{authType === "privy" ? "email wallet" : "Web3Auth account"}</b> so it can
-              {renewMode ? " do the face scan." : " authorize the link."}
-            </p>
-            {oldHint && (
-              <div style={hintBox}>
-                <Wallet size={15} />
-                <span>Your wallet <Mono>{short(oldHint)}</Mono></span>
-              </div>
-            )}
-            {err && <ErrorLine>{err}</ErrorLine>}
-            {authType === "privy" ? (
-              <button onClick={connectPrivy} style={btn(true)}>
-                <Mail size={18} /> {privyAuthed ? "Continue" : "Sign in with email"}
-              </button>
-            ) : (
-              <>
-                <button onClick={connectWeb3Auth} disabled={busy} style={btn(!busy)}>
-                  {busy ? <Loader2 size={18} className="spin" /> : <Wallet size={18} />}
-                  {busy ? "Opening…" : "Sign in with Web3Auth"}
-                </button>
-                {popupBlocked && (
-                  <button onClick={connectWeb3AuthModal} disabled={busy} style={{ ...secondaryBtn, marginTop: 10 }}>
-                    <Wallet size={16} /> Open the Web3Auth window instead
-                  </button>
-                )}
-              </>
-            )}
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Use a different email"}</button>
-          </motion.div>
-        )}
-
-        {/* STEP: checking wallet on-chain */}
-        {step === "checkingWallet" && (
-          <motion.div key="checking" className="rise" style={card}>
-            <Working title="Checking your wallet" msg="Reading your GoodDollar verification and G$ balance…" />
-          </motion.div>
-        )}
-
-        {/* STEP: lapsed verification — must re-verify BEFORE linking.
-            connectAccount() is onlyWhitelisted, so this is a hard gate, not a
-            nicety. The old copy ("not verified, here's a rescue") would have had
-            these users sweep their G$ and walk away from a real identity. */}
-        {step === "reverify" && (
-          <motion.div key="reverify" className="rise" style={card}>
-            <Badge icon={<ShieldCheck size={13} />}>One quick step</Badge>
-
-            <div style={{
-              display: "flex", gap: 10, alignItems: "flex-start",
-              background: "#FFF4E0", border: "2px solid #FFB020",
-              borderRadius: 14, padding: "12px 14px", marginTop: 14,
-            }}>
-              <BadgeCheck size={18} style={{ flexShrink: 0, marginTop: 1, color: "#8a6500" }} />
-              <span style={{ fontSize: 13, lineHeight: 1.55, color: "#7a5a00", textAlign: "left" }}>
-                {identity.isProbation ? (
-                  <><b>Good news: you are face-verified.</b> GoodDollar only keeps a
-                  first-time verification active for <b>3 days</b>, and yours has since
-                  run out. Renew once and it lasts about <b>6 months</b>.</>
-                ) : (
-                  <><b>Good news: you are face-verified.</b> GoodDollar asks for a quick
-                  face scan every few months, and yours is due. It only takes a minute.</>
-                )}
+    <>
+      {/* Top bar: the GoodDrops lockup, and once signed in, the old wallet (tap
+          to copy its address and see balances, e.g. to send it gas). */}
+      <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur-md">
+        <div className="mx-auto max-w-[1080px] h-[72px] px-4 lg:px-6 flex items-center justify-between gap-3">
+          <a href={GOODDROPS_URL} className="flex items-center gap-2 text-brand text-xl/none font-bold tracking-[-0.02em] shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark.svg" alt="" width={28} height={28} className="w-7 h-7" />
+            GoodDrops
+          </a>
+          {oldAddress && (
+            <button
+              type="button"
+              onClick={() => setAddrOpen(true)}
+              title="Your old wallet: copy its address"
+              className="h-11 pl-3.5 pr-1.5 rounded-full bg-white shadow-[0px_0px_12px_0px_#0000000A] flex items-center gap-2 text-sm/none text-heading cursor-pointer motion-safe:transition-colors hover:bg-white/80"
+            >
+              <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+              <span className="font-mono text-[13px]">{short(oldAddress)}</span>
+              <span className="h-8 px-3 rounded-full bg-brand-soft text-brand text-xs/none flex items-center whitespace-nowrap">
+                {fmtG$(oldBalance)} G$
               </span>
-            </div>
-
-            <h1 style={{ ...h1, marginTop: 16 }}>{renewMode ? "Renew your verification" : "Re-verify to keep your identity"}</h1>
-            <p style={sub}>
-              Your identity lives on <Mono>{short(oldAddress)}</Mono>, so this is the wallet that
-              does the face scan.{" "}
-              {renewMode
-                ? <>Your GoodDrops account is linked to it, so it&apos;s covered again as soon as you&apos;re done.</>
-                : <>That&apos;s what lets us move it to your new one.</>}
-              {oldBalance > 0n && <> Your <b>{fmtG$(oldBalance)} G$</b> is safe.</>}
-            </p>
-
-            <ol style={{
-              margin: "14px 0 0", padding: "14px 16px 14px 32px",
-              background: "#F3FFD1", border: "2px solid #BFFD00", borderRadius: 14,
-              fontSize: 13, lineHeight: 1.7, textAlign: "left", color: "#111",
-            }}>
-              <li>Tap <b>Start the face scan</b> (opens in a new tab).</li>
-              <li>Complete the quick face check, using the same face as before.</li>
-              <li>Come back to this tab and tap <b>I&apos;ve done it</b>.</li>
-            </ol>
-
-            {err && <ErrorLine>{err}</ErrorLine>}
-
-            <button
-              onClick={startReverify}
-              disabled={fvBusy}
-              style={{ ...btn(!fvBusy), marginTop: 14 }}
-            >
-              {fvBusy
-                ? <><Loader2 size={17} className="spin" /> Opening…</>
-                : <><ShieldCheck size={17} /> Start the face scan</>}
             </button>
+          )}
+        </div>
+      </header>
 
-            <button
-              onClick={recheckIdentity}
-              disabled={rechecking}
-              style={{ ...secondaryBtn, marginTop: 10, boxShadow: "2px 2px 0 #111", cursor: rechecking ? "wait" : "pointer" }}
-            >
-              {rechecking
-                ? <><Loader2 size={16} className="spin" /> Checking…</>
-                : <><Check size={16} /> I&apos;ve done it, check again</>}
-            </button>
+      <div className="flex-1 flex items-start sm:items-center justify-center px-4 pt-6 pb-8">
+        <div className="w-full max-w-[440px]">
+          <AnimatePresence mode="wait">
+            {/* STEP: email */}
+            {step === "email" && (
+              <motion.div key="email" className={`rise ${CARD}`}>
+                <Badge icon={<ShieldCheck size={14} />}>{renewMode ? "Renew" : "Welcome back"}</Badge>
+                {renewMode ? (
+                  <>
+                    <h1 className={H1}>Renew your verification</h1>
+                    <p className={SUB}>
+                      Your GoodDrops account is linked to the wallet you first verified with (for example on
+                      Focus Pet). GoodDollar renews it on that wallet. Sign in with the email you used there and
+                      we&apos;ll open the face scan. Your GoodDrops account is covered again straight after.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h1 className={H1}>Bring your verified account to GoodDrops</h1>
+                    <p className={SUB}>
+                      You already face-verified with GoodDollar. Link it to your new GoodDrops wallet
+                      in under 2 minutes, with no new face scan.
+                    </p>
+                  </>
+                )}
+                <label htmlFor="email" className={LABEL}>Your email</label>
+                <div className="relative">
+                  <Mail size={18} className={INPUT_ICON} />
+                  <input
+                    id="email" type="email" inputMode="email" autoComplete="email" value={email} autoFocus disabled={busy}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && emailValid && !busy && handleEmail()}
+                    placeholder="you@email.com" className={INPUT}
+                  />
+                </div>
+                {err && <ErrorLine>{err}</ErrorLine>}
+                <button type="button" onClick={handleEmail} disabled={!emailValid || busy} className={`${PRIMARY} mt-4`}>
+                  {busy ? <><Loader2 size={18} className="animate-spin" /> Checking your account…</>
+                        : <>Continue <ArrowRight size={18} /></>}
+                </button>
 
-            {/* Escape hatch. Deliberately understated and honest about the cost —
-                sweeping abandons a recoverable identity, so it must not look like
-                the easy default. */}
-            {oldBalance > 0n && !renewMode && (
-              <button
-                onClick={() => { setMode("rescue"); setStep("pasteMagic"); setErr(""); }}
-                style={{ ...ghostBtn, marginTop: 12 }}
-              >
-                Skip — just move my {fmtG$(oldBalance)} G$ (identity stays behind)
-              </button>
+                {/* Alternative: skip the email lookup and connect the verified wallet
+                    directly via Privy's wallet modal (MetaMask, WalletConnect, …). */}
+                <div className="flex items-center gap-3 my-4" aria-hidden>
+                  <span className="flex-1 h-px bg-line" /><span className="text-xs/none text-nav-muted">or</span><span className="flex-1 h-px bg-line" />
+                </div>
+                {/* Not disabled on privyPending: if the user cancels Privy's modal we
+                    must let them click again (otherwise the button stays stuck). */}
+                <button type="button" onClick={connectWallet} disabled={busy} className={SECONDARY}>
+                  {privyPending ? <Loader2 size={16} className="animate-spin" /> : <Wallet size={16} />}
+                  Connect a wallet instead
+                </button>
+
+                <p className={FINE}>Use the same email as your previous app (like Focus Pet), or connect the wallet you verified with.</p>
+              </motion.div>
             )}
 
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
-          </motion.div>
-        )}
-
-        {/* STEP: paste new wallet */}
-        {step === "pasteMagic" && (
-          <motion.div key="paste" className="rise" style={card}>
-            <Badge icon={<ClipboardPaste size={13} />}>Step 2 of 2</Badge>
-            {mode === "link" ? (
-              <>
-                <h1 style={h1}>Paste your new GoodDrops wallet</h1>
-                <p style={sub}>
-                  Wallet <Mono>{short(oldAddress)}</Mono> is verified ✓
-                  {oldBalance > 0n && <> and holds <b>{fmtG$(oldBalance)} G$</b></>}.
-                  Paste your new GoodDrops wallet — we&apos;ll link your identity to it
-                  {oldBalance > 0n ? " and move your G$ over" : ""}.
+            {/* STEP: connect old wallet */}
+            {step === "connectOld" && (
+              <motion.div key="connect" className={`rise ${CARD}`}>
+                <Badge icon={<Wallet size={14} />}>Step 1 of 2</Badge>
+                <h1 className={H1}>Sign in to your old wallet</h1>
+                <p className={SUB}>
+                  We found your account. Sign in with your{" "}
+                  <b className="font-medium text-heading">{authType === "privy" ? "email wallet" : "Web3Auth account"}</b> so it can
+                  {renewMode ? " do the face scan." : " authorize the link."}
                 </p>
-              </>
-            ) : (
-              <>
-                <div style={rescueBox}>
-                  <Coins size={18} style={{ flexShrink: 0 }} />
+                {oldHint && (
+                  <div className={`${INFO} flex items-center gap-2.5`}>
+                    <Wallet size={16} className="text-nav-muted shrink-0" />
+                    <span>Your wallet <Mono>{short(oldHint)}</Mono></span>
+                  </div>
+                )}
+                {err && <ErrorLine>{err}</ErrorLine>}
+                {authType === "privy" ? (
+                  <button type="button" onClick={connectPrivy} className={`${PRIMARY} mt-4`}>
+                    <Mail size={18} /> {privyAuthed ? "Continue" : "Sign in with email"}
+                  </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={connectWeb3Auth} disabled={busy} className={`${PRIMARY} mt-4`}>
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : <Wallet size={18} />}
+                      {busy ? "Opening…" : "Sign in with Web3Auth"}
+                    </button>
+                    {popupBlocked && (
+                      <button type="button" onClick={connectWeb3AuthModal} disabled={busy} className={`${SECONDARY} mt-3`}>
+                        <Wallet size={16} /> Open the Web3Auth window instead
+                      </button>
+                    )}
+                  </>
+                )}
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Use a different email"}</GhostButton>
+              </motion.div>
+            )}
+
+            {/* STEP: checking wallet on-chain */}
+            {step === "checkingWallet" && (
+              <motion.div key="checking" className={`rise ${CARD}`}>
+                <Working title="Checking your wallet" msg="Reading your GoodDollar verification and G$ balance…" />
+              </motion.div>
+            )}
+
+            {/* STEP: lapsed verification — must re-verify BEFORE linking.
+                connectAccount() is onlyWhitelisted, so this is a hard gate. */}
+            {step === "reverify" && (
+              <motion.div key="reverify" className={`rise ${CARD}`}>
+                <Badge icon={<ShieldCheck size={14} />}>One quick step</Badge>
+
+                <div className={`${NOTE_WARN} flex gap-3 items-start`}>
+                  <BadgeCheck size={18} className="shrink-0 mt-0.5" />
                   <span>
-                    {identity.state === "lapsed" ? (
-                      // They got here by explicitly skipping the re-verify step. Do
-                      // NOT tell them they have no identity — they do, and it stays
-                      // recoverable. Say exactly what they're giving up, and that
-                      // they can come back.
-                      <>
-                        Moving your <b>{fmtG$(oldBalance)} G$</b> only. Your verified identity
-                        stays on <Mono>{short(oldAddress)}</Mono> — re-verify any time to link it
-                        to your new wallet.
-                      </>
+                    {identity.isProbation ? (
+                      <><b className="font-medium">Good news: you are face-verified.</b> GoodDollar only keeps a
+                      first-time verification active for <b className="font-medium">3 days</b>, and yours has since
+                      run out. Renew once and it lasts about <b className="font-medium">6 months</b>.</>
                     ) : (
-                      <>
-                        This wallet has never been GoodDollar-verified, so there&apos;s no identity
-                        to link — but it holds <b>{fmtG$(oldBalance)} G$</b>. Paste your new wallet
-                        to move your G$ out.
-                      </>
+                      <><b className="font-medium">Good news: you are face-verified.</b> GoodDollar asks for a quick
+                      face scan every few months, and yours is due. It only takes a minute.</>
                     )}
                   </span>
                 </div>
-                <h1 style={{ ...h1, marginTop: 16 }}>Rescue your G$</h1>
-                <p style={sub}>Enter the wallet you want your <b>{fmtG$(oldBalance)} G$</b> sent to.</p>
-                {identity.state === "lapsed" && (
-                  <button
-                    onClick={() => { setStep("reverify"); setErr(""); }}
-                    style={{ ...secondaryBtn, marginBottom: 4 }}
-                  >
-                    <ShieldCheck size={16} /> Actually — re-verify and keep my identity
+
+                <h1 className={`${H1} mt-5`}>{renewMode ? "Renew your verification" : "Re-verify to keep your identity"}</h1>
+                <p className={SUB}>
+                  Your identity lives on <Mono>{short(oldAddress)}</Mono>, so this is the wallet that
+                  does the face scan.{" "}
+                  {renewMode
+                    ? <>Your GoodDrops account is linked to it, so it&apos;s covered again as soon as you&apos;re done.</>
+                    : <>That&apos;s what lets us move it to your new one.</>}
+                  {oldBalance > 0n && <> Your <b className="font-medium text-heading">{fmtG$(oldBalance)} G$</b> is safe.</>}
+                </p>
+
+                <ol className="mt-4 rounded-2xl bg-surface p-4 flex flex-col gap-3 text-sm/[140%] text-heading">
+                  {[
+                    <>Tap <b className="font-medium">Start the face scan</b> (opens in a new tab).</>,
+                    <>Complete the quick face check, using the same face as before.</>,
+                    <>Come back to this tab and tap <b className="font-medium">I&apos;ve done it</b>.</>,
+                  ].map((t, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <span className="w-6 h-6 shrink-0 rounded-full bg-brand text-white text-xs/none flex items-center justify-center">{i + 1}</span>
+                      <span className="pt-0.5">{t}</span>
+                    </li>
+                  ))}
+                </ol>
+
+                {err && <ErrorLine>{err}</ErrorLine>}
+
+                <button type="button" onClick={startReverify} disabled={fvBusy} className={`${PRIMARY} mt-4`}>
+                  {fvBusy
+                    ? <><Loader2 size={18} className="animate-spin" /> Opening…</>
+                    : <><ShieldCheck size={18} /> Start the face scan</>}
+                </button>
+
+                <button type="button" onClick={recheckIdentity} disabled={rechecking} className={`${SECONDARY} mt-3`}>
+                  {rechecking
+                    ? <><Loader2 size={16} className="animate-spin" /> Checking…</>
+                    : <><Check size={16} /> I&apos;ve done it, check again</>}
+                </button>
+
+                {/* Escape hatch. Deliberately understated and honest about the cost:
+                    sweeping abandons a recoverable identity. */}
+                {oldBalance > 0n && !renewMode && (
+                  <GhostButton onClick={() => { setMode("rescue"); setStep("pasteMagic"); setErr(""); }}>
+                    Skip, just move my {fmtG$(oldBalance)} G$ (identity stays behind)
+                  </GhostButton>
+                )}
+
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out and start over"}</GhostButton>
+              </motion.div>
+            )}
+
+            {/* STEP: paste new wallet */}
+            {step === "pasteMagic" && (
+              <motion.div key="paste" className={`rise ${CARD}`}>
+                <Badge icon={<ClipboardPaste size={14} />}>Step 2 of 2</Badge>
+                {mode === "link" ? (
+                  <>
+                    <h1 className={H1}>Paste your new GoodDrops wallet</h1>
+                    <p className={SUB}>
+                      Wallet <Mono>{short(oldAddress)}</Mono> is verified
+                      {oldBalance > 0n && <> and holds <b className="font-medium text-heading">{fmtG$(oldBalance)} G$</b></>}.
+                      Paste your new GoodDrops wallet and we&apos;ll link your identity to it
+                      {oldBalance > 0n ? " and move your G$ over" : ""}.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className={`${NOTE_WARN} flex gap-3 items-start`}>
+                      <Coins size={18} className="shrink-0 mt-0.5" />
+                      <span>
+                        {identity.state === "lapsed" ? (
+                          // They got here by explicitly skipping the re-verify step: they
+                          // DO have an identity, and it stays recoverable.
+                          <>
+                            Moving your <b className="font-medium">{fmtG$(oldBalance)} G$</b> only. Your verified identity
+                            stays on <Mono>{short(oldAddress)}</Mono>: re-verify any time to link it
+                            to your new wallet.
+                          </>
+                        ) : (
+                          <>
+                            This wallet has never been GoodDollar-verified, so there&apos;s no identity
+                            to link, but it holds <b className="font-medium">{fmtG$(oldBalance)} G$</b>. Paste your new wallet
+                            to move your G$ out.
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <h1 className={`${H1} mt-5`}>Rescue your G$</h1>
+                    <p className={SUB}>Enter the wallet you want your <b className="font-medium text-heading">{fmtG$(oldBalance)} G$</b> sent to.</p>
+                    {identity.state === "lapsed" && (
+                      <button type="button" onClick={() => { setStep("reverify"); setErr(""); }} className={`${SECONDARY} mt-4`}>
+                        <ShieldCheck size={16} /> Re-verify instead and keep my identity
+                      </button>
+                    )}
+                  </>
+                )}
+                <div className={`${INFO} mt-4`}>
+                  <b className="font-medium text-heading">Where to find it:</b> open GoodDrops, tap your wallet, then <b className="font-medium text-heading">Copy address</b>.
+                </div>
+
+                {/* Low-gas warning: the old wallet needs CELO to sign the link transaction. */}
+                {lowGas && (
+                  <button type="button" onClick={() => setAddrOpen(true)} className={`${NOTE_WARN} mt-3 w-full flex gap-3 items-start text-left cursor-pointer motion-safe:transition-opacity hover:opacity-90`}>
+                    <Fuel size={18} className="shrink-0 mt-0.5" />
+                    <span><b className="font-medium">Your old wallet is low on CELO for gas.</b> Tap to copy its address and send a little CELO.</span>
                   </button>
                 )}
-              </>
-            )}
-            <div style={howBox}>
-              <b>Where to find it:</b> open GoodDrops → tap your wallet → <b>Copy address</b>.
-            </div>
 
-            {/* Low-gas warning — the old wallet needs CELO to sign the link tx */}
-            {lowGas && (
-              <button type="button" onClick={() => setAddrOpen(true)} style={gasWarn}>
-                <Fuel size={16} style={{ flexShrink: 0 }} />
-                <span style={{ textAlign: "left", lineHeight: 1.4 }}>
-                  <b>Your old wallet is low on CELO for gas.</b> Tap to copy its address and send a little CELO.
-                </span>
-              </button>
-            )}
+                <label htmlFor="magic" className={LABEL}>New wallet address</label>
+                <div className="relative">
+                  <Wallet size={18} className={INPUT_ICON} />
+                  <input
+                    id="magic"
+                    value={magicInput}
+                    onChange={(e) => setMagicIn(e.target.value)}
+                    placeholder="0x…" spellCheck={false} autoCapitalize="off" autoCorrect="off"
+                    aria-invalid={!!magicInput && !magicValid}
+                    className={`${INPUT} font-mono text-sm pr-12 ${magicInput && !magicValid ? "border-danger/60" : ctaReady ? "border-success/60" : ""}`}
+                  />
+                  {ctaReady && <Check size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-success" />}
+                </div>
+                {ctaReady && (
+                  <p className="mt-2 px-1 text-xs/[150%] text-success break-all">Sending to {getAddress(magicInput.trim())}</p>
+                )}
+                {magicSameAsOld && <ErrorLine>That&apos;s your old wallet. Paste your NEW one.</ErrorLine>}
+                {err && <ErrorLine>{err}</ErrorLine>}
 
-            <label style={fieldLabel}>New wallet address</label>
-            <div style={{ position: "relative" }}>
-              <Wallet size={18} style={inputIcon} />
-              <input
-                value={magicInput}
-                onChange={(e) => setMagicIn(e.target.value)}
-                placeholder="0x…" spellCheck={false}
-                style={{
-                  ...input, fontFamily: "ui-monospace, monospace", fontSize: 14,
-                  borderColor: magicInput && !magicValid ? "#FF3B3B" : ctaReady ? "#22c55e" : "#111",
-                }}
-              />
-              {ctaReady && (
-                <Check size={18} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", color: "#22c55e" }} />
-              )}
-            </div>
-            {ctaReady && (
-              <p style={{ ...fine, textAlign: "left", margin: "6px 0 0", color: "#16a34a" }}>
-                Sending to {getAddress(magicInput.trim())}
-              </p>
-            )}
-            {magicSameAsOld && <ErrorLine>That&apos;s your old wallet — paste your NEW one.</ErrorLine>}
-            {err && <ErrorLine>{err}</ErrorLine>}
+                {/* Optional G$ sweep: verified users can leave their G$ in the old wallet. */}
+                {mode === "link" && oldBalance > 0n && (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={sweepEnabled}
+                    onClick={() => setSweep((v) => !v)}
+                    className={`mt-4 w-full flex items-center gap-3 rounded-2xl border p-4 text-left cursor-pointer motion-safe:transition-colors
+                      ${sweepEnabled ? "border-brand/30 bg-brand-soft/60" : "border-line bg-white hover:bg-surface"}`}
+                  >
+                    <span className={`w-6 h-6 shrink-0 rounded-lg flex items-center justify-center motion-safe:transition-colors
+                      ${sweepEnabled ? "bg-brand text-white" : "border border-[#D4D4D4] bg-white"}`}>
+                      {sweepEnabled && <Check size={14} strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm/[130%] text-heading">Also move my {fmtG$(oldBalance)} G$</span>
+                      <span className="block mt-1 text-xs/[140%] text-nav-muted">
+                        {sweepEnabled ? "Recommended: sends your G$ to the new wallet" : "Your G$ will stay in your old wallet"}
+                      </span>
+                    </span>
+                  </button>
+                )}
 
-            {/* Optional G$ sweep — verified users can leave their G$ in the old wallet */}
-            {mode === "link" && oldBalance > 0n && (
-              <button
-                type="button"
-                onClick={() => setSweep((v) => !v)}
-                style={{
-                  ...toggleRow,
-                  borderColor: sweepEnabled ? "#111" : "#ddd",
-                  background: sweepEnabled ? "#F0FDE8" : "#fff",
-                }}
-              >
-                <span style={{
-                  width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                  border: "2px solid #111", background: sweepEnabled ? "#BFFD00" : "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {sweepEnabled && <Check size={14} color="#111" strokeWidth={3.5} />}
-                </span>
-                <span style={{ textAlign: "left", lineHeight: 1.35 }}>
-                  <b style={{ fontSize: 13.5 }}>Also move my {fmtG$(oldBalance)} G$</b>
-                  <span style={{ display: "block", fontSize: 11.5, color: "#888" }}>
-                    {sweepEnabled ? "Recommended — sends your G$ to the new wallet" : "Your G$ will stay in your old wallet"}
-                  </span>
-                </span>
-              </button>
+                <button type="button" onClick={onSubmit} disabled={!ctaReady || preChecking} className={`${PRIMARY} mt-4`}>
+                  {preChecking ? <><Loader2 size={18} className="animate-spin" /> Checking…</>
+                    : <>{mode === "rescue"
+                        ? "Move my G$ out"
+                        : sweepEnabled && oldBalance > 0n
+                          ? "Link and move my G$"
+                          : "Link my account"} <ArrowRight size={18} /></>}
+                </button>
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out and start over"}</GhostButton>
+              </motion.div>
             )}
 
-            <button onClick={onSubmit} disabled={!ctaReady || preChecking} style={btn(ctaReady && !preChecking)}>
-              {preChecking ? <><Loader2 size={18} className="spin" /> Checking…</>
-                : <>{mode === "rescue"
-                    ? "Move my G$ out"
-                    : sweepEnabled && oldBalance > 0n
-                      ? "Link & move my G$"
-                      : "Link my account"} <ArrowRight size={18} /></>}
-            </button>
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
-          </motion.div>
-        )}
-
-        {/* STEP: working */}
-        {step === "working" && (
-          <motion.div key="working" className="rise" style={card}>
-            <Working title={mode === "link" ? "Restoring your account" : "Moving your G$"} msg={workMsg} />
-            <p style={fine}>Approve any prompts from your old wallet. This can take a moment.</p>
-          </motion.div>
-        )}
-
-        {/* STEP: done */}
-        {step === "done" && (
-          <motion.div key="done" className="rise" style={{ ...card, textAlign: "center" }}>
-            <div className="pop" style={successCircle}><Check size={40} color="#111" strokeWidth={3} /></div>
-            <h1 style={{ ...h1, textAlign: "center" }}>
-              {mode === "link" ? "You're all set" : "G$ moved"}
-            </h1>
-            <p style={{ ...sub, textAlign: "center" }}>
-              {mode === "link" ? (
-                <>Your verified GoodDollar identity now lives on your new wallet <Mono>{short(magicInput.trim())}</Mono>.</>
-              ) : (
-                <>Your G$ is now in <Mono>{short(magicInput.trim())}</Mono>.</>
-              )}
-              {swept !== null && swept > 0n && <> We moved <b>{fmtG$(swept)} G$</b> across.</>}
-              {mode === "link" && swept === null && oldBalance > 0n && (
-                <> Your <b>{fmtG$(oldBalance)} G$</b> stayed in your old wallet — it&apos;s now linked, so you can still use it.</>
-              )}
-            </p>
-            <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>
-              Open GoodDrops <ArrowRight size={18} />
-            </a>
-            {mode === "link" && <p style={fine}>Sign in on GoodDrops with this same email — everything just works.</p>}
-          </motion.div>
-        )}
-
-        {/* STEP: renewed — the old wallet is verified again */}
-        {step === "renewed" && (
-          <motion.div key="renewed" className="rise" style={{ ...card, textAlign: "center" }}>
-            <div className="pop" style={successCircle}><Check size={40} color="#111" strokeWidth={3} /></div>
-            <h1 style={{ ...h1, textAlign: "center" }}>You&apos;re verified</h1>
-            <p style={{ ...sub, textAlign: "center" }}>
-              <Mono>{short(oldAddress)}</Mono> is verified with GoodDollar. Any GoodDrops account linked to it
-              counts as verified again right away. Go back to GoodDrops and sign in as usual.
-            </p>
-            <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>
-              Back to GoodDrops <ArrowRight size={18} />
-            </a>
-            {!renewMode && (
-              <button onClick={() => { setErr(""); setStep("pasteMagic"); if (celoBal < GAS_MIN_WEI) setAddrOpen(true); }} style={{ ...secondaryBtn, marginTop: 10 }}>
-                <Wallet size={16} /> Link it to a new GoodDrops wallet
-              </button>
+            {/* STEP: working */}
+            {step === "working" && (
+              <motion.div key="working" className={`rise ${CARD}`}>
+                <Working title={mode === "link" ? "Restoring your account" : "Moving your G$"} msg={workMsg} />
+                <p className={FINE}>Approve any prompts from your old wallet. This can take a moment.</p>
+              </motion.div>
             )}
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out"}</button>
-          </motion.div>
-        )}
 
-        {/* STEP: not found */}
-        {step === "notfound" && (
-          <motion.div key="notfound" className="rise" style={card}>
-            <Badge icon={<AlertCircle size={13} />} tone="warn">No account found</Badge>
-            <h1 style={h1}>We couldn&apos;t find your account</h1>
-            <p style={sub}>
-              This email isn&apos;t linked to a migratable wallet. If you have a new GoodDrops
-              account, you&apos;re already good to go.
-            </p>
-            <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>Go to GoodDrops <ArrowRight size={18} /></a>
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Try another email"}</button>
-          </motion.div>
-        )}
-
-        {/* STEP: nothing to do */}
-        {step === "nothingToDo" && (
-          <motion.div key="nothing" className="rise" style={card}>
-            <Badge icon={<AlertCircle size={13} />} tone="warn">Nothing to migrate</Badge>
-            <h1 style={h1}>This wallet is empty &amp; unverified</h1>
-            <p style={sub}>
-              Wallet <Mono>{short(oldAddress)}</Mono> isn&apos;t GoodDollar-verified and has no G$
-              to move. This tool is for verified accounts, or wallets with G$ to rescue.
-            </p>
-            <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>Go to GoodDrops <ArrowRight size={18} /></a>
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Try another email"}</button>
-          </motion.div>
-        )}
-
-        {/* STEP: error */}
-        {step === "error" && (
-          <motion.div key="error" className="rise" style={card}>
-            <Badge icon={<AlertCircle size={13} />} tone="warn">Hit a snag</Badge>
-            <h1 style={h1}>Let&apos;s try that again</h1>
-            <p style={sub}>{err}</p>
-            <button onClick={() => { setErr(""); setStep(oldAddress ? "pasteMagic" : "email"); }} style={btn(true)}>
-              Try again <ArrowRight size={18} />
-            </button>
-            <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Sign out & start over"}</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Copy-address modal (request gas) ─────────────────────────────── */}
-      {addrOpen && (
-        <div onClick={() => setAddrOpen(false)} style={modalScrim}>
-          <div onClick={(e) => e.stopPropagation()} className="rise" style={modalCard}>
-            <button onClick={() => setAddrOpen(false)} aria-label="Close" style={modalClose}><X size={16} /></button>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <Wallet size={18} color="#111" />
-              <p style={{ margin: 0, fontWeight: 900, fontSize: 18 }}>Your wallet</p>
-              <button
-                onClick={refreshBalances}
-                disabled={balLoading}
-                aria-label="Refresh balances"
-                title="Refresh balances"
-                style={{
-                  marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 30, height: 30, borderRadius: 8, border: "2px solid #111",
-                  background: "#fff", cursor: balLoading ? "wait" : "pointer",
-                }}
-              >
-                <RefreshCw size={14} className={balLoading ? "spin" : undefined} />
-              </button>
-            </div>
-
-            {/* Address + copy */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, marginTop: 10,
-              background: "#f5f4f0", border: "2px solid #111", borderRadius: 12, padding: "10px 12px",
-            }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", flexShrink: 0 }} />
-              <span style={{ flex: 1, fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 700, wordBreak: "break-all" }}>
-                {getAddress(oldAddress)}
-              </span>
-              <button
-                onClick={copyOldAddress}
-                aria-label="Copy address"
-                style={{
-                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-                  background: copied ? "#BFFD00" : "#111", color: copied ? "#111" : "#BFFD00",
-                  border: "none", borderRadius: 8, padding: "6px 10px",
-                  fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                }}
-              >
-                {copied ? <><Check size={13} /> Copied</> : <><Copy size={13} /> Copy</>}
-              </button>
-            </div>
-
-            {/* Balances */}
-            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-              <div style={balanceTile}>
-                <p style={balanceLabel}>G$ balance</p>
-                <p style={balanceValue}>
-                  {balLoading && oldBalance === 0n ? "…" : fmtG$(oldBalance)}
-                  <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>G$</span>
+            {/* STEP: done */}
+            {step === "done" && (
+              <motion.div key="done" className={`rise ${CARD} text-center`}>
+                <SuccessMark />
+                <h1 className={`${H1} text-center`}>{mode === "link" ? "You're all set" : "G$ moved"}</h1>
+                <p className={`${SUB} text-center`}>
+                  {mode === "link" ? (
+                    <>Your verified GoodDollar identity now lives on your new wallet <Mono>{short(magicInput.trim())}</Mono>.</>
+                  ) : (
+                    <>Your G$ is now in <Mono>{short(magicInput.trim())}</Mono>.</>
+                  )}
+                  {swept !== null && swept > 0n && <> We moved <b className="font-medium text-heading">{fmtG$(swept)} G$</b> across.</>}
+                  {mode === "link" && swept === null && oldBalance > 0n && (
+                    <> Your <b className="font-medium text-heading">{fmtG$(oldBalance)} G$</b> stayed in your old wallet. It&apos;s now linked, so you can still use it.</>
+                  )}
                 </p>
-              </div>
-              <div style={balanceTile}>
-                <p style={balanceLabel}>Gas (CELO)</p>
-                <p style={{ ...balanceValue, color: lowGas ? "#d97706" : "#111" }}>
-                  {balLoading && celoBal === 0n ? "…" : fmtCelo(celoBal)}
-                  <span style={{ fontSize: 13, color: "#888", marginLeft: 4 }}>CELO</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Gas guidance — only when it's actually low enough to block the link tx */}
-            {lowGas ? (
-              <div style={{
-                display: "flex", gap: 8, alignItems: "flex-start", marginTop: 12,
-                background: "#FFF4E0", border: "2px solid #FFB020", borderRadius: 12, padding: "11px 13px",
-              }}>
-                <Fuel size={16} color="#8a6500" style={{ flexShrink: 0, marginTop: 1 }} />
-                <span style={{ fontSize: 12.5, lineHeight: 1.5, color: "#7a5a00", textAlign: "left" }}>
-                  Linking your identity is one on-chain transaction, so this wallet needs a little{" "}
-                  <b>CELO</b> for gas. Copy the address above, send a small amount, then tap refresh.
-                  It&apos;s a fraction of a cent.
-                </span>
-              </div>
-            ) : (
-              <p style={fine}>Send CELO or G$ to the address above. Tap refresh to update.</p>
+                <a href={GOODDROPS_URL} className={`${PRIMARY} mt-6`}>Open GoodDrops <ArrowRight size={18} /></a>
+                {mode === "link" && <p className={FINE}>Sign in on GoodDrops with this same email. Everything just works.</p>}
+              </motion.div>
             )}
-          </div>
+
+            {/* STEP: renewed — the old wallet is verified again */}
+            {step === "renewed" && (
+              <motion.div key="renewed" className={`rise ${CARD} text-center`}>
+                <SuccessMark />
+                <h1 className={`${H1} text-center`}>You&apos;re verified</h1>
+                <p className={`${SUB} text-center`}>
+                  <Mono>{short(oldAddress)}</Mono> is verified with GoodDollar. Any GoodDrops account linked to it
+                  counts as verified again right away. Go back to GoodDrops and sign in as usual.
+                </p>
+                <a href={GOODDROPS_URL} className={`${PRIMARY} mt-6`}>Back to GoodDrops <ArrowRight size={18} /></a>
+                {!renewMode && (
+                  <button type="button" onClick={() => { setErr(""); setStep("pasteMagic"); if (celoBal < GAS_MIN_WEI) setAddrOpen(true); }} className={`${SECONDARY} mt-3`}>
+                    <Wallet size={16} /> Link it to a new GoodDrops wallet
+                  </button>
+                )}
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</GhostButton>
+              </motion.div>
+            )}
+
+            {/* STEP: not found */}
+            {step === "notfound" && (
+              <motion.div key="notfound" className={`rise ${CARD}`}>
+                <Badge icon={<AlertCircle size={14} />} tone="warn">No account found</Badge>
+                <h1 className={H1}>We couldn&apos;t find your account</h1>
+                <p className={SUB}>
+                  This email isn&apos;t linked to a migratable wallet. If you have a new GoodDrops
+                  account, you&apos;re already good to go.
+                </p>
+                <a href={GOODDROPS_URL} className={`${PRIMARY} mt-6`}>Go to GoodDrops <ArrowRight size={18} /></a>
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Try another email"}</GhostButton>
+              </motion.div>
+            )}
+
+            {/* STEP: nothing to do */}
+            {step === "nothingToDo" && (
+              <motion.div key="nothing" className={`rise ${CARD}`}>
+                <Badge icon={<AlertCircle size={14} />} tone="warn">Nothing to move</Badge>
+                <h1 className={H1}>This wallet is empty and unverified</h1>
+                <p className={SUB}>
+                  Wallet <Mono>{short(oldAddress)}</Mono> isn&apos;t GoodDollar-verified and has no G$
+                  to move. This tool is for verified accounts, or wallets with G$ to rescue.
+                </p>
+                <a href={GOODDROPS_URL} className={`${PRIMARY} mt-6`}>Go to GoodDrops <ArrowRight size={18} /></a>
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Try another email"}</GhostButton>
+              </motion.div>
+            )}
+
+            {/* STEP: error */}
+            {step === "error" && (
+              <motion.div key="error" className={`rise ${CARD}`}>
+                <Badge icon={<AlertCircle size={14} />} tone="warn">Hit a snag</Badge>
+                <h1 className={H1}>Let&apos;s try that again</h1>
+                <p className={SUB}>{err}</p>
+                <button type="button" onClick={() => { setErr(""); setStep(oldAddress ? "pasteMagic" : "email"); }} className={`${PRIMARY} mt-6`}>
+                  Try again <ArrowRight size={18} />
+                </button>
+                <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out and start over"}</GhostButton>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+      </div>
+
+      {/* ── Your wallet: copy the address, see balances (e.g. to send gas) ─── */}
+      {addrOpen && (
+        <Modal title="Your old wallet" onClose={() => setAddrOpen(false)}
+          action={
+            <button type="button" onClick={refreshBalances} disabled={balLoading} aria-label="Refresh balances" title="Refresh balances"
+              className="w-9 h-9 rounded-full bg-surface text-nav-muted flex items-center justify-center cursor-pointer hover:text-heading disabled:cursor-wait">
+              <RefreshCw size={15} className={balLoading ? "animate-spin" : undefined} />
+            </button>
+          }>
+          <div className="flex items-center gap-3 rounded-2xl bg-surface p-3 pl-4">
+            <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+            <span className="flex-1 min-w-0 font-mono text-[13px]/[150%] text-heading break-all">{getAddress(oldAddress)}</span>
+            <button type="button" onClick={copyOldAddress} aria-label="Copy address"
+              className={`h-9 px-3.5 shrink-0 rounded-full text-xs/none flex items-center gap-1.5 cursor-pointer motion-safe:transition-colors
+                ${copied ? "bg-success text-white" : "bg-brand text-white hover:bg-brand/90"}`}>
+              {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+            </button>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <BalanceTile label="G$ balance" value={balLoading && oldBalance === 0n ? "…" : fmtG$(oldBalance)} unit="G$" />
+            <BalanceTile label="Gas (CELO)" value={balLoading && celoBal === 0n ? "…" : fmtCelo(celoBal)} unit="CELO" warn={lowGas} />
+          </div>
+
+          {/* Gas guidance, only when it's low enough to block the link transaction. */}
+          {lowGas ? (
+            <div className={`${NOTE_WARN} mt-3 flex gap-3 items-start`}>
+              <Fuel size={18} className="shrink-0 mt-0.5" />
+              <span>
+                Linking your identity is one on-chain transaction, so this wallet needs a little{" "}
+                <b className="font-medium">CELO</b> for gas. Copy the address above, send a small amount, then tap refresh.
+                It&apos;s a fraction of a cent.
+              </span>
+            </div>
+          ) : (
+            <p className={FINE}>Send CELO or G$ to the address above. Tap refresh to update.</p>
+          )}
+        </Modal>
       )}
 
-      {/* ── Recipient already verified modal ─────────────────────────────── */}
+      {/* ── Recipient already verified ─────────────────────────────────────── */}
       {verifiedRoot && (
-        <div onClick={() => setVerifiedRoot(null)} style={modalScrim}>
-          <div onClick={(e) => e.stopPropagation()} className="rise" style={modalCard}>
-            <button onClick={() => setVerifiedRoot(null)} aria-label="Close" style={modalClose}><X size={16} /></button>
-            <div style={{ width: 64, height: 64, margin: "4px auto 14px", background: "#BFFD00", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <BadgeCheck size={34} color="#111" strokeWidth={2.5} />
-            </div>
-            <p style={{ margin: "0 0 8px", fontWeight: 900, fontSize: 20, textAlign: "center" }}>
-              That wallet is already verified
-            </p>
-            <p style={{ ...sub, textAlign: "center", margin: "0 0 18px" }}>
-              <Mono>{short(magicInput.trim())}</Mono> is already linked to a GoodDollar identity —
+        <Modal title="Already verified" onClose={() => setVerifiedRoot(null)}>
+          <div className="text-center">
+            <span className="mx-auto w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+              <BadgeCheck size={32} strokeWidth={1.75} />
+            </span>
+            <p className="mt-4 text-xl/[130%] text-heading">That wallet is already verified</p>
+            <p className={`${SUB} text-center`}>
+              <Mono>{short(magicInput.trim())}</Mono> is already linked to a GoodDollar identity, so
               there&apos;s nothing to link.
               {oldBalance > 0n
-                ? <> But your old wallet still holds <b>{fmtG$(oldBalance)} G$</b>. Want to move it over?</>
+                ? <> But your old wallet still holds <b className="font-medium text-heading">{fmtG$(oldBalance)} G$</b>. Want to move it over?</>
                 : <> You&apos;re all set.</>}
             </p>
-            {oldBalance > 0n ? (
-              <>
-                <button onClick={() => runSweepOnly(magicInput.trim())} style={btn(true)}>
-                  <Coins size={18} /> Send my {fmtG$(oldBalance)} G$ instead
-                </button>
-                <button onClick={() => setVerifiedRoot(null)} style={ghostBtn}>Cancel</button>
-              </>
-            ) : (
-              <>
-                <a href={GOODDROPS_URL} style={{ ...btn(true), textDecoration: "none" }}>
-                  Open GoodDrops <ArrowRight size={18} />
-                </a>
-                <button onClick={reset} disabled={signingOut} style={ghostBtn}>{signingOut ? "Signing out…" : "Use a different wallet"}</button>
-              </>
-            )}
           </div>
-        </div>
+          {oldBalance > 0n ? (
+            <>
+              <button type="button" onClick={() => runSweepOnly(magicInput.trim())} className={`${PRIMARY} mt-5`}>
+                <Coins size={18} /> Send my {fmtG$(oldBalance)} G$ instead
+              </button>
+              <GhostButton onClick={() => setVerifiedRoot(null)}>Cancel</GhostButton>
+            </>
+          ) : (
+            <>
+              <a href={GOODDROPS_URL} className={`${PRIMARY} mt-5`}>Open GoodDrops <ArrowRight size={18} /></a>
+              <GhostButton onClick={reset} disabled={signingOut}>{signingOut ? "Signing out…" : "Use a different wallet"}</GhostButton>
+            </>
+          )}
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
-// ── Presentational helpers ────────────────────────────────────────────────────
+// ── Design system: the same classes as the main GoodDrops app (dapp/) ─────────
+
+const CARD = "bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 sm:p-7";
+const H1 = "text-[26px]/[120%] sm:text-[28px]/[120%] text-heading tracking-[-0.01em] mb-3";
+const SUB = "text-[15px]/[155%] text-nav-muted mt-1";
+const LABEL = "block mt-5 mb-2 px-1 text-sm/none text-heading";
+const INPUT = "w-full h-14 rounded-full bg-surface border border-transparent pl-12 pr-5 text-base text-heading placeholder:text-nav-muted outline-none motion-safe:transition-colors focus:border-brand focus:bg-white disabled:opacity-60";
+const INPUT_ICON = "absolute left-5 top-1/2 -translate-y-1/2 text-nav-muted pointer-events-none";
+const PRIMARY = "w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed";
+const SECONDARY = "w-full h-12 rounded-full border border-line bg-white text-heading text-sm/none flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface disabled:opacity-60 disabled:cursor-wait";
+const FINE = "mt-4 text-xs/[150%] text-nav-muted text-center";
+const INFO = "rounded-2xl bg-surface p-4 text-sm/[150%] text-nav-muted";
+const NOTE_WARN = "rounded-2xl bg-[#FFF5E9] p-4 text-sm/[150%] text-[#8A4B00]";
+
+function GhostButton({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="mt-2 w-full min-h-11 px-4 py-3 rounded-3xl text-sm/[140%] text-nav-muted cursor-pointer motion-safe:transition-colors hover:bg-surface hover:text-heading disabled:cursor-wait">
+      {children}
+    </button>
+  );
+}
 
 function Working({ title, msg }: { title: string; msg: string }) {
   return (
-    <div style={{ textAlign: "center", padding: "12px 0" }}>
-      <Loader2 size={44} className="spin" color="#111" style={{ margin: "0 auto 18px", display: "block" }} />
-      <h1 style={{ ...h1, textAlign: "center", marginBottom: 6 }}>{title}</h1>
-      <p style={{ ...sub, textAlign: "center", minHeight: 22, margin: 0 }}>{msg}</p>
+    <div className="text-center py-3" role="status" aria-live="polite">
+      <span className="mx-auto w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+        <Loader2 size={30} className="animate-spin" />
+      </span>
+      <h1 className={`${H1} text-center mt-5`}>{title}</h1>
+      <p className={`${SUB} text-center min-h-6`}>{msg}</p>
     </div>
   );
 }
 
-function Badge({ children, icon, tone = "lime" }: { children: React.ReactNode; icon?: React.ReactNode; tone?: "lime" | "warn" }) {
+function SuccessMark() {
   return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 6,
-      background: tone === "lime" ? "#111" : "#FFF3E0",
-      color: tone === "lime" ? "#BFFD00" : "#B45309",
-      border: tone === "warn" ? "1.5px solid #F59E0B" : "none",
-      fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
-      padding: "5px 11px", borderRadius: 100, marginBottom: 16, width: "fit-content",
-    }}>
+    <span className="pop mx-auto mb-5 w-16 h-16 rounded-full bg-brand-soft text-brand flex items-center justify-center">
+      <Check size={32} strokeWidth={2.25} />
+    </span>
+  );
+}
+
+function Badge({ children, icon, tone = "brand" }: { children: React.ReactNode; icon?: React.ReactNode; tone?: "brand" | "warn" }) {
+  return (
+    <span className={`mb-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs/none
+      ${tone === "brand" ? "bg-brand-soft text-brand" : "bg-[#FFF5E9] text-[#B45309]"}`}>
       {icon}{children}
-    </div>
+    </span>
   );
 }
 
 function ErrorLine({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: 8,
-      background: "#FFE5E5", border: "1.5px solid #FF3B3B",
-      color: "#C81E1E", borderRadius: 12, padding: "10px 12px",
-      fontSize: 13, fontWeight: 600, margin: "8px 0 0", lineHeight: 1.4,
-    }}>
-      <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+    <div role="alert" className="mt-3 flex items-start gap-2.5 rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm/[145%] text-danger">
+      <AlertCircle size={16} className="shrink-0 mt-0.5" />
       <span>{children}</span>
     </div>
   );
 }
 
-const Mono = ({ children }: { children: React.ReactNode }) => (
-  <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700 }}>{children}</span>
-);
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
-const card: React.CSSProperties = {
-  background: "#fff", border: "2.5px solid #111", borderRadius: 24,
-  boxShadow: "6px 6px 0 #111", padding: "28px 26px",
-};
-const h1: React.CSSProperties = { fontSize: 26, fontWeight: 900, lineHeight: 1.1, margin: "0 0 10px", letterSpacing: "-0.02em" };
-const sub: React.CSSProperties = { fontSize: 14.5, color: "#555", lineHeight: 1.55, margin: "0 0 18px" };
-const fieldLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em", color: "#888", margin: "14px 0 7px" };
-const input: React.CSSProperties = {
-  width: "100%", padding: "14px 14px 14px 44px", fontSize: 16, fontWeight: 600,
-  border: "2px solid #111", borderRadius: 14, outline: "none", fontFamily: "inherit", background: "#f5f4f0",
-};
-const inputIcon: React.CSSProperties = { position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: "#888" };
-
-// Primary button — greys out and disables when `ready` is false.
-function btn(ready: boolean): React.CSSProperties {
-  return {
-    width: "100%", padding: "16px", marginTop: 16,
-    background: ready ? "#BFFD00" : "#e8e6e0",
-    color: ready ? "#111" : "#aaa",
-    border: "2.5px solid", borderColor: ready ? "#111" : "#ddd",
-    borderRadius: 16, boxShadow: ready ? "4px 4px 0 #111" : "none",
-    fontWeight: 900, fontSize: 16, cursor: ready ? "pointer" : "not-allowed",
-    fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-    transition: "background 0.15s, box-shadow 0.15s",
-  };
+function BalanceTile({ label, value, unit, warn = false }: { label: string; value: string; unit: string; warn?: boolean }) {
+  return (
+    <div className="rounded-2xl bg-surface p-4">
+      <p className="text-xs/none text-nav-muted">{label}</p>
+      <p className={`mt-2 text-2xl/none tabular-nums ${warn ? "text-[#B45309]" : "text-heading"}`}>
+        {value}<span className="ml-1 text-xs text-nav-muted">{unit}</span>
+      </p>
+    </div>
+  );
 }
-const secondaryBtn: React.CSSProperties = {
-  width: "100%", padding: "13px", background: "#fff", color: "#111",
-  border: "2px solid #111", borderRadius: 14, fontWeight: 800, fontSize: 14,
-  cursor: "pointer", fontFamily: "inherit",
-  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-};
-const ghostBtn: React.CSSProperties = {
-  width: "100%", padding: "10px", marginTop: 10, background: "transparent", border: "none",
-  color: "#888", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-};
-const balanceTile: React.CSSProperties = {
-  flex: 1, background: "#f5f4f0", border: "2px solid #111", borderRadius: 12, padding: "11px 13px",
-};
-const balanceLabel: React.CSSProperties = {
-  margin: 0, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: "#888",
-};
-const balanceValue: React.CSSProperties = {
-  margin: "3px 0 0", fontSize: 22, fontWeight: 900, color: "#111", lineHeight: 1.1,
-};
-const dividerRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, margin: "14px 0" };
-const dividerLine: React.CSSProperties = { flex: 1, height: 1.5, background: "#e8e6e0" };
-const dividerText: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.08em" };
-const toggleRow: React.CSSProperties = {
-  width: "100%", display: "flex", alignItems: "center", gap: 12,
-  border: "2px solid", borderRadius: 14, padding: "12px 14px", marginTop: 16,
-  cursor: "pointer", fontFamily: "inherit", background: "#fff",
-  transition: "background 0.15s, border-color 0.15s",
-};
-const fine: React.CSSProperties = { fontSize: 12, color: "#999", textAlign: "center", margin: "12px 0 0" };
-const hintBox: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 8, background: "#f5f4f0",
-  border: "1.5px solid #e8e6e0", borderRadius: 12, padding: "10px 12px",
-  fontSize: 13, color: "#555", fontWeight: 600, marginBottom: 4,
-};
-const howBox: React.CSSProperties = {
-  background: "#F0FDE8", border: "1.5px solid #BFFD00", borderRadius: 12,
-  padding: "10px 12px", fontSize: 12.5, color: "#3f5a00", lineHeight: 1.5, margin: "14px 0 0",
-};
-const rescueBox: React.CSSProperties = {
-  display: "flex", alignItems: "flex-start", gap: 8,
-  background: "#FFF8E6", border: "1.5px solid #F59E0B", color: "#92600A",
-  borderRadius: 12, padding: "12px 14px", fontSize: 13, fontWeight: 600, lineHeight: 1.5,
-};
-const successCircle: React.CSSProperties = {
-  width: 80, height: 80, margin: "0 auto 16px", background: "#BFFD00",
-  borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-  boxShadow: "0 0 0 6px rgba(191,253,0,0.25)",
-};
-const gasWarn: React.CSSProperties = {
-  display: "flex", alignItems: "flex-start", gap: 8, width: "100%",
-  background: "#FFF8E6", border: "1.5px solid #F59E0B", color: "#92600A",
-  borderRadius: 12, padding: "11px 13px", margin: "12px 0 0",
-  fontSize: 12.5, fontWeight: 600, lineHeight: 1.45, cursor: "pointer",
-  fontFamily: "inherit", textAlign: "left",
-};
-const modalScrim: React.CSSProperties = {
-  position: "fixed", inset: 0, zIndex: 100,
-  background: "rgba(17,17,17,0.55)", backdropFilter: "blur(4px)",
-  display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
-  fontFamily: "'Space Grotesk', sans-serif",
-};
-const modalCard: React.CSSProperties = {
-  position: "relative", width: "100%", maxWidth: 400,
-  background: "#fff", border: "2.5px solid #111", borderRadius: 22,
-  boxShadow: "6px 6px 0 #111", padding: "26px 22px 22px",
-};
-const modalClose: React.CSSProperties = {
-  position: "absolute", top: 14, right: 14,
-  width: 30, height: 30, borderRadius: "50%", border: "none",
-  background: "#f5f4f0", cursor: "pointer", color: "#888",
-  display: "flex", alignItems: "center", justifyContent: "center",
-};
+
+/**
+ * The app's modal: a bottom sheet on phones, a centred card on larger screens,
+ * with a title row and a round close button (as in the main app's Sheet).
+ * Closes on the backdrop and on Escape.
+ */
+function Modal({ title, onClose, action, children }: { title: string; onClose: () => void; action?: React.ReactNode; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6 bg-black/40 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}
+        className="rise w-full max-w-[420px] bg-white rounded-3xl p-6 pb-[max(24px,env(safe-area-inset-bottom))] shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
+        <div className="flex items-center gap-3 mb-5">
+          <p className="flex-1 text-lg/none text-heading">{title}</p>
+          {action}
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="w-9 h-9 rounded-full bg-surface text-nav-muted flex items-center justify-center cursor-pointer hover:text-heading">
+            <X size={16} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const Mono = ({ children }: { children: React.ReactNode }) => (
+  <span className="font-mono text-[0.92em] text-heading">{children}</span>
+);
