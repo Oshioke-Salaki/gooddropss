@@ -11,6 +11,8 @@ const DAY_MS = 86_400_000;
 
 export interface AdminAnalytics {
   total: number; active: number; claimed: number; reclaimed: number; expiredUnclaimed: number;
+  /** Every GoodDrops transaction: drops hidden + claimed + reclaimed. */
+  transactions: number;
   claimedWei: bigint; reclaimedWei: bigint; activeWei: bigint;
   /** See lib/circulation: all drops + rewards. */
   circulatedWei: bigint;
@@ -89,6 +91,7 @@ export function computeAdminAnalytics(drops: Drop[], roots: Map<string, string>,
 
   return {
     total: drops.length, active, claimed, reclaimed, expiredUnclaimed,
+    transactions: drops.length + claimed + reclaimed,
     claimedWei, reclaimedWei, activeWei,
     circulatedWei: droppedWei + REWARDS_WEI,
     droppers: droppers.size, hunters: hunters.size, humans: humans.size,
@@ -125,6 +128,7 @@ export function withIndexerTotals(a: AdminAnalytics, idx: IndexerSnapshot, nowMs
   return {
     ...a,
     total: t.drops, active: t.active, claimed: t.claims, reclaimed: t.reclaims,
+    transactions: t.drops + t.claims + t.reclaims,
     expiredUnclaimed: Math.min(a.expiredUnclaimed, t.active),
     claimedWei: t.claimedWei, reclaimedWei: t.reclaimedWei, activeWei: t.activeWei,
     circulatedWei: t.droppedWei + REWARDS_WEI,

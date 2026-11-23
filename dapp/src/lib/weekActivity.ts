@@ -1,5 +1,6 @@
 import type { Redis } from "@upstash/redis";
 import { keys } from "@/lib/redis";
+import { referralAccountForDisplay } from "@/lib/referralLedger";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { liveStreakDays, type WeekActivity, type WeekBounds } from "@/lib/quests";
 import type { Drop, HunterStreak } from "@/types";
@@ -45,7 +46,9 @@ export async function fetchWeekActivity(
   const [rows, referrals, streakRaw] = await Promise.all([
     fetchDropsForAddress(wallets).then((ds) => windowActivity(ds, wallets, week)),
     redis
-      ? redis.zcount(keys.referralCredited(root), week.start, week.end - 1).catch(() => 0)
+      ? referralAccountForDisplay(redis, addr, { resolveRoot: resolveIdentityRoot })
+          .then((acct) => redis.zcount(keys.referralCredited(acct), week.start, week.end - 1))
+          .catch(() => 0)
       : Promise.resolve(0),
     redis ? redis.get<string | HunterStreak>(keys.streak(root)).catch(() => null) : Promise.resolve(null),
   ]);

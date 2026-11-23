@@ -29,7 +29,7 @@ describe("computeAdminAnalytics", () => {
   const a = computeAdminAnalytics(drops, roots, NOW);
 
   it("counts drops by state", () => {
-    expect(a).toMatchObject({ total: 5, active: 2, claimed: 2, reclaimed: 1, expiredUnclaimed: 1 });
+    expect(a).toMatchObject({ total: 5, active: 2, claimed: 2, reclaimed: 1, expiredUnclaimed: 1, transactions: 8 });
     expect(a.claimRate).toBe(67); // 2 of 3 settled
   });
 
@@ -90,7 +90,7 @@ describe("withIndexerTotals", () => {
   const a = withIndexerTotals(base, idx, NOW);
 
   it("takes counts, G$ amounts and the claim rate from the indexer", () => {
-    expect(a).toMatchObject({ total: 100, active: 20, claimed: 70, reclaimed: 10 });
+    expect(a).toMatchObject({ total: 100, active: 20, claimed: 70, reclaimed: 10, transactions: 180 });
     expect(a.claimedWei).toBe(7_000n * G);
     expect(a.reclaimedWei).toBe(1_000n * G);
     expect(a.activeWei).toBe(2_000n * G);

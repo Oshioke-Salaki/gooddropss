@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/events",
       "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/referrals",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

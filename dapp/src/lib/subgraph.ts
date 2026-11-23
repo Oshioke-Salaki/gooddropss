@@ -165,7 +165,7 @@ export async function fetchHunterProfile(address: string, opts: { fresh?: boolea
  * activity. THROWS when the subgraph can't be reached, so callers never mistake
  * an outage for "hasn't done anything yet".
  */
-export async function fetchHasActivity(address: string): Promise<boolean> {
+export async function fetchHasActivity(address: string, opts: { fresh?: boolean } = {}): Promise<boolean> {
   serverOnly("fetchHasActivity");
   const a = address.toLowerCase();
   if (!ADDR_RE.test(a)) return false;
@@ -178,6 +178,7 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
       }`, { a }, { timeoutMs: 6_000 });
       return d.claimed.length > 0 || d.created.length > 0;
     },
+    opts.fresh,
   );
 }
 
@@ -186,7 +187,7 @@ export async function fetchHasActivity(address: string): Promise<boolean> {
  * drop across all of them, in unix seconds. `null` = never active. Throws when
  * the subgraph can't be reached, so callers can tell "new" from "unknown".
  */
-export async function fetchFirstActivityAt(addresses: string[]): Promise<number | null> {
+export async function fetchFirstActivityAt(addresses: string[], opts: { fresh?: boolean } = {}): Promise<number | null> {
   serverOnly("fetchFirstActivityAt");
   const list = [...new Set(addresses.map((x) => x.toLowerCase()))].filter((x) => ADDR_RE.test(x));
   if (!list.length) return null;
@@ -211,6 +212,7 @@ export async function fetchFirstActivityAt(addresses: string[]): Promise<number 
       }`, { l: list }, { timeoutMs: 6_000 });
       return earliest([Number(d.claimed[0]?.claimedAt), Number(d.created[0]?.createdAt)]);
     },
+    opts.fresh,
   );
 }
 

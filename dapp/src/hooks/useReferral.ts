@@ -1,78 +1,93 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useSignMessage } from "wagmi";
-import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { SITE_URL } from "@/lib/site";
-import {
-  REF_STORAGE_KEY, REF_DONE_KEY,
-  referralAcceptMessage, inviteUrl,
-} from "@/lib/referral";
+import { referralAcceptMessage, inviteUrl, type InviteResult } from "@/lib/referral";
 
-// Referral state for the connected wallet: their invite link + how many people
-// they've brought in, plus a one-tap "accept your invite" flow for newcomers.
+/** GET /api/referral?address= */
+export interface ReferralStatus {
+  /** People this wallet's owner has brought in. */
+  count: number;
+  /** Accepted their invite, not counted yet. */
+  waiting: number;
+  referredBy: string | null;
+  /** This wallet's OWN invite: none, waiting to count, or counted (already). */
+  invite: InviteResult;
+  /** New enough that an invite could still count (null = couldn't tell). */
+  canBeInvited: boolean | null;
+}
+
+export const referralKey = (address?: string) => ["referral-status", address?.toLowerCase()] as const;
+
+async function fetchStatus(address: string): Promise<ReferralStatus> {
+  const r = await fetch(`/api/referral?address=${address.toLowerCase()}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`referral status ${r.status}`);
+  return r.json();
+}
+
+/** Thrown when the server refused the request outright (bad input, rate limit). */
+export class InviteRequestError extends Error {
+  constructor(message: string, readonly httpStatus: number) { super(message); }
+}
+
+async function postJson(url: string, body: unknown): Promise<InviteResult> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => null) as (InviteResult & { error?: string }) | null;
+  if (!r.ok || !j || !j.status) throw new InviteRequestError(j?.error ?? "Couldn't reach GoodDrops. Please try again.", r.status);
+  return { status: j.status, reason: j.reason, referrer: j.referrer };
+}
+
+/** Re-check a saved invite (no wallet needed). */
+export function settleInvite(invitee: string): Promise<InviteResult> {
+  return postJson("/api/referral/settle", { invitee: invitee.toLowerCase() });
+}
+
+/**
+ * Referral state for the connected wallet: their invite link, how many people
+ * they've brought in (and how many are on the way), and their own invite.
+ */
 export function useReferral() {
   const { address } = useAccount();
+  const qc = useQueryClient();
   const { signMessageAsync } = useSignMessage();
-  const { isVerified } = useIdentityStatus();
 
-  const [count, setCount]           = useState(0);
-  const [referredBy, setReferredBy] = useState<string | null>(null);
-  const [pendingRef, setPendingRef] = useState<string | null>(null);
-  const [accepting, setAccepting]   = useState(false);
+  const query = useQuery({
+    queryKey: referralKey(address),
+    queryFn: () => fetchStatus(address!),
+    enabled: !!address,
+    staleTime: 30_000,
+    retry: 2,
+    refetchOnWindowFocus: false,
+  });
 
-  // 1) Read any pending referrer captured globally by <ReferralCapture />.
-  useEffect(() => {
-    try { setPendingRef(localStorage.getItem(REF_STORAGE_KEY)); } catch { /* ignore */ }
-  }, []);
+  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: referralKey(address) }), [qc, address]);
 
-  // 2) My referral stats.
-  const refresh = useCallback(async () => {
-    if (!address) { setCount(0); setReferredBy(null); return; }
-    try {
-      const r = await fetch(`/api/referral?address=${address}`);
-      const d = await r.json();
-      setCount(d.count ?? 0);
-      setReferredBy(d.referredBy ?? null);
-    } catch { /* keep last */ }
-  }, [address]);
-  useEffect(() => { refresh(); }, [refresh]);
+  /**
+   * Accept `referrer`'s invite: the wallet confirms a short message (silently for
+   * Magic, a prompt for other wallets), then the server saves it and counts it as
+   * soon as it qualifies. Throws if the wallet declined or the request failed.
+   */
+  const accept = useCallback(async (referrer: string): Promise<InviteResult> => {
+    if (!address) throw new Error("Sign in first");
+    const timestamp = Date.now();
+    const signature = await signMessageAsync({ message: referralAcceptMessage(referrer, timestamp) });
+    const res = await postJson("/api/referral", { referrer: referrer.toLowerCase(), signature, timestamp });
+    await refresh();
+    return res;
+  }, [address, signMessageAsync, refresh]);
 
-  // Show the "accept invite" prompt only when it can actually succeed: a verified
-  // newcomer, with a pending referrer that isn't themselves, not already credited.
-  const done = (() => { try { return !!localStorage.getItem(REF_DONE_KEY); } catch { return false; } })();
-  const canAccept =
-    !!address && isVerified && !!pendingRef && !referredBy && !done &&
-    pendingRef.toLowerCase() !== address.toLowerCase();
-
-  const acceptReferral = useCallback(async (): Promise<boolean> => {
-    if (!address || !pendingRef || accepting) return false;
-    setAccepting(true);
-    try {
-      const timestamp = Date.now();
-      const signature = await signMessageAsync({ message: referralAcceptMessage(pendingRef, timestamp) });
-      const res = await fetch("/api/referral", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ referrer: pendingRef, signature, timestamp }),
-      });
-      if (!res.ok) {
-        // Not new to GoodDrops: the invite can never count, so stop retrying it.
-        const body = await res.json().catch(() => null);
-        if (body?.notNew) {
-          try { localStorage.setItem(REF_DONE_KEY, "1"); localStorage.removeItem(REF_STORAGE_KEY); } catch { /* ignore */ }
-          setPendingRef(null);
-        }
-        return false;
-      }
-      try { localStorage.setItem(REF_DONE_KEY, "1"); localStorage.removeItem(REF_STORAGE_KEY); } catch { /* ignore */ }
-      setPendingRef(null);
-      await refresh();
-      return true;
-    } catch { return false; }
-    finally { setAccepting(false); }
-  }, [address, pendingRef, accepting, signMessageAsync, refresh]);
-
-  const inviteLink = address ? inviteUrl(SITE_URL, address) : "";
-
-  return { count, referredBy, inviteLink, canAccept, accepting, acceptReferral, refresh };
+  return {
+    status: query.data ?? null,
+    loading: query.isLoading,
+    count: query.data?.count ?? 0,
+    waiting: query.data?.waiting ?? 0,
+    inviteLink: address ? inviteUrl(SITE_URL, address) : "",
+    accept,
+    refresh,
+  };
 }

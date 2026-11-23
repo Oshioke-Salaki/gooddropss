@@ -107,15 +107,18 @@ export function AnalyticsBody() {
 
       <Hint text={error} tone="bad" className="mb-3" />
 
-      {/* Headline */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Headline. Five across on desktop; on a phone G$ circulated takes the
+          full width and the other four sit two by two. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Stat
+          className="col-span-2 lg:col-span-1"
           tone="accent"
           loading={loading}
           label="G$ circulated"
           sub="all drops + rewards"
           value={m ? (Number(m.circulatedWei) / 1e18).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}
         />
+        <Stat loading={loading} label="Transactions" sub="drops hidden, claimed, reclaimed" value={m ? m.transactions.toLocaleString("en-US") : ""} />
         <Stat loading={loading} label="Unique humans" sub="deduped by identity" value={m ? String(m.humans) : ""} />
         <Stat loading={loading} label="Hunters" sub="claimed ≥ 1 drop" value={m ? String(m.hunters) : ""} />
         <Stat loading={loading} label="Droppers" sub="created ≥ 1 drop" value={m ? String(m.droppers) : ""} />

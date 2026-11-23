@@ -115,10 +115,18 @@ export function StatsClient({ initial }: { initial: PublicStats | null }) {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
             <div className="col-span-2 rounded-3xl bg-brand text-white p-6 lg:p-7 flex flex-col justify-between min-h-[168px]">
               <span className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center"><Coins className="w-5 h-5" /></span>
-              <div>
-                {s ? <p className="font-anta text-[44px]/none lg:text-[56px]/none">{fmt(s.circulatedG)} <span className="text-[24px] lg:text-[28px] text-white/70">G$</span></p>
-                  : <Skeleton className="h-12 w-56 bg-white/20" />}
-                <p className="text-sm/none text-white/80 mt-3">G$ circulated</p>
+              <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-5">
+                <div>
+                  {s ? <p className="font-anta text-[44px]/none lg:text-[56px]/none">{fmt(s.circulatedG)} <span className="text-[24px] lg:text-[28px] text-white/70">G$</span></p>
+                    : <Skeleton className="h-12 w-56 bg-white/20" />}
+                  <p className="text-sm/none text-white/80 mt-3">G$ circulated</p>
+                </div>
+                {/* Every drop hidden, claimed or reclaimed is one transaction. */}
+                <div className="sm:text-right">
+                  {s ? <p className="font-anta text-[28px]/none lg:text-[32px]/none">{fmt(s.transactions)}</p>
+                    : <Skeleton className="h-8 w-28 bg-white/20 sm:ml-auto" />}
+                  <p className="text-sm/none text-white/80 mt-3">Transactions</p>
+                </div>
               </div>
             </div>
             {/* Eight cells, two even rows: Total users sits up top beside the

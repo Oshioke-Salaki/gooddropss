@@ -747,7 +747,7 @@ quests, events, competition, admin analytics, sponsor dashboard) reads from a
   "try again" instead).
 - **Browsers never call Goldsky.** The drop page, sticker, sponsor dashboard,
   referral check and admin analytics go through cached API routes
-  (`/api/drops/[id]`, `/api/sponsor/drops`, `/api/referral/activity`,
+  (`/api/drops/[id]`, `/api/sponsor/drops`, `/api/referral/settle`,
   `/api/admin/analytics`); the endpoint is no longer in the browser bundle, and
   the admin and sponsor pages no longer download the whole drop history.
 
@@ -890,4 +890,41 @@ the face is identical across tones) and cut out locally.
 **Why it matters.** The old set (3D busts and emoji gradients) didn't look like
 GoodDrops. Explorers match the brand and the game, and the skin tones let
 everyone see themselves in it. Covered by `lib/avatars.test.ts`.
+
+## 28. Referrals that always count
+
+**The problem.** People were inviting friends and their count wasn't moving. Four
+causes: the credit was tried only at the instant of the friend's first claim, in
+that one browser tab, before the drop index had seen the claim, and never again
+unless they reopened the app (and after 3 days it was refused for good); the
+invite lived only in the browser that opened the link, so WhatsApp/X in-app
+browsers lost it; non-Magic wallets were asked to confirm in the background,
+which they ignore; and a GoodDollar root change split one referrer's count in two.
+
+**How it works now** (`lib/referralLedger.ts`).
+- **Accept early, count later.** As soon as a newcomer signs in, their wallet
+  confirms the invite (silently for Magic; a one-tap "You were invited" card for
+  MiniPay, Valora, MetaMask). The server saves it, then counts it the moment they
+  are verified and have claimed or hidden a drop: re-checked after every claim
+  (with back-off while the index catches up), on every visit, and by a sweep
+  every 10 minutes (`/api/cron/referrals`), so they never need to come back.
+- **Same rules, applied fairly.** Verified human, an active player, not the
+  referrer, first referrer wins, and new: they hadn't been playing for more than
+  3 days *before they accepted* (so signing up today and claiming next week
+  counts). Invites that never qualify expire after 30 days.
+- **One account per referrer, for good.** A referrer's referrals live under an
+  account fixed the first time they're credited (`gd:ref:acct:*`), so a lapsed
+  check or re-link no longer splits them. `scripts/referral-accounts.ts` binds
+  existing referrers and merges the one split account found (run after deploy).
+- **Links survive.** `?ref` stays in the address bar (so "Open in browser" keeps
+  it), first invite opened wins on a device, and a share link's `ref` is replaced,
+  never doubled. Anyone new whose invite still got lost can add **"Did someone
+  invite you?"** on their profile (username or pasted link).
+- **Referrers see what's coming.** The profile shows "3 more on the way" for
+  friends who accepted but aren't counted yet.
+- **Airtight writes.** The invitee's identity is claimed with SET NX (racing
+  credits can't both win), credit times never move, identity reads fail closed
+  (an outage means "try again", never a credit to the wrong account), public
+  endpoints are rate limited per IP, and prize payouts still run once per new
+  referral. 56 new tests cover the rules, races, outages and every route.
 

@@ -60,6 +60,21 @@ export async function isVerifiedHuman(address: string): Promise<boolean> {
 }
 
 export async function resolveIdentityRoot(address: string): Promise<string> {
+  try { return await resolveRoot(address); }
+  catch { return typeof address === "string" ? address.toLowerCase() : ""; } // RPC down — degrade to the raw address
+}
+
+/**
+ * Same answer as resolveIdentityRoot, but THROWS when the chain can't be read
+ * instead of quietly falling back to the wallet itself. For writes that must not
+ * be keyed to the wrong identity (e.g. crediting a referral), where "unknown"
+ * has to mean "try again later", not "this wallet is its own root".
+ */
+export async function resolveIdentityRootStrict(address: string): Promise<string> {
+  return resolveRoot(address);
+}
+
+async function resolveRoot(address: string): Promise<string> {
   // Guard: a malformed address can't be resolved — return it untouched so the
   // caller (which validates its own inputs) still gets a stable, safe key.
   if (typeof address !== "string" || !ADDR_RE.test(address)) {
@@ -81,30 +96,26 @@ export async function resolveIdentityRoot(address: string): Promise<string> {
     } catch { /* fall through to chain */ }
   }
 
-  try {
-    const root = (await client.readContract({
-      address: IDENTITY_ADDRESS,
-      abi: IDENTITY_ABI,
-      functionName: "getWhitelistedRoot",
-      args: [key as `0x${string}`],
-    })) as string;
+  const root = (await client.readContract({
+    address: IDENTITY_ADDRESS,
+    abi: IDENTITY_ABI,
+    functionName: "getWhitelistedRoot",
+    args: [key as `0x${string}`],
+  })) as string;
 
-    const resolved =
-      root && ADDR_RE.test(root) && root.toLowerCase() !== ZERO ? root.toLowerCase() : key;
+  const resolved =
+    root && ADDR_RE.test(root) && root.toLowerCase() !== ZERO ? root.toLowerCase() : key;
 
-    // Evict the oldest entry if the cache is full (simple FIFO bound).
-    if (cache.size >= CACHE_MAX) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
-    cache.set(key, { root: resolved, at: Date.now() });
-    // A real root is permanent (24h); a self-mapping (unverified/unlinked) can
-    // still change when the wallet later verifies, so keep it short (10m).
-    if (redis) redis.set(keys.identityRoot(key), resolved, { ex: resolved === key ? 600 : 86_400 }).catch(() => {});
-    return resolved;
-  } catch {
-    return key; // RPC down — degrade to the raw address, don't block the caller
+  // Evict the oldest entry if the cache is full (simple FIFO bound).
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
   }
+  cache.set(key, { root: resolved, at: Date.now() });
+  // A real root is permanent (24h); a self-mapping (unverified/unlinked) can
+  // still change when the wallet later verifies, so keep it short (10m).
+  if (redis) redis.set(keys.identityRoot(key), resolved, { ex: resolved === key ? 600 : 86_400 }).catch(() => {});
+  return resolved;
 }
 
 /**

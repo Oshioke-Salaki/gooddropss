@@ -15,6 +15,8 @@ export interface HunterProfileData {
   avgWei: string;
   firstHunt: number;
   referralCount: number;
+  /** Accepted their invite, not counted yet (verifying or yet to play). */
+  referralWaiting?: number;
   /** Up to three referred wallets, for the invite banner's faces. */
   referredSample: string[];
   rarityCounts: Record<DropRarity, number>;

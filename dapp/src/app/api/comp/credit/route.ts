@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis, keys } from "@/lib/redis";
 import { isAdminAuthed } from "@/lib/adminAuth";
-import { resolveIdentityRoot, isVerifiedHuman } from "@/lib/identityRoot";
+import { resolveIdentityRootStrict, isVerifiedHuman } from "@/lib/identityRoot";
 import { fetchHasActivity } from "@/lib/subgraph";
-import { getCompConfig, inCompWindow, getRefCompConfig, inRefCompWindow } from "@/lib/competition";
-import { tryRefPayout } from "@/lib/refPayout";
+import { getCompConfig } from "@/lib/competition";
+import { creditReferral, referralAccountFor } from "@/lib/referralLedger";
+import { ledgerDeps } from "@/lib/referralDeps";
 
 export const runtime = "nodejs";
 // Room for the inline referral payout to broadcast a transfer. It skips the
@@ -43,8 +44,15 @@ export async function POST(req: NextRequest) {
   if (!refAddr) return NextResponse.json({ error: `Referrer "${refInput}" not found (unknown username/address).` }, { status: 404 });
   if (!invAddr) return NextResponse.json({ error: `Invitee "${invInput}" not found (unknown username/address).` }, { status: 404 });
 
-  const [referrerRoot, inviteeRoot] = await Promise.all([resolveIdentityRoot(refAddr), resolveIdentityRoot(invAddr)]);
-  if (referrerRoot === inviteeRoot) return NextResponse.json({ error: "A person can't refer themselves." }, { status: 400 });
+  let referrerRoot: string, inviteeRoot: string, account: string;
+  try {
+    [referrerRoot, inviteeRoot] = await Promise.all([resolveIdentityRootStrict(refAddr), resolveIdentityRootStrict(invAddr)]);
+    account = await referralAccountFor(redis, refAddr, { resolveRoot: resolveIdentityRootStrict });
+  } catch {
+    return NextResponse.json({ error: "Couldn't read GoodDollar identities just now. Try again in a minute." }, { status: 503 });
+  }
+  if ([referrerRoot, account, refAddr].some((k) => k === inviteeRoot || k === invAddr))
+    return NextResponse.json({ error: "A person can't refer themselves." }, { status: 400 });
 
   // Same anti-cheat bar as the automatic credit.
   if (!(await isVerifiedHuman(invAddr))) {
@@ -58,40 +66,28 @@ export async function POST(req: NextRequest) {
   }
 
   const existing = await redis.get<string>(keys.referredBy(inviteeRoot));
-  if (existing && existing.toLowerCase() !== referrerRoot) {
+  if (existing && existing.toLowerCase() !== account) {
     return NextResponse.json({ error: `@${invInput} was already referred by someone else — first referrer wins.` }, { status: 409 });
   }
 
-  // Credit — idempotent. Backdate the score into the competition window so a
-  // recovery still counts even if you run it after the deadline. NOTE: for the
+  // Credit — idempotent, through the same ledger as the automatic path. For the
   // referral competition the credit timestamp also decides first-come-first-served
-  // pot ordering, so a recovery is deliberately stamped at "now" (clamped into the
-  // window) — it never jumps ahead of referrals that genuinely happened earlier.
-  const [cfg, refCfg] = await Promise.all([getCompConfig(redis), getRefCompConfig(redis)]);
+  // pot ordering, so a recovery is stamped at "now" (clamped into the points
+  // competition's window) — it never jumps ahead of referrals that happened earlier.
+  const cfg = await getCompConfig(redis);
   const nowSec = Math.floor(Date.now() / 1000);
   const scoreTs = Math.min(Math.max(nowSec, cfg.startsAt), Math.max(cfg.startsAt, cfg.endsAt - 1));
 
-  await redis.set(keys.referredBy(inviteeRoot), referrerRoot);
-  const added = await redis.sadd(keys.referralsOf(referrerRoot), inviteeRoot);
-  await redis.zadd(keys.referralCredited(referrerRoot), { score: scoreTs, member: inviteeRoot });
-  if (added) await redis.zincrby(keys.referralLeaders(), 1, referrerRoot);
-  const wallet = await redis.get<string>(keys.compPayoutWallet(referrerRoot));
-  if (!wallet) await redis.set(keys.compPayoutWallet(referrerRoot), refAddr);
-  // Enroll in whichever competitions the backdated credit falls inside.
-  await Promise.all([
-    inCompWindow(cfg, scoreTs) ? redis.sadd(keys.compReferrers(cfg.id), referrerRoot) : Promise.resolve(),
-    inRefCompWindow(refCfg, scoreTs) ? redis.sadd(keys.compReferrers(refCfg.id), referrerRoot) : Promise.resolve(),
-  ]);
-
-  // Same continuous payout as the organic path — an admin-recovered referral
-  // should settle exactly like one that came in on its own.
-  await tryRefPayout();
+  const res = await creditReferral(redis, { inviteeRoot, account, referrerWallet: refAddr, referrerRoot, at: scoreTs, payoutWallet: "keep" }, ledgerDeps());
+  if (res.status === "rejected") {
+    return NextResponse.json({ error: `@${invInput} was already referred by someone else — first referrer wins.` }, { status: 409 });
+  }
 
   return NextResponse.json({
     ok: true,
     message: existing ? `Already linked — re-recorded @${invInput} → @${refInput}.` : `Credited @${invInput} → @${refInput}.`,
-    referrerRoot,
+    referrerRoot: account,
     inviteeRoot,
-    newReferral: added === 1,
+    newReferral: res.status === "credited",
   });
 }

@@ -2,30 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchHunterProfile } from "@/lib/subgraph";
 import { getRedis, keys } from "@/lib/redis";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
+import { referrerStats } from "@/lib/referralLedger";
 import { getDropRarity, gpsToDeg, RARITY, type DropRarity } from "@/lib/utils";
 
 const ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
 
 /**
- * People this identity has referred — identity-root scoped, so Sybil-proof.
- * Also a few of their addresses, so the profile's invite banner can show real
- * faces rather than placeholders. Roots are wallets, so they render as avatars.
+ * People this person has referred, from their referral account (identity
+ * scoped, and stable even if their GoodDollar root has changed since). Also a few
+ * of them, so the profile's invite banner can show real faces, and how many are
+ * on the way (accepted the invite, not verified or playing yet).
  */
-async function getReferrals(address: string): Promise<{ count: number; sample: string[] }> {
+async function getReferrals(address: string): Promise<{ count: number; waiting: number; sample: string[] }> {
   const redis = getRedis();
-  if (!redis) return { count: 0, sample: [] };
+  if (!redis) return { count: 0, waiting: 0, sample: [] };
   try {
-    const root = await resolveIdentityRoot(address);
-    const [count, sample] = await Promise.all([
-      redis.scard(keys.referralsOf(root)),
-      redis.srandmember<string[]>(keys.referralsOf(root), 3),
-    ]);
+    const stats = await referrerStats(redis, address, { resolveRoot: resolveIdentityRoot });
+    const sample = await redis.srandmember<string[]>(keys.referralsOf(stats.account), 3);
     return {
-      count: count ?? 0,
+      count: stats.count,
+      waiting: stats.waiting,
       sample: (Array.isArray(sample) ? sample : []).filter((a) => ADDR_RE.test(String(a))),
     };
   } catch {
-    return { count: 0, sample: [] };
+    return { count: 0, waiting: 0, sample: [] };
   }
 }
 
@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
       avgWei: avgWei.toString(),
       firstHunt,
       referralCount: referrals.count,
+      referralWaiting: referrals.waiting,
       referredSample: referrals.sample,
       rarityCounts,
       finds,

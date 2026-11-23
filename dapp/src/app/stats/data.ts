@@ -11,6 +11,8 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 export interface PublicStats {
   drops: number;
   claims: number;
+  /** Every GoodDrops transaction: drops hidden + claimed + reclaimed. */
+  transactions: number;
   /** Whole G$. */
   droppedG: number;
   claimedG: number;
@@ -52,15 +54,20 @@ export function getPublicStats(): Promise<PublicStats> {
     // wallet, so merging those could count someone twice.)
     const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
     const people = new Set<string>();
+    let claimed = 0, reclaimed = 0;
     for (const d of drops) {
       people.add(rootOf(d.dropper));
       if (d.claimer !== ZERO && d.status === 1) people.add(rootOf(d.claimer));
+      if (d.status === 1) claimed++;
+      else if (d.status === 2) reclaimed++;
     }
     const top = (rs: typeof board.hunters) => rs.slice(0, 10).map((r) => ({ address: r.address, g: whole(r.totalWei), count: r.count }));
 
     return {
       drops: t?.drops ?? board.totalDrops,
       claims: t?.claims ?? board.totalClaims,
+      // Running totals when available, else counted from the mirror.
+      transactions: t ? t.drops + t.claims + t.reclaims : drops.length + claimed + reclaimed,
       droppedG: whole(droppedWei),
       claimedG: whole(claimedWei),
       circulatedG: circulatedG(whole(droppedWei)),

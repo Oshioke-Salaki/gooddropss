@@ -118,6 +118,20 @@ export const keys = {
   // Per-referrer zset of invitee roots → creditedAt (unix s). Lets the referral
   // competition window referrals by time; also the badge/expand source.
   referralCredited:  (referrerRoot: string) => `gd:ref:credited:${referrerRoot.toLowerCase()}`,
+  // The referral ACCOUNT a wallet (or identity root) earns under, fixed the first
+  // time it's credited. GoodDollar roots can change (a lapsed check, a re-link),
+  // and keying by "whatever the root is today" split one person's referrals in
+  // two. Bound once (SET NX), so everything they ever earn stays together.
+  refAccount:        (addr: string)         => `gd:ref:acct:${addr.toLowerCase()}`,
+  // Invites accepted (signed by the invitee) but not counted yet: they become a
+  // referral once the invitee is verified and has claimed or hidden a drop.
+  // JSON PendingInvite, keyed by the invitee's WALLET (that's who signed). TTL'd.
+  refPending:        (invitee: string)      => `gd:ref:pend:${invitee.toLowerCase()}`,
+  refPendingAll:     ()                      => `gd:ref:pending`,                           // zset invitee wallet → saved at (s): the sweep's work list
+  refPendingOf:      (account: string)      => `gd:ref:pendof:${account.toLowerCase()}`,   // zset invitee wallet → saved at (s): "on the way" for the referrer
+  refSettleLock:     (invitee: string)      => `gd:ref:lock:${invitee.toLowerCase()}`,     // NX, few seconds: one settle per invitee at a time
+  refRateLimit:      (bucket: string, ip: string) => `gd:ref:rl:${bucket}:${ip}`,          // per-IP counters (TTL'd)
+  refSweepLock:      ()                      => `gd:ref:sweep:lock`,                        // NX: one sweep at a time
 
   // ── Drop competition (reach) ──────────────────────────────────────────────
   compConfig:        ()                      => `gd:comp:config`,                  // JSON CompConfig (admin-editable)

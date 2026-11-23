@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { recoverMessageAddress } from "viem";
-import { referralAcceptMessage, inviteUrl, withRef, recruiterTier } from "@/lib/referral";
+import {
+  referralAcceptMessage, inviteUrl, withRef, recruiterTier,
+  parseCapturedRef, nextCapturedRef, REF_CAPTURE_TTL_MS,
+  inviteOutcome, parseInviterInput, confirmsSilently, isFinalInvite, shortAddress,
+} from "@/lib/referral";
 
 describe("inviteUrl / withRef", () => {
   it("builds a clean invite link", () => {
@@ -58,5 +62,89 @@ describe("referral accept signature round-trip", () => {
       signature: signed,
     });
     expect(recovered.toLowerCase()).not.toBe(account.address.toLowerCase());
+  });
+});
+
+describe("withRef replaces rather than duplicates", () => {
+  const A = "0x00000000000000000000000000000000000000aa", B = "0x00000000000000000000000000000000000000bb";
+  it("swaps an existing ref for the sharer's own", () => {
+    expect(withRef(`https://x.io/drop/5?ref=${A}`, B)).toBe(`https://x.io/drop/5?ref=${B}`);
+    expect(withRef(`https://x.io/?a=1&ref=${A}&b=2`, B)).toBe(`https://x.io/?a=1&b=2&ref=${B}`);
+  });
+  it("keeps a #fragment at the end", () => {
+    expect(withRef("https://x.io/drop/5#map", A)).toBe(`https://x.io/drop/5?ref=${A}#map`);
+  });
+});
+
+describe("captured invite (on the device)", () => {
+  const A = "0x00000000000000000000000000000000000000aa", B = "0x00000000000000000000000000000000000000bb";
+  const now = 1_800_000_000_000;
+  it("reads the new format and the old bare-address format", () => {
+    expect(parseCapturedRef(JSON.stringify({ ref: A.toUpperCase().replace("0X", "0x"), at: now - 1000 }), now)).toEqual({ ref: A, at: now - 1000 });
+    expect(parseCapturedRef(A, now)).toEqual({ ref: A, at: now });
+  });
+  it("drops junk, expired and future-dated entries", () => {
+    expect(parseCapturedRef(null, now)).toBeNull();
+    expect(parseCapturedRef("{bad", now)).toBeNull();
+    expect(parseCapturedRef(JSON.stringify({ ref: "nope", at: now }), now)).toBeNull();
+    expect(parseCapturedRef(JSON.stringify({ ref: A, at: now - REF_CAPTURE_TTL_MS - 1 }), now)).toBeNull();
+    expect(parseCapturedRef(JSON.stringify({ ref: A, at: now + 3_600_000 }), now)).toBeNull();
+  });
+  it("first touch wins until it expires", () => {
+    const first = JSON.stringify({ ref: A, at: now - 1000 });
+    expect(nextCapturedRef(first, B, now)?.ref).toBe(A);
+    expect(nextCapturedRef(null, B, now)).toEqual({ ref: B, at: now });
+    const stale = JSON.stringify({ ref: A, at: now - REF_CAPTURE_TTL_MS - 1 });
+    expect(nextCapturedRef(stale, B, now)?.ref).toBe(B);
+    expect(nextCapturedRef(first, "garbage", now)?.ref).toBe(A);
+  });
+});
+
+describe("who invited you (typed input)", () => {
+  const A = "0x00000000000000000000000000000000000000aa";
+  it("accepts a username, @username, an address, or a pasted invite link", () => {
+    expect(parseInviterInput("  ada_1 ")).toEqual({ kind: "username", username: "ada_1" });
+    expect(parseInviterInput("@ada")).toEqual({ kind: "username", username: "ada" });
+    expect(parseInviterInput(A.toUpperCase().replace("0X", "0x"))).toEqual({ kind: "address", address: A });
+    expect(parseInviterInput(`https://gooddrops.xyz/?ref=${A}`)).toEqual({ kind: "address", address: A });
+    expect(parseInviterInput(`gooddrops.xyz/drop/9?x=1&ref=${A}`)).toEqual({ kind: "address", address: A });
+  });
+  it("rejects what it can't use", () => {
+    for (const v of ["", "  ", "ab", "has space", "https://gooddrops.xyz/", `?ref=${A}ff`]) expect(parseInviterInput(v)).toBeNull();
+  });
+});
+
+describe("invite outcome copy", () => {
+  it("has a plain sentence for every outcome, without jargon", () => {
+    const cases = [
+      { status: "credited" }, { status: "already" },
+      { status: "waiting", reason: "verify" }, { status: "waiting", reason: "task" }, { status: "waiting", reason: "retry" },
+      { status: "rejected", reason: "self" }, { status: "rejected", reason: "notNew" },
+      { status: "rejected", reason: "taken" }, { status: "rejected", reason: "expired" },
+    ] as const;
+    for (const c of cases) {
+      const o = inviteOutcome(c, "@ada");
+      expect(o.text.length).toBeGreaterThan(10);
+      expect(o.text).not.toMatch(/signature|transaction|blockchain|on-chain|wallet address|root/i);
+    }
+    expect(inviteOutcome({ status: "credited" }, "@ada").tone).toBe("ok");
+    expect(inviteOutcome({ status: "rejected", reason: "taken" }, "@ada").tone).toBe("error");
+  });
+  it("knows which outcomes are final", () => {
+    expect(isFinalInvite("credited")).toBe(true);
+    expect(isFinalInvite("rejected")).toBe(true);
+    expect(isFinalInvite("waiting")).toBe(false);
+    expect(isFinalInvite("none")).toBe(false);
+  });
+});
+
+describe("wallets and names", () => {
+  it("only Magic wallets confirm silently", () => {
+    expect(confirmsSilently("magic")).toBe(true);
+    expect(confirmsSilently("magic-partner")).toBe(true);
+    for (const id of ["injected", "walletConnect", "metaMask", undefined, null, ""]) expect(confirmsSilently(id)).toBe(false);
+  });
+  it("shortens addresses", () => {
+    expect(shortAddress("0x1234567890abcdef1234567890abcdef12345678")).toBe("0x1234…5678");
   });
 });

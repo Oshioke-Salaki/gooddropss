@@ -17,6 +17,9 @@ import { BadgeGrid } from "./BadgeGrid";
 import { BadgeViewer } from "./BadgeViewer";
 import { EditProfileModal } from "./EditProfileModal";
 import { InviteQrSheet } from "./InviteQrSheet";
+import { InvitedBySheet } from "@/components/referral/InviteSheets";
+import { WaitingNote, MyInviteNote } from "./ReferralNotes";
+import { useReferral } from "@/hooks/useReferral";
 import { QuestCard } from "@/components/quests/QuestCard";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
 import { useHunterStreak } from "./useHunterStreak";
@@ -56,6 +59,8 @@ export function OwnProfile({ address }: { address: string }) {
 
   const [editing, setEditing] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [showInvitedBy, setShowInvitedBy] = useState(false);
+  const referral = useReferral();
   const [badge, setBadge] = useState<WallBadge | null>(null);
   const [copied, setCopied] = useState<"address" | "invite" | "share" | null>(null);
 
@@ -285,6 +290,10 @@ export function OwnProfile({ address }: { address: string }) {
               <BagMark className="absolute -right-2 top-[9px] w-14 h-14 lg:top-[11px] lg:w-[72px] lg:h-[72px] pointer-events-none" />
             </div>
 
+            {/* Accepted their invite but not counted yet: say so, so a referrer
+                doesn't think the link is broken while a friend is still setting up. */}
+            <WaitingNote count={data?.referralWaiting ?? 0} />
+
             {/* Invite link */}
             <div className="flex flex-col lg:flex-row gap-3 mt-6">
               <div
@@ -323,6 +332,13 @@ export function OwnProfile({ address }: { address: string }) {
                 </button>
               </div>
             </div>
+
+            {/* Their OWN invite, as the person who was invited. */}
+            <MyInviteNote
+              invite={referral.status?.invite}
+              canBeInvited={referral.status?.canBeInvited}
+              onAdd={() => setShowInvitedBy(true)}
+            />
           </div>
         </section>
 
@@ -340,6 +356,14 @@ export function OwnProfile({ address }: { address: string }) {
       <div className="lg:hidden flex justify-center mt-6">{shareButton("")}</div>
 
       {editing && <EditProfileModal address={address} onClose={() => setEditing(false)} />}
+
+      {showInvitedBy && (
+        <InvitedBySheet
+          self={address}
+          accept={referral.accept}
+          onClose={() => setShowInvitedBy(false)}
+        />
+      )}
 
       {showQr && (
         <InviteQrSheet
