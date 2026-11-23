@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
 import {
-  Check, CircleArrowOutUpRight, Copy, Flame, Medal, Pencil, Users,
+  Check, CircleArrowOutUpRight, Copy, Flame, Medal, Pencil, QrCode, Users,
 } from "lucide-react";
 import { Avatar } from "@/components/Avatar";
 import { BrandMark } from "@/components/BrandMark";
@@ -16,6 +16,7 @@ import { formatG$, shortAddr } from "@/lib/utils";
 import { BadgeGrid } from "./BadgeGrid";
 import { BadgeViewer } from "./BadgeViewer";
 import { EditProfileModal } from "./EditProfileModal";
+import { InviteQrSheet } from "./InviteQrSheet";
 import { QuestCard } from "@/components/quests/QuestCard";
 import { useHunterProfile, type WallBadge } from "./useHunterProfile";
 import { useHunterStreak } from "./useHunterStreak";
@@ -54,6 +55,7 @@ export function OwnProfile({ address }: { address: string }) {
   const board = useLeaderboard();
 
   const [editing, setEditing] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [badge, setBadge] = useState<WallBadge | null>(null);
   const [copied, setCopied] = useState<"address" | "invite" | "share" | null>(null);
 
@@ -292,22 +294,34 @@ export function OwnProfile({ address }: { address: string }) {
               >
                 <span className="truncate">{inviteLabel}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => copy(invite, "invite")}
-                className="h-11 px-6 rounded-full text-sm/none text-heading flex items-center justify-center gap-2
-                  shrink-0 cursor-pointer border border-transparent motion-safe:transition-opacity hover:opacity-80
-                  whitespace-nowrap"
-                style={{
-                  background:
-                    "linear-gradient(#fff, #fff) padding-box, linear-gradient(90deg, #F5C79B, #EEADF5) border-box",
-                }}
-              >
-                {copied === "invite"
-                  ? <Check className="w-[18px] h-[18px] text-brand" />
-                  : <Copy className="w-[18px] h-[18px]" strokeWidth={1.75} />}
-                {copied === "invite" ? "Copied" : "Copy link"}
-              </button>
+              <div className="flex gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => copy(invite, "invite")}
+                  className="flex-1 lg:flex-none h-11 px-6 rounded-full text-sm/none text-heading flex items-center
+                    justify-center gap-2 cursor-pointer border border-transparent motion-safe:transition-opacity
+                    hover:opacity-80 whitespace-nowrap"
+                  style={{
+                    background:
+                      "linear-gradient(#fff, #fff) padding-box, linear-gradient(90deg, #F5C79B, #EEADF5) border-box",
+                  }}
+                >
+                  {copied === "invite"
+                    ? <Check className="w-[18px] h-[18px] text-brand" />
+                    : <Copy className="w-[18px] h-[18px]" strokeWidth={1.75} />}
+                  {copied === "invite" ? "Copied" : "Copy link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowQr(true); track("invite_qr_opened"); }}
+                  className="flex-1 lg:flex-none h-11 px-5 rounded-full border border-line text-sm/none text-heading
+                    flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors
+                    hover:bg-surface whitespace-nowrap"
+                >
+                  <QrCode className="w-[18px] h-[18px]" strokeWidth={1.75} />
+                  QR code
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -326,6 +340,15 @@ export function OwnProfile({ address }: { address: string }) {
       <div className="lg:hidden flex justify-center mt-6">{shareButton("")}</div>
 
       {editing && <EditProfileModal address={address} onClose={() => setEditing(false)} />}
+
+      {showQr && (
+        <InviteQrSheet
+          address={address}
+          username={profile?.username ?? null}
+          invite={invite}
+          onClose={() => setShowQr(false)}
+        />
+      )}
 
       {badge && (
         <div

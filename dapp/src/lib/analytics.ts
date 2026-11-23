@@ -20,6 +20,7 @@ type Events = {
   drop_created: { kind: "single" | "multi" | "chain"; count?: number };
   shop_payment_succeeded: { amountG: number };
   invite_link_copied: Record<string, never>;
+  invite_qr_opened: Record<string, never>;
   event_submitted: { category: string };
   event_reminder_on: Record<string, never>;
   event_shared: Record<string, never>;
