@@ -30,6 +30,15 @@ export async function getSpots(redis: Redis, ids: string[]): Promise<Spot[]> {
   return out;
 }
 
+/** Whether `owner` owns at least one live shop (the bar for unlocking a reward scanner). */
+export async function ownsLiveSpot(redis: Redis, owner: string): Promise<boolean> {
+  const addr = owner.toLowerCase();
+  const ids = (await redis.lrange<string>(keys.spotsByOwner(addr), 0, 199)) ?? [];
+  if (ids.length === 0) return false;
+  const spots = await getSpots(redis, [...new Set(ids)]);
+  return spots.some((s) => s.ownerAddress?.toLowerCase() === addr && spotStatus(s) === "active");
+}
+
 /** Write a shop and move it into the index for its current status, in one pipeline. */
 export async function saveSpot(redis: Redis, spot: Spot): Promise<void> {
   const cur = spotStatus(spot);

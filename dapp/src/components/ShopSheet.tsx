@@ -15,6 +15,7 @@ import { useGoodDollarProfile } from "@/hooks/useGoodDollarProfile";
 import { Celebration } from "@/components/Celebration";
 import { Sheet } from "@/components/ui/Sheet";
 import { ShopReceipt } from "@/components/ShopReceipt";
+import { ShopReward } from "@/components/ShopReward";
 import type { Spot, LatLng } from "@/types";
 import { track } from "@/lib/analytics";
 import { isSpotActive } from "@/lib/spotStatus";
@@ -183,7 +184,10 @@ function ShopSheetBody({
       ) : status === "done" ? (
         <>
           <Celebration active count={30} />
-          <ShopReceipt amount={amount} shop={spot.name} tx={paidTx} paidAt={paidAt} onDone={close} />
+          <ShopReceipt amount={amount} shop={spot.name} tx={paidTx} paidAt={paidAt} onDone={close}>
+            {/* Paying is usually the task: the reward code is right here. */}
+            <ShopReward spotId={spot.id} userLocation={userLocation} open surface="receipt" />
+          </ShopReceipt>
         </>
       ) : (
         <div className="flex flex-col gap-y-6 pt-6">
@@ -217,6 +221,11 @@ function ShopSheetBody({
               </span>
             )}
           </div>
+
+          {/* The shop's reward, one tap away (never in the owner's own preview). */}
+          {accepting && !preview && (
+            <ShopReward spotId={spot.id} userLocation={userLocation} open={false} surface="sheet" />
+          )}
 
           {preview && (
             <div className="flex items-start gap-3 rounded-2xl bg-surface px-4 py-3 text-sm/[140%] text-nav-muted">

@@ -12,3 +12,9 @@ export function taskCreateMessage(dropId: string, spotId: string): string {
 export function approveMessage(nonce: string): string {
   return `GOODDROPS_TASK_APPROVE:${nonce}`;
 }
+
+// A shop owner signs this once to unlock their reward scanner on this phone for
+// 12 hours (lib/scannerSession). Worded for the wallet prompt.
+export function scannerSessionMessage(address: string, timestamp: number): string {
+  return `Unlock the GoodDrops reward scanner\nWallet: ${address.toLowerCase()}\nTime: ${timestamp}\n\nLets this phone approve your shop's rewards for 12 hours. It can't take anything from your wallet.`;
+}

@@ -1,8 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { m } from "framer-motion";
 import { useAccount } from "wagmi";
-import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import {
   ArrowLeft, Check, Clock, Coins, Compass, Flag, Flame, Gift, Hourglass, IdCard, Link2, Loader2,
   MapPin, Navigation, Puzzle, RefreshCw, Search, Star, Tag, Target, Trophy, Zap,
@@ -11,7 +10,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useEventSummary, eventStartLabel } from "@/hooks/useEventSummary";
 import Link from "next/link";
-import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI, CLAIM_RADIUS_M } from "@/lib/contracts";
+import { CLAIM_RADIUS_M } from "@/lib/contracts";
 import {
   haversineDistance,
   formatG$,
@@ -26,16 +25,12 @@ import {
   formatUsdApprox,
 } from "@/lib/utils";
 import { eventLockTitle } from "@/lib/claimErrors";
-import { confirmTx } from "@/lib/txOutcome";
-import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
-import { ensureGasForClaim } from "@/lib/ensureGas";
 import { Sheet } from "@/components/ui/Sheet";
 import dynamic from "next/dynamic";
 // Only task drops show this (it carries a QR library), so it loads when needed.
 const TaskUnlock = dynamic(() => import("@/components/TaskUnlock").then((m) => m.TaskUnlock), { ssr: false });
 import { DropComments } from "@/components/DropComments";
 import { ReportDropSheet } from "@/components/ReportDropSheet";
-import { fireChestReward } from "@/components/ChestReward";
 import { UserHandle } from "@/components/UserHandle";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
 import { Celebration } from "@/components/Celebration";
@@ -46,7 +41,8 @@ import { useCountUp } from "@/hooks/useCountUp";
 import { useRiddle } from "@/hooks/useRiddle";
 import { useIdentityStatus } from "@/hooks/useIdentityStatus";
 import { useProfile } from "@/hooks/useProfile";
-import { track, claimFailReason } from "@/lib/analytics";
+import { useDropClaim } from "@/hooks/useDropClaim";
+import { useTaskInfo } from "@/hooks/useTaskInfo";
 
 function useCampaign(campaignId: string | null) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -60,10 +56,6 @@ function useCampaign(campaignId: string | null) {
   }, [campaignId]);
   return { campaign, claims };
 }
-
-// "gone" = the claim failed for a reason retrying can't fix (someone else solved
-// the riddle / already claimed it) — the button becomes "back to the map".
-type Status = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
 
 interface Props {
   drop: Drop | null;
@@ -244,7 +236,6 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const { authenticated, login } = useAuth();
   // Privy is authoritative — wagmi can report a stale connector/address after logout.
   const isConnected = authenticated && !!address;
-  const { writeContractAsync, sponsored } = useSponsoredWrite();
 
   // Not useGoodDollarProfile().isVerified — that's a bare getWhitelistedRoot()
   // check, which can't tell "never verified" from "verified but lapsed".
@@ -255,10 +246,8 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   } = useIdentityStatus();
 
   const verificationOk = isVerified;
-  const [status, setStatus] = useState<Status>("idle");
-  const [errMsg, setErrMsg] = useState("");
-  // An event drop before its event starts isn't an error — it's a "not yet".
-  const [eventLocked, setEventLocked] = useState(false);
+  // The claim itself (gas, proof, transaction, chest): shared with the shop receipt.
+  const { status, errMsg, eventLocked, claim, reset: resetClaim, clearError } = useDropClaim("sheet");
 
   // Animated count-up for the claimed amount on the success screen.
   const amountNum   = drop ? Number(drop.amount) / 1e18 : 0;
@@ -277,12 +266,10 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   );
 
   useEffect(() => {
-    setStatus("idle");
-    setErrMsg("");
-    setEventLocked(false);
+    resetClaim();
     setAnswer("");
     setNearby(0);
-  }, [drop?.id]);
+  }, [drop?.id, resetClaim]);
 
   // Aggregate "hunters nearby" urgency — count only, never who or where.
   useEffect(() => {
@@ -335,6 +322,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   // before the claim will sign. When they're otherwise ready (verified, in range),
   // swap the claim button for the task-unlock panel until it's approved.
   const isTaskDrop = !!parsed?.taskMerchantId;
+  const taskText = useTaskInfo(isTaskDrop && drop ? drop.id.toString() : null);
   const [taskUnlocked, setTaskUnlocked] = useState(false);
   // While a code is on screen, keep it there even if indoor GPS wobbles out of
   // range: losing the code mid-scan at a busy counter is the worst moment for it.
@@ -353,86 +341,28 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
   const proximityPct =
     distance !== null ? Math.max(0, Math.min(100, (1 - distance / 500) * 100)) : 0;
 
-  async function handleClaim() {
+  function handleClaim() {
     if (!claimReady || (status !== "idle" && status !== "error") || !drop || !address) return;
-    const retrying = status === "error";
-    track("claim_started", { surface: "sheet" });
-    setStatus("claiming");
-    setErrMsg("");
-    try {
-      // After an unclear ending, look before trying again: the first claim may
-      // have landed in the meantime.
-      if (retrying) {
-        const c = await checkBeforeRetry(drop.id, address);
-        if (c === "won") { claimed(); return; }
-        if (c === "gone") { await failed(new Error("already claimed")); return; }
-      }
-      // Ensure gas BEFORE requesting the proof, so a low wallet never fails the
-      // claim mid-tx and the proof stays fresh while any top-up lands.
-      // Sponsored Magic wallets need no CELO, so skip the faucet for them.
-      if (!(await sponsored())) await ensureGasForClaim(address as `0x${string}`, () => setStatus("gassing"));
-      setStatus("claiming");
-
-      const proofRes = await fetch("/api/claim-proof", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dropId:  drop.id.toString(),
-          claimer: address,
-          userLat: userLocation?.lat,
-          userLng: userLocation?.lng,
-          ...(needsAnswer ? { answer } : {}),
-        }),
-      });
-
-      if (!proofRes.ok) {
-        const body = await proofRes.json().catch(() => ({}));
-        throw new Error(body.error ?? "Could not verify location — try again.");
-      }
-
-      const { deadline, sig } = await proofRes.json();
-      const tx = await writeContractAsync({
-        address: GOOD_DROPS_ADDRESS,
-        abi: GOOD_DROPS_ABI,
-        functionName: "claimWithProof",
-        args: [drop.id, BigInt(deadline), sig as `0x${string}`],
-      }, { onToppingUp: () => setStatus("gassing") });
-
-      await confirmTx(tx);
-      claimed();
-    } catch (e: unknown) {
-      await failed(e);
-    }
+    void claim({
+      dropId: drop.id,
+      amount: drop.amount,
+      address,
+      userLocation,
+      ...(needsAnswer ? { answer } : {}),
+    });
   }
 
-  function claimed() {
-    if (!drop) return;
-    setStatus("done");
-    track("claim_succeeded", { rarity: getDropRarity(drop.amount), surface: "sheet" });
-    if (drop) fireChestReward(formatG$(drop.amount), getDropRarity(drop.amount));
-    if (address) {
-      fetch("/api/engagement", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
-      })
-        .then(() => window.dispatchEvent(new CustomEvent("gd:streak-updated")))
-        .catch(() => {});
-    }
-  }
-
-  async function failed(e: unknown) {
-    if (!drop) return;
-    const f = await settleClaimError(e, drop.id, address);
-    if (f.result === "won") { claimed(); return; }
-    track("claim_failed", { reason: f.result === "pending" ? "pending" : claimFailReason(e), surface: "sheet" });
-    // They just closed the wallet prompt: no error, let them tap again.
-    if (f.result === "rejected") { setStatus("idle"); setErrMsg(""); return; }
-    if (f.result === "pending") { setErrMsg(f.message); setStatus("error"); return; }
-    setEventLocked(f.kind === "event");
-    setErrMsg(f.message);
-    setStatus(f.gone ? "gone" : "error");
-  }
+  // A shop approval IS the go-ahead: claim straight away, no extra tap. If the
+  // phone isn't ready at that instant (GPS drifted out of range indoors), it
+  // fires the moment it is. Only once per approval: a failed or cancelled
+  // claim falls back to the normal button.
+  const autoClaimPending = useRef(false);
+  useEffect(() => { autoClaimPending.current = false; }, [drop?.id]);
+  useEffect(() => {
+    if (!autoClaimPending.current || !taskUnlocked || !canClaim) return;
+    autoClaimPending.current = false;
+    handleClaim();
+  });
 
   function claimLabel(): React.ReactNode {
     if (status === "gassing")  return <><Loader2 className="w-5 h-5 animate-spin" /> Getting things ready…</>;
@@ -514,7 +444,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   </Link>
                 )}
                 {isTaskDrop && (
-                  <Chip icon={<Gift className="w-3.5 h-3.5" strokeWidth={2} />}>Merchant reward</Chip>
+                  <Chip icon={<Gift className="w-3.5 h-3.5" strokeWidth={2} />}>Shop reward</Chip>
                 )}
               </div>
 
@@ -642,14 +572,18 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                     </div>
                   ) : null}
 
-                  {/* Merchant-reward heads-up — set expectations before the
-                      hunter arrives, so the on-arrival task isn't a surprise.
-                      Once in range, the TaskUnlock panel takes over. */}
+                  {/* Shop-reward heads-up: what to do, before they set off, so
+                      nothing is a surprise at the counter. Once they're in
+                      range, the code panel (TaskUnlock) takes over. */}
                   {isTaskDrop && !isSelfDrop && !isClose && !taskUnlocked && !taskShowing && (
                     <Notice
                       icon={<Gift className="w-5 h-5" strokeWidth={1.75} />}
-                      title="Merchant reward"
-                      body="When you arrive, do a quick task and get the merchant to approve it. Then this unlocks."
+                      title={taskText ? `Shop reward: ${taskText}` : "Shop reward"}
+                      body={
+                        !isConnected ? "Sign in and verify once before you go. At the shop, do the task and show your code. Your G$ arrives the moment they approve."
+                        : !isVerified && !identityLoading ? "Verify once before you go (below). At the shop, do the task and show your code. Your G$ arrives the moment they approve."
+                        : "At the shop, do the task and show the code that appears here. Your G$ arrives the moment they approve."
+                      }
                     />
                   )}
 
@@ -715,7 +649,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                                 <input
                                   type="text"
                                   value={answer}
-                                  onChange={(e) => { setAnswer(e.target.value); if (status === "error") setStatus("idle"); }}
+                                  onChange={(e) => { setAnswer(e.target.value); clearError(); }}
                                   placeholder="Your answer…"
                                   maxLength={60}
                                   autoComplete="off"
@@ -761,10 +695,10 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                   {/* ── Claim button (task drops swap in the unlock panel) ── */}
                   {showTaskUnlock ? (
                     <TaskUnlock
-                      drop={drop}
+                      dropId={drop.id.toString()}
                       userLocation={userLocation}
                       address={address as string}
-                      onApproved={() => setTaskUnlocked(true)}
+                      onApproved={() => { autoClaimPending.current = true; setTaskUnlocked(true); }}
                       onShowing={setTaskShowing}
                     />
                   ) : (
@@ -772,7 +706,7 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt }: P
                       type="button"
                       onClick={
                         terminal ? onClose
-                        : status === "error" ? (claimReady ? handleClaim : () => { setStatus("idle"); setErrMsg(""); })
+                        : status === "error" ? (claimReady ? handleClaim : clearError)
                         : !isConnected ? () => login()
                         : identityCheckFailed ? () => refreshIdentity()
                         : handleClaim

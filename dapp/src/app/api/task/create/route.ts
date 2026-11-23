@@ -8,6 +8,7 @@ import { cleanTask, isValidTask, type TaskDropRecord } from "@/lib/taskLock";
 import { taskCreateMessage } from "@/lib/taskCreateMsg";
 import { isSpotActive } from "@/lib/spotStatus";
 import { getSpot } from "@/lib/spotStore";
+import { ownerVerification, OWNER_GATE } from "@/lib/dropGate";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,12 @@ export async function POST(req: NextRequest) {
   const owns = spot.ownerAddress?.toLowerCase() === ownerAddress;
   if (!owns) return NextResponse.json({ error: "You don't own this spot" }, { status: 403 });
   if (!isSpotActive(spot)) return NextResponse.json({ error: "This business isn't active yet." }, { status: 403 });
+
+  // 2b. Rewards are for verified owners only, enforced here as well as in the
+  // app. A failed read is a "try again" (the app keeps the job resumable), never
+  // a "not verified".
+  const gate = await ownerVerification(ownerAddress);
+  if (gate !== "verified") return NextResponse.json({ error: OWNER_GATE[gate].error }, { status: OWNER_GATE[gate].status });
 
   // 3. The drop must actually be a [T:spotId] task drop on-chain (defense in depth).
   // The client only calls us AFTER the mint tx is confirmed, so if the drop reads

@@ -3,6 +3,9 @@ import { track as vercelTrack } from "@vercel/analytics";
 // The funnel we care about: opened -> signed in -> verified -> first claim ->
 // first drop -> invited. Event names are fixed here so a typo can't silently
 // create a new, never-graphed series in the dashboard.
+/** Where a claim was started: the drop sheet, the drop page, hunt mode, or a shop's sheet/receipt. */
+export type ClaimSurface = "sheet" | "page" | "hunt" | "shop";
+
 type Events = {
   sign_in_opened: Record<string, never>;
   sign_in_completed: { method: "email" | "google" | "wallet" | "partner" };
@@ -10,9 +13,9 @@ type Events = {
   verify_completed: Record<string, never>;
   onboarding_avatar_saved: Record<string, never>;
   onboarding_name_saved: Record<string, never>;
-  claim_started: { surface: "sheet" | "page" | "hunt" };
-  claim_succeeded: { rarity: string; surface: "sheet" | "page" | "hunt" };
-  claim_failed: { reason: ClaimFailReason; surface: "sheet" | "page" | "hunt" };
+  claim_started: { surface: ClaimSurface };
+  claim_succeeded: { rarity: string; surface: ClaimSurface };
+  claim_failed: { reason: ClaimFailReason; surface: ClaimSurface };
   hunt_started: Record<string, never>;
   drop_created: { kind: "single" | "multi" | "chain"; count?: number };
   shop_payment_succeeded: { amountG: number };

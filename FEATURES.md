@@ -627,16 +627,19 @@ one-time code to approve, and the reward G$ is released. It turns drops into a
 merchant acquisition + loyalty tool — the revenue-facing phase of the roadmap.
 
 **The loop (all off-chain gated; the escrow reuses a normal drop).**
-1. A merchant creates a reward drop from `/merchant` — funds it, pins it at their
+1. A merchant creates a reward drop from `/merchant`: funds it, pins it at their
    spot, tags it on-chain as `[T:spotId]`, and stores the task text server-side.
-   The drop shows a **🎁** tag on the map.
-2. A verified hunter within 100m taps **"I did it — show my code"** →
-   `/api/task/qr` mints a **single-use, 2-minute** nonce (after re-checking GPS).
-3. The merchant opens **Scan & approve** (native camera QR reader, with manual
-   entry fallback), which signs and calls `/api/task/approve`. Only the spot owner
-   can approve; the nonce is burned (single-use) and a per-merchant daily cap applies.
+   The drop shows a gift tag on the map. Owners must be GoodDollar-verified
+   (checked in the app and again on the server).
+2. A verified hunter at the shop sees their **one-time code appear on its own**
+   (QR plus six digits; `/api/task/qr`, GPS re-checked). It's also on the **shop
+   sheet** and right on the **payment receipt**, since paying is usually the task.
+   See section 26.
+3. The merchant opens **Approve a reward**, scans the code (or types the six
+   digits) and taps **Approve**. Only the spot owner can approve; the code is
+   burned (single-use) and a per-merchant daily cap applies.
 4. `/api/claim-proof` **fails closed** for `[T:]` drops unless a fresh approval
-   exists, then the normal `claimWithProof` runs and the G$ lands.
+   exists. The hunter's app then claims **automatically**; no Claim tap.
 
 **Business lifecycle & moderation.** Every business now carries a status —
 `pending → active → paused / suspended / rejected`:
@@ -808,3 +811,44 @@ keeps working. It deploys as a separate version (`npm run deploy` in
 `subgraph/`, `gooddrops/1.1.0`), and `npm run verify -- <url>` checks every
 total against a full count of drops before anyone switches the app to it.
 
+---
+
+## 26. Shop rewards in two steps
+
+**What it is.** Earning a shop reward used to take a hunter five steps (find the
+reward, tap "I did it", show the code, come back, tap Claim) and the shop a
+wallet signature for every customer. Now:
+
+- **Customer:** do the task, show your phone. The code is already on screen at
+  the shop: on the reward itself, on the shop's sheet ("Reward here"), and on
+  the G$ payment receipt. When the shop approves, the G$ is sent automatically
+  (`hooks/useDropClaim`, shared by every claim screen). Before setting off, the
+  reward says what the task is and asks for sign-in/verification up front.
+- **Shop:** confirm once to **unlock the scanner for 12 hours**
+  (`lib/scannerSession`), then each customer is scan → Approve, with no wallet
+  prompt. The camera opens on its own, ignores the code it just approved, and
+  returns to scanning by itself. "Lock scanner on this phone" and signing out
+  end the unlock. On phones, "Approve a reward" is the first thing on `/merchant`.
+
+**How it stays safe.**
+- **Verification is never skipped.** Customers must be verified to get a code
+  and to claim. Shop owners must be verified to save a reward, unlock the
+  scanner, and on every approval; a failed GoodDollar read means "try again",
+  never "verified".
+- **The scanner unlock is narrow.** It's a separate 12-hour, SameSite=Strict,
+  httpOnly cookie accepted only by `/api/task/approve`, stored in Redis only as
+  a hash. The 30-day wallet session still only unlocks reads.
+- **Every approval re-checks** that the wallet owns the reward's shop and that
+  the shop is live.
+- **Single-use, expiring codes.** The server hands a customer the same code
+  while it's fresh (`lib/taskCode`), so reopening never swaps it mid-scan, and
+  replaces it shortly before it expires.
+- **One reward, one customer at a time.** Rewards held for someone else are
+  skipped automatically (`lib/taskRewards`, `/api/task/available`), and an owner
+  can't earn their own shop's reward.
+- **Older shop pages keep working.** The per-scan signature is still accepted.
+
+**Why it matters.** The reward is a promise made at the counter. Two steps
+instead of five means customers actually finish, and a busy shop can serve a
+queue without a wallet prompt per person. Covered by unit tests (`taskCode`,
+`taskApprove`, `taskRewards`, `sound`).

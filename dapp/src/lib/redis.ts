@@ -97,6 +97,8 @@ export const keys = {
   taskDrop:          (dropId: string)              => `gd:task:drop:${dropId}`,           // { spotId, task, createdAt }
   taskQr:            (nonce: string)               => `gd:task:qr:${nonce}`,              // { dropId, root, spotId } · single-use · TTL 300s
   taskQrCooldown:    (root: string)                => `gd:task:qrcd:${root.toLowerCase()}`, // anti-spam on nonce minting
+  taskQrMine:        (dropId: string, root: string) => `gd:task:qrmine:${dropId}:${root.toLowerCase()}`, // a hunter's live nonce for a reward · TTL = QR
+  scannerSession:    (tokenHash: string)           => `gd:task:scan:${tokenHash}`,         // shop scanner unlock → owner address · TTL 12h
   taskCode:          (code: string)                => `gd:task:code:${code}`,              // 6-digit spoken/typed code → nonce · TTL = QR
   taskReserved:      (dropId: string)              => `gd:task:resv:${dropId}`,            // root a reward was approved for (one at a time)
   taskPeekRl:        (ip: string)                  => `gd:task:peekrl:${ip}`,              // per-IP code lookups per hour (TTL'd)

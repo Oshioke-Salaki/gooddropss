@@ -59,7 +59,15 @@ export function playCoinChime(): void {
   } catch { /* sound is a nicety */ }
 }
 
-/** A short buzz on phones that support it (ignored elsewhere). */
+/**
+ * A short buzz on phones that support it (ignored elsewhere). Skipped until the
+ * person has touched the page: browsers refuse it before then anyway, and log a
+ * console warning for trying.
+ */
 export function buzz(pattern: number | number[]): void {
-  try { navigator.vibrate?.(pattern); } catch { /* unsupported */ }
+  try {
+    const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+    if (ua && !ua.hasBeenActive) return;
+    navigator.vibrate?.(pattern);
+  } catch { /* unsupported */ }
 }

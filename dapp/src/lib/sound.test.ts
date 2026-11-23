@@ -70,4 +70,16 @@ describe("sound", () => {
     s.buzz(35);
     expect(navigator.vibrate).toHaveBeenCalledWith(35);
   });
+
+  it("doesn't buzz before the person has touched the page, then does", async () => {
+    env(undefined);
+    const ua = { hasBeenActive: false };
+    vi.stubGlobal("navigator", { vibrate: vi.fn(), userActivation: ua });
+    const s = await import("@/lib/sound");
+    s.buzz(30);
+    expect(navigator.vibrate).not.toHaveBeenCalled();
+    ua.hasBeenActive = true;
+    s.buzz(30);
+    expect(navigator.vibrate).toHaveBeenCalledWith(30);
+  });
 });

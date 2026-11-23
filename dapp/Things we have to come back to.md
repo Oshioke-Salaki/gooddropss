@@ -185,3 +185,14 @@ reuse an id. The old emoji presets stay valid for people who already chose one.
 | **My Drops during an indexer outage** | The contract can't list drops by wallet, so drops created while the subgraph is down only appear once it catches up. Their state (found, reclaimed) is already corrected from the contract. | Acceptable for short outages. If outages recur, read `DropCreated` logs from the stall block. |
 | **Email code inside our own sheet** | Magic's white-label email code (`showUI: false`) is rejected for our Magic app with error -32603, so email sign-in still shows Magic's own code screen. | Enable white-label email OTP for the app in the Magic dashboard (it may depend on the plan), then re-apply the in-sheet code step. |
 | **Squads** | City vs city shipped first: it gives every hunter a team with no setup. | Team creation, invites and a squad board, if city rivalry shows people want smaller teams. |
+
+---
+
+## Shop rewards: next steps (after the two-step flow, Nov 2026)
+
+| What | Notes |
+|---|---|
+| **One reward, many customers** | Each reward still serves one customer, so a busy shop creates one per person. `createManyDrops` already exists on the contract: fund "N customers × X G$" in one transaction and let the code route pick the next free one (it already skips held rewards). Needs a new reward form and grouped rows on the shop card. |
+| **One confirmation to create a reward** | Creating a reward can still take three wallet prompts (allowance, fund, sign the task text). Putting the task text in the on-chain hint would remove the signature. |
+| **Drop page claim logic** | `app/drop/[id]/DropPageClient.tsx` keeps its own copy of the claim sequence (it predates `hooks/useDropClaim`; it also sends the private-drop token and awards badges). Move it onto the hook with those two options. |
+| **Paying a shop doesn't require verification** | Earning a reward does (customer and owner). Paying a shop in G$ is open to any signed-in wallet, as before. Decide whether payments should be verified-only too. |

@@ -5,6 +5,8 @@
 export const QR_TTL_S            = 300;   // a minted QR is valid for 5 minutes
 export const APPROVAL_TTL_S      = 600;   // merchant approval unlocks claiming for 10 minutes
 export const QR_COOLDOWN_S       = 20;    // min gap between a hunter minting nonces
+export const QR_REUSE_MIN_S      = 60;    // a live code with more than this left is handed out again, not replaced
+export const SCANNER_TTL_S       = 12 * 3600; // one wallet confirmation unlocks a shop's scanner for 12 hours
 export const MERCHANT_DAILY_CAP  = 200;   // max approvals per merchant per day
 export const TASK_MAX_LEN        = 80;    // task text length cap
 

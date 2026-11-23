@@ -83,6 +83,8 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const [gpsDenied,  setGpsDenied]  = useState(false);
   const [taskUnlocked, setTaskUnlocked] = useState(false);
   const [taskShowing,  setTaskShowing]  = useState(false);
+  const autoClaimPending = useRef(false);
+  const autoClaim = useRef<{ ready: boolean; run: () => Promise<void> | void }>({ ready: false, run: () => {} });
   const [userLoc,    setUserLoc]    = useState<{ lat: number; lng: number } | null>(null);
   const [status,     setStatus]     = useState<ClaimStatus>("idle");
   const [errMsg,     setErrMsg]     = useState("");
@@ -284,6 +286,16 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
     });
   }
 
+  // A shop's approval is the go-ahead: claim at once, no extra tap (or the
+  // moment the phone is ready, if GPS drifted out of range indoors). Once per
+  // approval; a failed or cancelled claim falls back to the button. Declared
+  // before the early returns below; `autoClaim` is filled in further down.
+  useEffect(() => {
+    if (!autoClaimPending.current || !autoClaim.current.ready) return;
+    autoClaimPending.current = false;
+    void autoClaim.current.run();
+  });
+
   // ── Loading / couldn't load / not found ───────────────────────────────────
   if (drop === undefined && loadErr) return (
     <Shell {...shellVerifyProps} dropId={dropId}>
@@ -385,6 +397,9 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
   const showTaskUnlock =
     isTaskDrop && !taskUnlocked && isConnected && verificationOk && isActive && !isSelf &&
     (isClose || taskShowing) && !riddleBlocked && status === "idle";
+
+  // Read by the auto-claim effect above the early returns (hooks can't live here).
+  autoClaim.current = { ready: taskUnlocked && canClaim, run: handleClaim };
 
   // "Active" button: can claim, retry an error, re-run a failed verification read,
   // or navigate back to the map when the drop is gone.
@@ -784,10 +799,10 @@ export default function DropPageClient({ dropId }: { dropId: string }) {
             {/* Claim CTA (task drops swap in the unlock panel) */}
             {showTaskUnlock && address ? (
               <TaskUnlock
-                drop={drop}
+                dropId={drop.id.toString()}
                 userLocation={userLoc}
                 address={address}
-                onApproved={() => setTaskUnlocked(true)}
+                onApproved={() => { autoClaimPending.current = true; setTaskUnlocked(true); }}
                 onShowing={setTaskShowing}
               />
             ) : !isConnected ? (

@@ -21,3 +21,27 @@ export async function dropBlockedReason(address: string): Promise<string | null>
     return "We couldn't confirm you're verified. Check your connection and try again.";
   }
 }
+
+/**
+ * Server gate for shop owners running rewards (saving a reward, unlocking the
+ * scanner, approving a customer). Three answers, so a failed read is never
+ * mistaken for "not verified" (or worse, for "verified"):
+ *   "verified"   may go ahead
+ *   "unverified" never verified, lapsed, or blocked: refuse (403)
+ *   "unknown"    GoodDollar couldn't be read: refuse for now, ask to retry (503)
+ */
+export async function ownerVerification(address: string): Promise<"verified" | "unverified" | "unknown"> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const s = await readIdentityStatus(publicClient as any, address);
+    return s.state === "verified" ? "verified" : "unverified";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** The response pieces for a refused owner gate. */
+export const OWNER_GATE = {
+  unverified: { status: 403, error: "Verify your GoodDollar identity to run rewards at your shop." },
+  unknown: { status: 503, error: "We couldn't confirm you're verified right now. Please try again." },
+} as const;

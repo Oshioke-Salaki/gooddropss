@@ -5,9 +5,11 @@ import { Check, ExternalLink } from "lucide-react";
 /**
  * What the customer shows at the counter. The "paid … ago" line keeps ticking,
  * so a cashier can tell a live receipt from an old screenshot at a glance.
+ * `children` sits between the receipt and Done (the shop's reward code, when
+ * the shop runs one).
  */
-export function ShopReceipt({ amount, shop, tx, paidAt, onDone }: {
-  amount: string; shop: string; tx: string; paidAt: number; onDone: () => void;
+export function ShopReceipt({ amount, shop, tx, paidAt, onDone, children }: {
+  amount: string; shop: string; tx: string; paidAt: number; onDone: () => void; children?: React.ReactNode;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -42,6 +44,7 @@ export function ShopReceipt({ amount, shop, tx, paidAt, onDone }: {
       >
         View receipt <ExternalLink className="w-4 h-4" />
       </a>
+      {children}
       <button
         type="button"
         onClick={onDone}

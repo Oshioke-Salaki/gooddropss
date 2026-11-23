@@ -3,6 +3,7 @@ import { getRedis } from "@/lib/redis";
 import { verifyWalletSig } from "@/lib/walletSig";
 import { endSession, sessionAddress, startSession } from "@/lib/walletSession";
 import { walletSessionMessage } from "@/lib/walletSessionMsg";
+import { endScannerSession } from "@/lib/scannerSession";
 
 export const runtime = "nodejs";
 
@@ -34,9 +35,10 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ address }, { headers: NO_STORE });
 }
 
-// DELETE /api/session → sign out of the session (on wallet sign-out).
+// DELETE /api/session → sign out of the session (on wallet sign-out). Also locks
+// the shop's reward scanner, so a shared phone never keeps approving after sign-out.
 export async function DELETE() {
   const redis = getRedis();
-  if (redis) await endSession(redis);
+  if (redis) await Promise.all([endSession(redis), endScannerSession(redis)]);
   return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }

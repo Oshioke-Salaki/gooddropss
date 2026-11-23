@@ -193,6 +193,24 @@ export default function MerchantPage() {
     </button>
   );
 
+  const scanCard = (className: string) => (
+    <button
+      type="button"
+      onClick={() => setShowScanner(true)}
+      className={`${CARD} group p-2 pr-5 flex items-center gap-4 text-left cursor-pointer
+        motion-safe:transition-colors hover:bg-surface ${className}`}
+    >
+      <span className="w-14 h-14 shrink-0 rounded-full bg-brand text-white flex items-center justify-center">
+        <Camera className="w-6 h-6" strokeWidth={1.75} />
+      </span>
+      <span className="flex-1 min-w-0 flex flex-col gap-y-2">
+        <span className="text-base/none text-heading">Approve a reward</span>
+        <span className="text-sm/none text-nav-muted truncate">A customer did your task? Scan their code.</span>
+      </span>
+      <ArrowRight className="w-5 h-5 shrink-0 text-nav-muted motion-safe:transition-transform group-hover:motion-safe:translate-x-1" strokeWidth={1.75} />
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-surface font-sans">
       <Nav />
@@ -245,6 +263,9 @@ export default function MerchantPage() {
                     <span>Submitted. We usually review new shops within a day, and it goes live on the map once approved.</span>
                   </div>
                 )}
+
+                {/* The counter tool comes first on a phone: it's what a shop opens this page for. */}
+                {hasLiveSpot && scanCard("lg:hidden")}
 
                 {!showForm && registerButton("lg:hidden w-full h-12 text-base/none")}
 
@@ -480,24 +501,8 @@ export default function MerchantPage() {
 
               {/* ── Side column ───────────────────────────────────────────── */}
               <aside className="flex flex-col gap-y-6 min-w-0">
-                {/* Scan & approve task rewards — only useful once a spot is live */}
-                {hasLiveSpot && (
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner(true)}
-                    className={`${CARD} group p-2 pr-5 flex items-center gap-4 text-left cursor-pointer
-                      motion-safe:transition-colors hover:bg-surface`}
-                  >
-                    <span className="w-14 h-14 shrink-0 rounded-full bg-brand text-white flex items-center justify-center">
-                      <Camera className="w-6 h-6" strokeWidth={1.75} />
-                    </span>
-                    <span className="flex-1 min-w-0 flex flex-col gap-y-2">
-                      <span className="text-base/none text-heading">Approve a reward</span>
-                      <span className="text-sm/none text-nav-muted truncate">A customer did your task? Scan their code.</span>
-                    </span>
-                    <ArrowRight className="w-5 h-5 shrink-0 text-nav-muted motion-safe:transition-transform group-hover:motion-safe:translate-x-1" strokeWidth={1.75} />
-                  </button>
-                )}
+                {/* Scan & approve: desktop keeps it in the side column (phones get it up top). */}
+                {hasLiveSpot && scanCard("hidden lg:flex")}
 
                 <HowRewardsWork />
 
