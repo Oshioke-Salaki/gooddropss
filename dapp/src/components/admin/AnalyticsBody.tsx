@@ -58,8 +58,9 @@ export function AnalyticsBody() {
     functionName: "identityRequired",
   });
 
-  // Totals are computed on the server from the shared drop mirror (one small
-  // response instead of every drop ever made); see lib/adminAnalytics.
+  // Totals are computed on the server (one small response instead of every
+  // drop ever made): counts, G$ and daily charts from the indexer's running
+  // totals, per-person numbers from the drop mirror. See /api/admin/analytics.
   const [m, setM] = useState<AdminAnalytics | null>(null);
   useEffect(() => {
     let cancelled = false;

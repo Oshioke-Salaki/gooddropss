@@ -802,7 +802,7 @@ having to form one.
 
 ---
 
-## 25. Subgraph running totals (ready to deploy)
+## 25. Subgraph running totals (live)
 
 **What it is.** The indexer now also keeps `GlobalStats`, `DailyStats` and
 per-wallet `Account` totals, updated as each drop is created, claimed or
@@ -810,6 +810,17 @@ reclaimed (`subgraph/`). The `Drop` entity is unchanged, so every current query
 keeps working. It deploys as a separate version (`npm run deploy` in
 `subgraph/`, `gooddrops/1.1.0`), and `npm run verify -- <url>` checks every
 total against a full count of drops before anyone switches the app to it.
+
+**Live since Nov 2026.** The app reads the indexer through the Goldsky tag
+`gooddrops/prod` (now 1.1.0), so future upgrades only move the tag: no env change
+or redeploy. The public **/stats** page (and its share image) and **Admin →
+Analytics** take drop counts, G$ amounts, the claim rate and the 14-day charts
+from these totals (`lib/indexerTotals`): exact for the whole chain, in one small
+query. Numbers counted per person (droppers, hunters, users, active today) and
+the top lists still come from the drop mirror grouped by GoodDollar identity,
+because the indexer counts wallets, not people. If the totals can't be read
+(indexer down, or pointed at an older version), both pages quietly use the
+mirror for everything, as before. Totals that don't add up are rejected, not shown.
 
 ---
 

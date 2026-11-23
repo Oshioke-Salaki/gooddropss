@@ -1,22 +1,29 @@
 import { NextResponse } from "next/server";
 import { isAdminAuthed } from "@/lib/adminAuth";
 import { getBoardSnapshot } from "@/lib/boardSnapshot";
-import { analyticsToJson, computeAdminAnalytics } from "@/lib/adminAnalytics";
+import { analyticsToJson, computeAdminAnalytics, withIndexerTotals } from "@/lib/adminAnalytics";
+import { fetchIndexerSnapshot } from "@/lib/indexerTotals";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
  * GET /api/admin/analytics — the Analytics page's totals, computed on the server
- * from the shared drop mirror and identity roots (lib/boardSnapshot), so the
- * page loads a few hundred bytes instead of every drop ever made.
+ * so the page loads a few hundred bytes instead of every drop ever made.
+ * Counts, G$ amounts and the daily charts come from the indexer's running
+ * totals (lib/indexerTotals); per-person numbers from the shared drop mirror and
+ * identity roots (lib/boardSnapshot). If the running totals can't be read, the
+ * mirror supplies everything, as before. `totals` says which one was used.
  */
 export async function GET() {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const { drops, roots, at } = await getBoardSnapshot();
+    const [{ drops, roots, at }, idx] = await Promise.all([getBoardSnapshot(), fetchIndexerSnapshot()]);
+    const now = Date.now();
+    const base = computeAdminAnalytics(drops, roots, now);
+    const analytics = idx ? withIndexerTotals(base, idx, now) : base;
     return NextResponse.json(
-      { analytics: analyticsToJson(computeAdminAnalytics(drops, roots)), at },
+      { analytics: analyticsToJson(analytics), at, totals: idx ? "indexer" : "mirror" },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (e) {

@@ -4,6 +4,7 @@
 
 import { DROP_STATUS, type Drop } from "@/types";
 import { REWARDS_WEI } from "@/lib/circulation";
+import type { IndexerSnapshot } from "@/lib/indexerTotals";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const DAY_MS = 86_400_000;
@@ -96,6 +97,40 @@ export function computeAdminAnalytics(drops: Drop[], roots: Map<string, string>,
     maxDay: Math.max(1, ...days.map((x) => x.n)),
     activeToday: activeToday.size,
     avgTtcSec: ttcCount ? Math.round(ttcSum / ttcCount) : 0,
+    claimedDays,
+    maxClaimedWei: claimedDays.reduce((mx, x) => (x.wei > mx ? x.wei : mx), 1n),
+  };
+}
+
+/**
+ * Swap in the indexer's running totals (lib/indexerTotals) for everything that
+ * is a plain fact about drops: counts, G$ amounts, claim rate and the two
+ * 14-day charts. They're exact for the whole chain, whatever the drop mirror
+ * has loaded. Per-person numbers (droppers, hunters, humans, active today) and
+ * time-to-claim stay as computed: the indexer counts wallets, not people.
+ * Expired-but-unclaimed needs each drop's expiry, so it also stays, capped at
+ * the active count so the two can never disagree. Pure.
+ */
+export function withIndexerTotals(a: AdminAnalytics, idx: IndexerSnapshot, nowMs = Date.now()): AdminAnalytics {
+  const t = idx.totals;
+  const settled = t.claims + t.reclaims;
+  const days: { day: string; n: number }[] = [];
+  const claimedDays: { day: string; wei: bigint }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const day = isoDay(nowMs - i * DAY_MS);
+    const d = idx.days.get(day);
+    days.push({ day, n: d?.drops ?? 0 });
+    claimedDays.push({ day, wei: d?.claimedWei ?? 0n });
+  }
+  return {
+    ...a,
+    total: t.drops, active: t.active, claimed: t.claims, reclaimed: t.reclaims,
+    expiredUnclaimed: Math.min(a.expiredUnclaimed, t.active),
+    claimedWei: t.claimedWei, reclaimedWei: t.reclaimedWei, activeWei: t.activeWei,
+    circulatedWei: t.droppedWei + REWARDS_WEI,
+    claimRate: settled > 0 ? Math.round((t.claims / settled) * 100) : 0,
+    days,
+    maxDay: Math.max(1, ...days.map((x) => x.n)),
     claimedDays,
     maxClaimedWei: claimedDays.reduce((mx, x) => (x.wei > mx ? x.wei : mx), 1n),
   };

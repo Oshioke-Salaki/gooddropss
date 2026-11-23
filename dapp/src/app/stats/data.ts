@@ -4,6 +4,7 @@ import { getBoardSnapshot } from "@/lib/boardSnapshot";
 import { getRedis, keys } from "@/lib/redis";
 import { getEvents, statsFor } from "@/lib/eventStore";
 import { circulatedG } from "@/lib/circulation";
+import { fetchIndexerSnapshot } from "@/lib/indexerTotals";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -29,15 +30,23 @@ export interface PublicStats {
 const whole = (wei: bigint) => Number(wei / 10n ** 18n);
 
 /**
- * Everything the public /stats page shows, from the chain (via the subgraph),
- * grouped by GoodDollar identity so one person with two wallets counts once.
+ * Everything the public /stats page shows, from the chain (via the subgraph).
+ * Drop and G$ totals come from the indexer's running totals (exact, one small
+ * query); people counts and the top lists are grouped by GoodDollar identity
+ * from the drop mirror, so one person with two wallets counts once. If the
+ * running totals can't be read, the mirror supplies the totals too.
  * Built at most once a minute per server instance; the page and the API share
  * it, and the CDN sits in front of both.
  */
 export function getPublicStats(): Promise<PublicStats> {
   return memo("public-stats", 60_000, async () => {
     // The same leaderboard /api/board serves (built once, shared).
-    const { drops, roots, board } = await getBoardSnapshot();
+    const [{ drops, roots, board }, idx, events] = await Promise.all([
+      getBoardSnapshot(), fetchIndexerSnapshot(), eventTotals(),
+    ]);
+    const t = idx?.totals;
+    const droppedWei = t?.droppedWei ?? board.droppedWei;
+    const claimedWei = t?.claimedWei ?? board.claimedWei;
     // Total users, by identity: a hunter who also drops, or one person on two
     // wallets, counts once. (The board's lists name each person by their latest
     // wallet, so merging those could count someone twice.)
@@ -50,15 +59,15 @@ export function getPublicStats(): Promise<PublicStats> {
     const top = (rs: typeof board.hunters) => rs.slice(0, 10).map((r) => ({ address: r.address, g: whole(r.totalWei), count: r.count }));
 
     return {
-      drops: board.totalDrops,
-      claims: board.totalClaims,
-      droppedG: whole(board.droppedWei),
-      claimedG: whole(board.claimedWei),
-      circulatedG: circulatedG(whole(board.droppedWei)),
+      drops: t?.drops ?? board.totalDrops,
+      claims: t?.claims ?? board.totalClaims,
+      droppedG: whole(droppedWei),
+      claimedG: whole(claimedWei),
+      circulatedG: circulatedG(whole(droppedWei)),
       hunters: board.hunters.length,
       droppers: board.droppers.length,
       users: people.size,
-      events: await eventTotals(),
+      events,
       topHunters: top(board.hunters),
       topDroppers: top(board.droppers),
       at: Date.now(),
