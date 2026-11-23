@@ -76,6 +76,11 @@ export function MigrateFlow() {
   const [preChecking, setPreChecking]   = useState(false);
   const [identity, setIdentity]   = useState<IdentityStatus>(NONE);
   const [fvBusy, setFvBusy]       = useState(false);
+  // The signed face-scan link, kept for this visit so the wallet is asked to
+  // sign once, not on every tap. `fvOpened` = the browser let us open it.
+  const [fvLink, setFvLink]       = useState<string | null>(null);
+  const [fvOpened, setFvOpened]   = useState(false);
+  const fvLinkAt = useRef(0);
   const [rechecking, setRechecking] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [balLoading, setBalLoading] = useState(false);
@@ -239,20 +244,52 @@ export function MigrateFlow() {
   // Open GoodDollar's face-verification for the OLD wallet. It must be signed by
   // that wallet — verifying the new one would mint a second identity instead of
   // reviving this one.
+  //
+  // Browsers only open a new tab straight from a tap on THIS page. For Privy
+  // (and any wallet that shows a "Sign and continue" prompt) the tap lands in the
+  // wallet's prompt, so a window.open after signing is silently blocked: nothing
+  // happens, the user taps again, signs again, and loops without ever reaching
+  // the face scan. So: sign once and keep the link; try to open it; if the
+  // browser blocked it, the button becomes a plain link to the scan, which a tap
+  // always opens.
+  const openFvLink = useCallback((link: string): boolean => {
+    const w = window.open(link, "_blank");
+    if (!w) return false;
+    try { w.opener = null; } catch { /* cross-origin already */ }
+    return true;
+  }, []);
+
   const startReverify = useCallback(async () => {
     if (!oldAddress) return;
-    setFvBusy(true);
     setErr("");
+    // The link carries a timestamp GoodDollar may treat as stale, so a kept link
+    // is reused for 10 minutes; after that the wallet signs a fresh one.
+    if (fvLink && Date.now() - fvLinkAt.current < FV_LINK_TTL_MS) { setFvOpened(openFvLink(fvLink) || fvOpened); return; }
+    setFvBusy(true);
     try {
       const client = await buildOldClient(false);
       const link = await generateReverifyLink(client, oldAddress, window.location.href);
-      window.open(link, "_blank", "noopener,noreferrer");
+      fvLinkAt.current = Date.now();
+      setFvLink(link);
+      setFvOpened(openFvLink(link));
     } catch (e) {
-      setErr((e as Error).message || "Couldn't open GoodDollar verification.");
+      const m = (e as { shortMessage?: string; message?: string })?.shortMessage ?? (e as Error)?.message ?? "";
+      setErr(/reject|denied|cancel/i.test(m)
+        ? "You didn't confirm in your wallet. Tap Start the face scan to try again."
+        : m || "Couldn't open GoodDollar verification.");
     } finally {
       setFvBusy(false);
     }
-  }, [oldAddress, buildOldClient]);
+  }, [oldAddress, buildOldClient, fvLink, fvOpened, openFvLink]);
+
+  // Back from the face scan (they switched back to this tab): check right away,
+  // so "I've done it" is a fallback rather than a required step.
+  useEffect(() => {
+    if (step !== "reverify" || !fvLink) return;
+    const onVisible = () => { if (document.visibilityState === "visible") void recheckIdentity(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [step, fvLink, recheckIdentity]);
 
   // Auto-continue once Privy finishes login and a wallet is available. Covers
   // both the email→Privy path and the "connect a wallet" path (Privy's modal
@@ -495,7 +532,7 @@ export function MigrateFlow() {
       setMode("link"); setOldBal(0n); setSweep(true); setPrivyPending(false);
       setCeloBal(0n); setAddrOpen(false); setCopied(false);
       setVerifiedRoot(null); setPreChecking(false);
-      setIdentity(NONE); setFvBusy(false); setRechecking(false);
+      setIdentity(NONE); setFvBusy(false); setRechecking(false); setFvLink(null); setFvOpened(false);
       oldProviderRef.current = null;
       oldPkRef.current = null;
       privyHandledRef.current = false;
@@ -674,7 +711,7 @@ export function MigrateFlow() {
 
                 <ol className="mt-4 rounded-2xl bg-surface p-4 flex flex-col gap-3 text-sm/[140%] text-heading">
                   {[
-                    <>Tap <b className="font-medium">Start the face scan</b> (opens in a new tab).</>,
+                    <>Tap <b className="font-medium">Start the face scan</b> and confirm in your wallet if it asks. The scan opens in a new tab.</>,
                     <>Complete the quick face check, using the same face as before.</>,
                     <>Come back to this tab and tap <b className="font-medium">I&apos;ve done it</b>.</>,
                   ].map((t, i) => (
@@ -687,11 +724,28 @@ export function MigrateFlow() {
 
                 {err && <ErrorLine>{err}</ErrorLine>}
 
-                <button type="button" onClick={startReverify} disabled={fvBusy} className={`${PRIMARY} mt-4`}>
-                  {fvBusy
-                    ? <><Loader2 size={18} className="animate-spin" /> Opening…</>
-                    : <><ShieldCheck size={18} /> Start the face scan</>}
-                </button>
+                {fvLink && !fvOpened ? (
+                  // Signed, but the browser blocked the new tab: a real link, so
+                  // this tap always opens it. No second signature.
+                  <>
+                    <p className={`${INFO} mt-4`}>Your face scan is ready. Tap below to open it.</p>
+                    <a
+                      href={fvLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setFvOpened(true)}
+                      className={`${PRIMARY} mt-3`}
+                    >
+                      <ShieldCheck size={18} /> Open the face scan
+                    </a>
+                  </>
+                ) : (
+                  <button type="button" onClick={startReverify} disabled={fvBusy} className={`${PRIMARY} mt-4`}>
+                    {fvBusy
+                      ? <><Loader2 size={18} className="animate-spin" /> Confirm in your wallet…</>
+                      : <><ShieldCheck size={18} /> {fvLink ? "Open the face scan again" : "Start the face scan"}</>}
+                  </button>
+                )}
 
                 <button type="button" onClick={recheckIdentity} disabled={rechecking} className={`${SECONDARY} mt-3`}>
                   {rechecking
@@ -1000,6 +1054,8 @@ const INPUT_ICON = "absolute left-5 top-1/2 -translate-y-1/2 text-nav-muted poin
 const PRIMARY = "w-full h-14 rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-brand/90 disabled:bg-[#A4A4A4] disabled:cursor-not-allowed";
 const SECONDARY = "w-full h-12 rounded-full border border-line bg-white text-heading text-sm/none flex items-center justify-center gap-2 cursor-pointer motion-safe:transition-colors hover:bg-surface disabled:opacity-60 disabled:cursor-wait";
 const FINE = "mt-4 text-xs/[150%] text-nav-muted text-center";
+// How long a signed face-scan link is reused before asking the wallet again.
+const FV_LINK_TTL_MS = 10 * 60 * 1000;
 const INFO = "rounded-2xl bg-surface p-4 text-sm/[150%] text-nav-muted";
 const NOTE_WARN = "rounded-2xl bg-[#FFF5E9] p-4 text-sm/[150%] text-[#8A4B00]";
 
