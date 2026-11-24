@@ -3,6 +3,7 @@ import { isAdminAuthed } from "@/lib/adminAuth";
 import { getBoardSnapshot } from "@/lib/boardSnapshot";
 import { analyticsToJson, computeAdminAnalytics, withIndexerTotals } from "@/lib/adminAnalytics";
 import { fetchIndexerSnapshot } from "@/lib/indexerTotals";
+import { autoRewardsG } from "@/lib/circulation";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -18,10 +19,12 @@ export const maxDuration = 30;
 export async function GET() {
   if (!(await isAdminAuthed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const [{ drops, roots, at }, idx] = await Promise.all([getBoardSnapshot(), fetchIndexerSnapshot()]);
+    const [{ drops, roots, at }, idx, autoG] = await Promise.all([getBoardSnapshot(), fetchIndexerSnapshot(), autoRewardsG()]);
     const now = Date.now();
     const base = computeAdminAnalytics(drops, roots, now);
-    const analytics = idx ? withIndexerTotals(base, idx, now) : base;
+    const totals = idx ? withIndexerTotals(base, idx, now) : base;
+    // Plus what the app has paid out by itself (referral payouts, first-drop bonuses).
+    const analytics = { ...totals, circulatedWei: totals.circulatedWei + BigInt(autoG) * 10n ** 18n };
     return NextResponse.json(
       { analytics: analyticsToJson(analytics), at, totals: idx ? "indexer" : "mirror" },
       { headers: { "Cache-Control": "private, no-store" } },

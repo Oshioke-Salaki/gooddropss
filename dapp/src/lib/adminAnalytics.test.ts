@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyticsFromJson, analyticsToJson, computeAdminAnalytics, withIndexerTotals } from "@/lib/adminAnalytics";
 import type { IndexerSnapshot } from "@/lib/indexerTotals";
-import { REWARDS_WEI } from "@/lib/circulation";
+import { REWARDS_BASE_WEI } from "@/lib/circulation";
 import type { Drop } from "@/types";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -37,7 +37,7 @@ describe("computeAdminAnalytics", () => {
     expect(a.claimedWei).toBe(200n * G);
     expect(a.reclaimedWei).toBe(50n * G);
     expect(a.activeWei).toBe(200n * G);
-    expect(a.circulatedWei).toBe(450n * G + REWARDS_WEI);
+    expect(a.circulatedWei).toBe(450n * G + REWARDS_BASE_WEI);
   });
 
   it("counts people by identity, not wallet", () => {
@@ -59,7 +59,7 @@ describe("computeAdminAnalytics", () => {
 
   it("survives an empty history", () => {
     const e = computeAdminAnalytics([], new Map(), NOW);
-    expect(e).toMatchObject({ total: 0, claimRate: 0, avgTtcSec: 0, maxDay: 1, maxClaimedWei: 1n, circulatedWei: REWARDS_WEI });
+    expect(e).toMatchObject({ total: 0, claimRate: 0, avgTtcSec: 0, maxDay: 1, maxClaimedWei: 1n, circulatedWei: REWARDS_BASE_WEI });
   });
 
   it("round-trips through JSON exactly", () => {
@@ -94,7 +94,7 @@ describe("withIndexerTotals", () => {
     expect(a.claimedWei).toBe(7_000n * G);
     expect(a.reclaimedWei).toBe(1_000n * G);
     expect(a.activeWei).toBe(2_000n * G);
-    expect(a.circulatedWei).toBe(10_000n * G + REWARDS_WEI);
+    expect(a.circulatedWei).toBe(10_000n * G + REWARDS_BASE_WEI);
     expect(a.claimRate).toBe(88); // 70 of 80 settled
   });
 

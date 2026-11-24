@@ -3,6 +3,7 @@ import { getRedis, keys } from "@/lib/redis";
 import { settleInvite, PENDING_TTL_S } from "@/lib/referralLedger";
 import { ledgerDeps } from "@/lib/referralDeps";
 import { tryRefPayout } from "@/lib/refPayout";
+import { tryFirstDropPayout } from "@/lib/firstDropServer";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -24,6 +25,7 @@ function authorized(req: NextRequest): boolean {
 // GET /api/cron/referrals — every 10 minutes (vercel.json).
 // Re-checks every saved invite, so an invitee is counted soon after they qualify
 // even if they never open GoodDrops again. Expired invites are cleaned up.
+// Also retries any first-drop bonus still owed.
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const redis = getRedis();
@@ -57,6 +59,8 @@ export async function GET(req: NextRequest) {
 
     // Pay once for everything this run credited.
     if (tally.credited) await tryRefPayout();
+    // First-drop bonuses still waiting (wallet was short, or a send failed).
+    if ((await redis.zrange<string[]>(keys.firstDropOwed(), 0, 0)).length) await tryFirstDropPayout();
     return NextResponse.json({ ok: true, checked: Object.values(tally).reduce((a, b) => a + b, 0), of: list.length, tally, ms: Date.now() - started });
   } catch (e) {
     console.error("[cron/referrals]", e);

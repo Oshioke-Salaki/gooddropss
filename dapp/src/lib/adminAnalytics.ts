@@ -3,7 +3,7 @@
 // instead of downloading the whole drop history into the browser.
 
 import { DROP_STATUS, type Drop } from "@/types";
-import { REWARDS_WEI } from "@/lib/circulation";
+import { REWARDS_BASE_WEI } from "@/lib/circulation";
 import type { IndexerSnapshot } from "@/lib/indexerTotals";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -93,7 +93,7 @@ export function computeAdminAnalytics(drops: Drop[], roots: Map<string, string>,
     total: drops.length, active, claimed, reclaimed, expiredUnclaimed,
     transactions: drops.length + claimed + reclaimed,
     claimedWei, reclaimedWei, activeWei,
-    circulatedWei: droppedWei + REWARDS_WEI,
+    circulatedWei: droppedWei + REWARDS_BASE_WEI,
     droppers: droppers.size, hunters: hunters.size, humans: humans.size,
     claimRate: settled > 0 ? Math.round((claimed / settled) * 100) : 0,
     days,
@@ -131,7 +131,7 @@ export function withIndexerTotals(a: AdminAnalytics, idx: IndexerSnapshot, nowMs
     transactions: t.drops + t.claims + t.reclaims,
     expiredUnclaimed: Math.min(a.expiredUnclaimed, t.active),
     claimedWei: t.claimedWei, reclaimedWei: t.reclaimedWei, activeWei: t.activeWei,
-    circulatedWei: t.droppedWei + REWARDS_WEI,
+    circulatedWei: t.droppedWei + REWARDS_BASE_WEI,
     claimRate: settled > 0 ? Math.round((t.claims / settled) * 100) : 0,
     days,
     maxDay: Math.max(1, ...days.map((x) => x.n)),

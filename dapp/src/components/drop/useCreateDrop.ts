@@ -607,7 +607,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
 
     if (s0.kind === "multi") {
       setMultiProgress((m) => (m ? { ...m, done: m.total } : m));
-      window.dispatchEvent(new CustomEvent("gd:drop-created"));
+      window.dispatchEvent(new CustomEvent("gd:drop-created", { detail: { dropper: address?.toLowerCase() } }));
       track("drop_created", { kind: "multi", count: qty });
       setStatus("done");
       return;
@@ -648,7 +648,7 @@ export function useCreateDrop({ campaignId, eventId, eventEndsAt, defaultLocatio
       if (!ok) return; // bindRiddle parked it in "riddleFailed" (resume UI)
     }
 
-    window.dispatchEvent(new CustomEvent("gd:drop-created"));
+    window.dispatchEvent(new CustomEvent("gd:drop-created", { detail: { dropper: address?.toLowerCase(), dropId: newDropId?.toString() } }));
     track("drop_created", { kind: "single" });
     setStatus("done");
   }

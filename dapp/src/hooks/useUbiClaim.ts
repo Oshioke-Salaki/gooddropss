@@ -75,6 +75,8 @@ export function useUbiClaim() {
     try {
       await s.claim();
       set(key, { claiming: false, status: "already_claimed", claimed: get(key).entitlement });
+      // Anyone can follow up on a claim (the first-drop nudge listens for this).
+      window.dispatchEvent(new CustomEvent("gd:ubi-claimed", { detail: { address: key } }));
       // Balances shown anywhere in the app are wagmi queries: refresh them.
       void queryClient.invalidateQueries();
       return true;

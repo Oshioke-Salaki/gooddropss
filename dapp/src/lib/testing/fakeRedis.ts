@@ -57,6 +57,13 @@ export class FakeRedis {
     this.m.set(key, { kind: "str", v: String(n), exp: e && e.kind === "str" ? e.exp : undefined });
     return n;
   }
+  async incrby(key: string, by: number): Promise<number> {
+    this.log.push("incrby");
+    const e = this.live(key);
+    const n = (e && e.kind === "str" ? Number(e.v) : 0) + by;
+    this.m.set(key, { kind: "str", v: String(n), exp: e && e.kind === "str" ? e.exp : undefined });
+    return n;
+  }
   async expire(key: string, s: number): Promise<number> {
     this.log.push("expire");
     const e = this.live(key); if (!e || e.kind !== "str") return 0; e.exp = this.clock + s * 1000; return 1;

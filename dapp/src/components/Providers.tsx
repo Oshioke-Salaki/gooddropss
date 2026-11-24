@@ -22,6 +22,7 @@ const loadMotion = () => import("@/lib/motionFeatures").then((m) => m.default);
 // load right after the page starts instead of delaying it.
 const ProfileSetup = dynamic(() => import("@/components/profile/ProfileSetup").then((m) => m.ProfileSetup), { ssr: false });
 const UbiPrompt = dynamic(() => import("@/components/UbiPrompt").then((m) => m.UbiPrompt), { ssr: false });
+const FirstDropNudge = dynamic(() => import("@/components/FirstDropNudge").then((m) => m.FirstDropNudge), { ssr: false });
 const FlowVotePrompt = dynamic(() => import("@/components/FlowVotePrompt").then((m) => m.FlowVotePrompt), { ssr: false });
 const ProfileDrawerHost = dynamic(() => import("@/components/profile/ProfileDrawer").then((m) => m.ProfileDrawerHost), { ssr: false });
 const ChestReward = dynamic(() => import("@/components/ChestReward").then((m) => m.ChestReward), { ssr: false });
@@ -96,6 +97,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
               via the gd:setName event (wallet pill, post-claim screen, leaderboard). */}
           <ProfileSetup />
           <UbiPrompt />
+          <FirstDropNudge />
           <FlowVotePrompt />
           <ProfileDrawerHost />
           <Toaster />

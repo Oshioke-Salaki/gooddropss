@@ -18,6 +18,8 @@ type Events = {
   claim_failed: { reason: ClaimFailReason; surface: ClaimSurface };
   hunt_started: Record<string, never>;
   drop_created: { kind: "single" | "multi" | "chain"; count?: number };
+  first_drop_nudge: { action: "shown" | "start" | "later" };
+  first_drop_bonus: { status: string };
   shop_payment_succeeded: { amountG: number };
   invite_link_copied: Record<string, never>;
   invite_qr_opened: Record<string, never>;

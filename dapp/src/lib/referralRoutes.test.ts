@@ -162,6 +162,7 @@ describe("GET /api/referral", () => {
 
 // ── The sweep cron ───────────────────────────────────────────────────────────
 vi.mock("@/lib/refPayout", () => ({ tryRefPayout: vi.fn(async () => {}) }));
+vi.mock("@/lib/firstDropServer", () => ({ tryFirstDropPayout: vi.fn(async () => {}) }));
 const { GET: SWEEP } = await import("@/app/api/cron/referrals/route");
 const { tryRefPayout } = await import("@/lib/refPayout");
 

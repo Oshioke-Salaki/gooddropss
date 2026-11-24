@@ -12,6 +12,9 @@ import { RIDDLE_MAX_ANSWER, RIDDLE_MAX_QUESTION } from "@/lib/riddles";
 import { formatG$ } from "@/lib/utils";
 import { CLAIM_RADIUS_M } from "@/lib/contracts";
 import { addLandmarkClue } from "@/lib/landmarks";
+import { useSignedInAccount } from "@/hooks/useSignedInAccount";
+import { useFirstDrop, bonusEarned } from "@/hooks/useFirstDrop";
+import { FirstDropChip } from "@/components/FirstDropNudge";
 
 interface Props {
   userLocation: { lat: number; lng: number } | null;
@@ -50,6 +53,13 @@ export function DropGDrawer({
     defaultLocation: eventVenue ? { lat: eventVenue.lat, lng: eventVenue.lng, placeName: eventVenue.name } : null,
   });
   const sheet = useSheetDrag({ onDismiss: d.handleClose }); // handleClose ignores closes mid-drop
+  // First-drop bonus: offered while they've never dropped; celebrated on the
+  // success screen once this drop earns it. Remember it was on offer when the
+  // drawer opened, so the celebration only follows THIS drop.
+  const { address } = useSignedInAccount();
+  const firstDrop = useFirstDrop(address);
+  const [bonusOffered, setBonusOffered] = useState(false);
+  useEffect(() => { if (firstDrop.view?.status === "offer") setBonusOffered(true); }, [firstDrop.view?.status]);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const { sheetRef, sheetStyle, handleProps } = sheet;
 
@@ -108,6 +118,9 @@ export function DropGDrawer({
         onClose={d.handleClose}
         durationSeconds={d.resuming ? undefined : (d.placedForS ?? d.duration)}
         onViewOnMap={onViewOnMap && d.lat != null && d.lng != null ? () => onViewOnMap(d.lat as number, d.lng as number) : undefined}
+        firstDropBonus={bonusOffered && bonusEarned(firstDrop.view?.status)
+          ? { bonusG: firstDrop.view!.bonusG, sent: firstDrop.view!.status === "paid" }
+          : undefined}
       />
     );
   }
@@ -152,6 +165,8 @@ export function DropGDrawer({
                     <CalendarDays className="h-4 w-4 shrink-0" strokeWidth={2} />
                     <span className="truncate">For {eventName ?? "your event"}</span>
                   </span>
+                ) : firstDrop.view?.status === "offer" && !campaignId ? (
+                  <FirstDropChip bonusG={firstDrop.view.bonusG} />
                 ) : (
                   <p className="text-sm/none text-nav-muted">Hide money anywhere in the world</p>
                 )}

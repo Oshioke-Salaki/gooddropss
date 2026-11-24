@@ -928,3 +928,23 @@ which they ignore; and a GoodDollar root change split one referrer's count in tw
   endpoints are rate limited per IP, and prize payouts still run once per new
   referral. 56 new tests cover the rules, races, outages and every route.
 
+
+## 29. First drop bonus
+
+- **The nudge.** Right after a verified person claims their daily G$ (and,
+  gently, on a visit: at most every 3 days, 5 times in all), anyone who has never
+  hidden a drop sees "Hide your first drop": a small map scene, three steps, and
+  one button that opens the drop drawer (`/?drop=1` from any other page). The
+  drawer shows "First drop: we send you 200 G$" while the offer stands.
+- **The bonus.** Once their first drop is live, 200 G$ goes from the reward
+  wallet to the wallet that made it, and the "Your drop is live" screen shows it.
+  One per person (identity root, SET NX), verified humans only, and only for
+  people whose first ever drop is on or after 24 Nov 2026.
+- **Never lost, never doubled.** The app reports the drop at once (checked
+  on-chain, so the indexer's lag doesn't matter); loading the app also registers
+  it, and `/api/cron/referrals` retries any bonus still owed every 10 minutes
+  (e.g. while the reward wallet is short). Sends share the referral payout lock,
+  are marked before broadcast and rolled back if nothing was sent.
+- **G$ circulated now counts itself.** Referral competition payouts and
+  first-drop bonuses are read live (`lib/circulation.ts`), so the public figure
+  rises with every payment. Prizes paid by hand still go in `REWARDS_BASE_G`.

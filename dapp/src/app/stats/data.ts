@@ -3,7 +3,7 @@ import { memo } from "@/lib/serverCache";
 import { getBoardSnapshot } from "@/lib/boardSnapshot";
 import { getRedis, keys } from "@/lib/redis";
 import { getEvents, statsFor } from "@/lib/eventStore";
-import { circulatedG } from "@/lib/circulation";
+import { autoRewardsG, circulatedG } from "@/lib/circulation";
 import { fetchIndexerSnapshot } from "@/lib/indexerTotals";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -43,8 +43,8 @@ const whole = (wei: bigint) => Number(wei / 10n ** 18n);
 export function getPublicStats(): Promise<PublicStats> {
   return memo("public-stats", 60_000, async () => {
     // The same leaderboard /api/board serves (built once, shared).
-    const [{ drops, roots, board }, idx, events] = await Promise.all([
-      getBoardSnapshot(), fetchIndexerSnapshot(), eventTotals(),
+    const [{ drops, roots, board }, idx, events, autoG] = await Promise.all([
+      getBoardSnapshot(), fetchIndexerSnapshot(), eventTotals(), autoRewardsG(),
     ]);
     const t = idx?.totals;
     const droppedWei = t?.droppedWei ?? board.droppedWei;
@@ -70,7 +70,7 @@ export function getPublicStats(): Promise<PublicStats> {
       transactions: t ? t.drops + t.claims + t.reclaims : drops.length + claimed + reclaimed,
       droppedG: whole(droppedWei),
       claimedG: whole(claimedWei),
-      circulatedG: circulatedG(whole(droppedWei)),
+      circulatedG: circulatedG(whole(droppedWei), autoG),
       hunters: board.hunters.length,
       droppers: board.droppers.length,
       users: people.size,

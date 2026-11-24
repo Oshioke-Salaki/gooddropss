@@ -104,6 +104,13 @@ export default function HomePage() {
   // The mobile nav rail hangs over the search band; Nav broadcasts its state so we
   // pull the band rather than leave a sliver of it showing beneath the rail.
   const [navMenuOpen, setNavMenuOpen] = useState(false);
+  // "Hide my first drop" (and anything else) can ask for the drop drawer: by
+  // event while on the map, or by /?drop=1 from another page.
+  useEffect(() => {
+    const open = () => setShowCreate(true);
+    window.addEventListener("gd:open-drop", open);
+    return () => window.removeEventListener("gd:open-drop", open);
+  }, []);
   useEffect(() => {
     const onMenu = (e: Event) => setNavMenuOpen(!!(e as CustomEvent).detail?.open);
     window.addEventListener("gd:navmenu", onMenu);
@@ -121,8 +128,10 @@ export default function HomePage() {
         if (Number.isFinite(la) && Number.isFinite(ln)) setFocusCoord({ lat: la, lng: ln });
       }
       if (s) setSpotDeepLinkId(s);
-      if (!f && !s) return;
-      p.delete("focus"); p.delete("spot");
+      const dropNow = p.get("drop") === "1";
+      if (dropNow) setShowCreate(true);
+      if (!f && !s && !dropNow) return;
+      p.delete("focus"); p.delete("spot"); p.delete("drop");
       const qs = p.toString();
       window.history.replaceState(null, "", qs ? `/?${qs}` : "/");
     } catch { /* ignore malformed params */ }

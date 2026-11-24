@@ -152,6 +152,10 @@ export const keys = {
   refPaidSlots:      (id: string)            => `gd:comp:ref:slots:${id}`,            // Set of "referrer|invitee" already PAID
   refPotSpent:       (id: string)            => `gd:comp:ref:spent:${id}`,            // string wei, total paid out
   refPayoutLog:      (id: string)            => `gd:comp:ref:payout:log:${id}`,       // List: bounded audit trail
+  // First-drop bonus: 200 G$ for a verified person's first drop (lib/firstDrop).
+  firstDrop:         (root: string)          => `gd:fd:root:${root.toLowerCase()}`,   // JSON FirstDropRecord, one per person (SET NX)
+  firstDropOwed:     ()                      => `gd:fd:owed`,                          // ZSET root → registered at (sec): waiting to be paid
+  firstDropPaidG:    ()                      => `gd:fd:paid:g`,                        // integer whole G$ sent (for G$ circulated)
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

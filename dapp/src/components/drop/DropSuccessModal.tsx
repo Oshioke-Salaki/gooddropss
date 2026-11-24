@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Check, Copy, LockKeyhole, MapPinCheck, Navigation, Share2 } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { shareOrCopy } from "@/lib/share";
+import { FirstDropEarned } from "@/components/FirstDropNudge";
 
 interface Props {
   /** Whole-G$ amount of a single drop, as typed. */
@@ -25,6 +26,8 @@ interface Props {
   durationSeconds?: number;
   /** Fly the map to the drop. Omitted where there's no map behind the modal. */
   onViewOnMap?: () => void;
+  /** This was their first drop and it earned the bonus. */
+  firstDropBonus?: { bonusG: number; sent: boolean };
 }
 
 /** X (formerly Twitter) mark. Inlined — it's one path, and it inherits colour. */
@@ -51,7 +54,7 @@ function humanDuration(s: number): string {
  */
 export function DropSuccessModal({
   amount, amountWei, qty, placeName, isPrivate, shareUrl, resuming, onShare, onClose,
-  durationSeconds, onViewOnMap,
+  durationSeconds, onViewOnMap, firstDropBonus,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -119,6 +122,8 @@ export function DropSuccessModal({
           )}
         </div>
       </div>
+
+      {firstDropBonus && <FirstDropEarned bonusG={firstDropBonus.bonusG} sent={firstDropBonus.sent} />}
 
       {/* Where and for how long — the two things a dropper checks. */}
       {(placeName || durationSeconds) && !resuming && (
