@@ -1,6 +1,6 @@
 "use client";
 import { Trophy, UserPlus, ArrowRight, CalendarDays } from "lucide-react";
-import { coveredReferralSlots, type CompConfig, type RefCompConfig } from "@/lib/competition";
+import { coveredReferralSlots, podiumWei, type CompConfig, type RefCompConfig } from "@/lib/competition";
 import { Countdown, fmtG, useNow } from "./shared";
 
 // Start/end in WAT: the season is run from Nigeria and every flyer quotes WAT,
@@ -24,7 +24,7 @@ export function SeasonRunUp({ points, refs, onPick }: {
   const now = useNow(); // ticks here only, so the boards below don't re-render each second
   const startsAt = Math.min(points.startsAt, refs.startsAt);
   const endsAt = Math.max(points.endsAt, refs.endsAt);
-  const totalWei = (BigInt(points.potWei) + BigInt(refs.potWei)).toString();
+  const totalWei = (BigInt(points.potWei) + BigInt(refs.potWei) + BigInt(podiumWei(refs))).toString();
   const perRefG = Math.round(Number(refs.perReferralWei) / 1e18);
   const winners = points.tiers.length;
   const slots = coveredReferralSlots(refs);

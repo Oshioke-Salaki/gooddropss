@@ -106,11 +106,21 @@ export interface RefCompConfig {
   potWei: string;          // total prize pool, stringified wei
   perReferralWei: string;  // paid per covered referral
   threshold: number;       // referrals needed before ANY payout unlocks
+  /**
+   * Optional end-of-competition prizes in whole G$, 1st place first (paid by hand
+   * at the close, on top of the per-referral pot). With a podium the race runs to
+   * `endsAt` even once the pot is spent, and the board ranks by referral count.
+   */
+  podium?: number[];
+  /** Optional co-sponsor shown on the board, e.g. "GoodCash". */
+  sponsor?: string;
 }
 
 // Season 4 — REFERRAL competition. Same window as the points competition
 // (Mon 16 Nov 09:00 → end of Wed 25 Nov, 2026 WAT).
 // 650,000 G$ at 4,800 G$ each ⇒ 135 covered referrals (648,000 G$).
+// Later seasons are set live through POST /api/comp/referrals/config (stored in
+// Redis, which wins over this default).
 export const REF_COMP_DEFAULT: RefCompConfig = {
   id: "referrals-2026-11-16",
   startsAt: Math.floor(Date.parse("2026-11-16T09:00:00+01:00") / 1000),
@@ -119,6 +129,11 @@ export const REF_COMP_DEFAULT: RefCompConfig = {
   perReferralWei: (4_800n * 10n ** 18n).toString(),
   threshold: 5,
 };
+
+/** The podium's total in wei ("0" without one). */
+export function podiumWei(cfg: Pick<RefCompConfig, "podium">): string {
+  return ((cfg.podium ?? []).reduce((t, g) => t + BigInt(Math.round(g)), 0n) * 10n ** 18n).toString();
+}
 
 const REF_CONFIG_KEY = "gd:comp:ref:config";
 
@@ -144,11 +159,12 @@ export function coveredReferralSlots(cfg: RefCompConfig): number {
   return Number(BigInt(cfg.potWei) / per);
 }
 
-// Time-based, plus an early end once every pot slot is spoken for.
+// Time-based, plus an early end once every pot slot is spoken for — unless there's
+// a podium still to win, in which case the race runs to the end date.
 export function refCompPhase(cfg: RefCompConfig, nowSec: number, coveredUsed: number): CompPhase {
   if (nowSec < cfg.startsAt) return "upcoming";
   if (nowSec >= cfg.endsAt) return "ended";
-  if (coveredUsed >= coveredReferralSlots(cfg)) return "ended"; // pot exhausted
+  if (!cfg.podium?.length && coveredUsed >= coveredReferralSlots(cfg)) return "ended"; // pot exhausted
   return "live";
 }
 

@@ -138,7 +138,11 @@ export async function computeReferralBoard(cfg: RefCompConfig): Promise<RefBoard
   // referrals, whoever referred most recently sits on top — so a new referral
   // visibly moves you up), then a stable key so the order can never shuffle
   // between renders.
+  // With a podium the places are worth money and the pot can run dry mid-race, so
+  // rank on referrals alone, and on a tie whoever got there FIRST stays ahead.
+  const podium = !!cfg.podium?.length;
   entries.sort((a, b) => {
+    if (podium) return b.count - a.count || a.lastAt - b.lastAt || a.root.localeCompare(b.root);
     const ea = BigInt(a.earnedWei), eb = BigInt(b.earnedWei);
     if (ea !== eb) return eb > ea ? 1 : -1;
     return b.count - a.count || b.lastAt - a.lastAt || a.root.localeCompare(b.root);

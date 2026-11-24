@@ -27,7 +27,7 @@ interface Data {
   ok: boolean;
   phase: Phase;
   stats: Stats;
-  config: { startsAt: number; endsAt: number; potWei: string; perReferralWei: string; threshold: number };
+  config: { startsAt: number; endsAt: number; potWei: string; perReferralWei: string; threshold: number; podium?: number[]; sponsor?: string | null };
   participants: Participant[];
   you: (Participant & { rank: number | null }) | null;
 }
@@ -101,6 +101,10 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
   const participants = useMemo(() => data?.participants ?? [], [data]);
   const slotsLeft = stats ? Math.max(0, stats.slots - stats.slotsUsed) : 0;
   const potGone = !!stats && slotsLeft === 0 && stats.slots > 0;
+  // Optional end-of-race prizes for the top three, on top of the per-referral pot.
+  const podium = cfg?.podium ?? [];
+  const totalWei = (BigInt(potWei) + BigInt(podium.reduce((t, g) => t + Math.round(g), 0)) * 10n ** 18n).toString();
+  const podiumText = podium.map((g) => `${g.toLocaleString()} G$`).join(", ").replace(/, ([^,]*)$/, " and $1");
 
   // One batched profile request for every row's avatar, instead of one per row.
   const addresses = useMemo(() => participants.map((p) => p.root), [participants]);
@@ -167,11 +171,16 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
                 <Skeleton className="h-8 w-40 mt-1" />
               ) : (
                 <p className="text-[28px]/none lg:text-[32px]/none text-heading">
-                  {fmtG(potWei)} <span className="text-nav-muted">G$</span>
+                  {fmtG(totalWei)} <span className="text-nav-muted">G$</span>
                 </p>
               )}
               {loading ? <Skeleton className="h-[14px] w-48" /> : (
-                <p className="text-sm/none text-nav-muted">Prize pool · {perRefG.toLocaleString()} G$ per referral</p>
+                <p className="text-sm/none text-nav-muted">
+                  Prize pool · {perRefG.toLocaleString()} G$ per referral{podium.length ? ` + top ${podium.length} prizes` : ""}
+                </p>
+              )}
+              {!loading && cfg?.sponsor && (
+                <p className="text-sm/none text-nav-muted">Co-sponsored by <span className="text-heading">{cfg.sponsor}</span></p>
               )}
             </div>
 
@@ -182,6 +191,9 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
                 Earn <span className="text-heading">{perRefG.toLocaleString()} G$</span> for every friend you bring who
                 verifies and plays. Unlock your earnings at <span className="text-heading">{threshold} referrals</span>,
                 then it&apos;s paid first come, first served until the pot runs out.
+                {podium.length > 0 && (
+                  <> When it ends, the top {podium.length} also win <span className="text-heading">{podiumText}</span>.</>
+                )}
               </p>
             )}
 
@@ -196,7 +208,9 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
               <div className="flex items-start gap-3 rounded-2xl bg-streak-bg p-4">
                 <AlertCircle className="w-5 h-5 text-streak shrink-0 mt-0.5" strokeWidth={2} />
                 <p className="text-sm/[150%] text-heading">
-                  The {fmtG(potWei)} G$ referral pot has been fully claimed. Referrals after this point no longer earn.
+                  {podium.length
+                    ? <>The {fmtG(potWei)} G$ per-referral pot has been fully claimed. Referrals still count toward the top {podium.length} prizes until the end.</>
+                    : <>The {fmtG(potWei)} G$ referral pot has been fully claimed. Referrals after this point no longer earn.</>}
                 </p>
               </div>
             )}
@@ -223,6 +237,9 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
                   <HowStep n={2}>That counts as <b>1 referral</b>, worth <b>{perRefG.toLocaleString()} G$</b>.</HowStep>
                   <HowStep n={3}>Reach <b>{threshold} referrals</b> to <b>unlock</b> your earnings. Below {threshold} you earn nothing, so push to {threshold} first.</HowStep>
                   <HowStep n={4}>The pot pays <b>first come, first served</b> — earlier referrals are covered first, and there are <b>{stats?.slots.toLocaleString() ?? "—"}</b> paid slots in total. Get in early.</HowStep>
+                  {podium.length > 0 && (
+                    <HowStep n={5}>When it ends, the <b>top {podium.length}</b> by referrals win <b>{podiumText}</b>, on top of what they earned. Referrals keep counting for this even after the pot runs out. On a tie, whoever got there first ranks higher.</HowStep>
+                  )}
                 </ol>
                 <p className="text-sm/[150%] text-nav-muted">
                   Each person can only ever be referred once, by whoever invited them first. Only friends who join after the

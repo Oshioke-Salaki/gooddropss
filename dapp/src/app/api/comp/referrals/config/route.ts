@@ -38,6 +38,16 @@ export async function POST(req: NextRequest) {
     if (!Number.isInteger(n) || n < 1) return bad("threshold");
     patch.threshold = n;
   }
+  // Podium: whole G$, 1st place first (e.g. [50000, 30000, 20000]); [] removes it.
+  if (b.podium !== undefined) {
+    if (!Array.isArray(b.podium) || b.podium.length > 10 || !b.podium.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0)) return bad("podium");
+    patch.podium = b.podium.map((n: number) => Math.round(n));
+  }
+  // Co-sponsor name shown on the board; "" removes it.
+  if (b.sponsor !== undefined) {
+    if (typeof b.sponsor !== "string") return bad("sponsor");
+    patch.sponsor = b.sponsor.trim().slice(0, 40);
+  }
   if (b.startsAt !== undefined) { const t = toUnix(b.startsAt); if (t === null) return bad("startsAt"); patch.startsAt = t; }
   if (b.endsAt !== undefined) { const t = toUnix(b.endsAt); if (t === null) return bad("endsAt"); patch.endsAt = t; }
   // Changing the id starts a FRESH participant set (gd:comp:referrers:<id>), which

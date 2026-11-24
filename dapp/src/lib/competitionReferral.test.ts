@@ -144,3 +144,29 @@ describe("computeReferralBoard", () => {
     );
   });
 });
+
+describe("podium seasons", () => {
+  const podiumCfg: RefCompConfig = { ...cfg, podium: [50, 30, 20], sponsor: "GoodCash" };
+
+  it("ranks by referral count, not earnings, once the pot is spent", async () => {
+    // A unlocks early and takes all 3 paid slots; B refers more people later.
+    fixture = {
+      participants: ["a", "b"],
+      credited: { a: [["a1", 1], ["a2", 2], ["a3", 3]], b: [["b1", 10], ["b2", 11], ["b3", 12], ["b4", 13]] },
+    };
+    const plain = await computeReferralBoard(cfg);
+    expect(plain.entries[0].root).toBe("a"); // unchanged: earnings first without a podium
+    const board = await computeReferralBoard(podiumCfg);
+    expect(board.entries.map((e) => e.root)).toEqual(["b", "a"]);
+    expect(earnedOf(board, "b")).toBe("0"); // pot already gone, the podium is what's left
+  });
+
+  it("on a tie, whoever got there first ranks higher", async () => {
+    fixture = {
+      participants: ["late", "early"],
+      credited: { late: [["l1", 5], ["l2", 50]], early: [["e1", 4], ["e2", 20]] },
+    };
+    const board = await computeReferralBoard(podiumCfg);
+    expect(board.entries.map((e) => e.root)).toEqual(["early", "late"]);
+  });
+});

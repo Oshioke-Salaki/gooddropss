@@ -238,7 +238,7 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
 
           <button className={BTN} disabled={!amountReady} onClick={() => setStep("bank")}>Continue</button>
           <p className="text-center text-xs/[145%] text-nav-muted -mt-2">
-            Paid to your Nigerian bank account, usually in minutes.
+            Paid to your Nigerian bank account, usually in seconds.
           </p>
           <RecentCashOuts wallet={address} onOpen={flow.open} />
         </>
@@ -528,7 +528,7 @@ export function Review({ amount, quote, quoting, account, phase, onConfirm, onCh
           <p role="status" className="text-sm/[145%] text-danger text-center">{error}</p>
         ) : (
           <p className="text-xs/[145%] text-nav-muted text-center flex items-center justify-center gap-1.5">
-            <Clock className="w-3.5 h-3.5" /> Arrives in your bank in minutes
+            <Clock className="w-3.5 h-3.5" /> Arrives in your bank in seconds
           </p>
         )}
       </div>
@@ -617,7 +617,7 @@ export function Progress({ phase, naira, accountName, bankLine, onDone, onAgain 
         <p className="text-xs/[150%] text-nav-muted text-center -mt-2">
           {phase.kind === "checking"
             ? "Don't send it again. We're making sure your G$ went through."
-            : "This usually takes a few minutes. You can close this, it keeps going."}
+            : "This usually takes a few seconds. You can close this, it keeps going."}
         </p>
       )}
     </div>

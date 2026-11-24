@@ -30,3 +30,13 @@ describe("season defaults", () => {
     expect(COMP_DEFAULT.id).not.toBe(REF_COMP_DEFAULT.id);
   });
 });
+
+describe("podium keeps the race alive", () => {
+  it("does not end early when the pot is spent, only at endsAt", () => {
+    const cfg = { ...REF_COMP_DEFAULT, podium: [50_000, 30_000, 20_000] };
+    const slots = coveredReferralSlots(cfg);
+    expect(refCompPhase(cfg, cfg.startsAt, slots)).toBe("live");
+    expect(refCompPhase(cfg, cfg.endsAt, slots)).toBe("ended");
+    expect(refCompPhase({ ...cfg, podium: [] }, cfg.startsAt, slots)).toBe("ended");
+  });
+});
