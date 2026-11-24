@@ -9,7 +9,7 @@ import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import {
   fmtG, useNow, usePoll,
   Countdown, HowStep, HowToPlay, StatCard, Chip, InviteLink, SignInCard, CrossLink, useOtherStanding,
-  BoardHeader, BoardEmpty, BoardPodium, BoardRow, BoardRowSkeleton, PersonPill, LockedTag, YouBar,
+  BoardHeader, BoardEmpty, BoardList, BoardListSkeleton, StickyAside, PersonPill, LockedTag,
   type Phase, type BoardEntry,
 } from "./shared";
 
@@ -43,17 +43,13 @@ interface Props {
   runUp?: boolean;
 }
 
-const PAGE = 25;
-
 // The REFERRAL competition: a flat rate per qualifying referral, unlocked at a
 // threshold, paid first-come-first-served until the pot is exhausted.
 export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, runUp }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
-  const [visible, setVisible] = useState(PAGE);
 
   const load = useCallback((force = false) => {
     const p = new URLSearchParams();
@@ -122,10 +118,6 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
 
   const byRoot = useMemo(() => new Map(participants.map((p) => [p.root, p])), [participants]);
   const loading = !data;
-  const showPodium = entries.length >= 3;
-  const podium = showPodium ? entries.slice(0, 3) : [];
-  const rest = showPodium ? entries.slice(3) : entries;
-  const shown = rest.slice(0, visible);
 
   const details = (p: Participant) => (
     <div>
@@ -148,18 +140,6 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
     </div>
   );
 
-  const row = (e: BoardEntry, className?: string) => (
-    <BoardRow
-      key={`${className ?? ""}${e.root}`}
-      className={className}
-      e={e}
-      isMe={!!you && you.root === e.root}
-      open={expanded === e.root}
-      onToggle={() => setExpanded(expanded === e.root ? null : e.root)}
-      details={details(byRoot.get(e.root)!)}
-    />
-  );
-
   if (failed && !data) {
     return (
       <div className="bg-white rounded-3xl p-8 flex flex-col items-center text-center gap-4 shadow-[0px_0px_12px_0px_#0000000A]" role="alert">
@@ -176,8 +156,8 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6 lg:gap-12 items-start">
-        {/* ── Left: overview + you ─────────────────────────────────────────── */}
-        <div className="flex flex-col gap-6 min-w-0">
+        {/* ── Left: overview + you (stays in view on desktop) ───────────────── */}
+        <StickyAside className="flex flex-col gap-6 min-w-0">
           <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 flex flex-col gap-y-6">
             <div className="flex flex-col gap-y-3 min-w-0">
               <span className="inline-flex items-center gap-2 self-start rounded-full bg-brand-soft text-brand px-3.5 py-2.5 text-sm/none">
@@ -284,10 +264,11 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
           ) : (
             <SignInCard body="Sign in to get your invite link and start referring." onSignIn={onSignIn} />
           )}
-        </div>
+        </StickyAside>
 
         {/* ── Right: the board ─────────────────────────────────────────────── */}
-        <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden min-w-0">
+        {/* overflow-clip, not hidden: hidden would stop your pinned row sticking. */}
+        <section id="comp-board" className="scroll-mt-28 bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-clip min-w-0">
           <BoardHeader
             title="Leaderboard"
             count={participants.length}
@@ -297,51 +278,25 @@ export function ReferralBoard({ address, myLink, onSwitch, onSignIn, onPhase, ru
             loading={loading}
           />
           {loading ? (
-            <>
-              <BoardPodium entries={[]} loading />
-              <div className="border-t border-line lg:border-t-0">
-                {Array.from({ length: 6 }, (_, i) => <BoardRowSkeleton key={i} />)}
-              </div>
-            </>
+            <BoardListSkeleton />
           ) : entries.length === 0 ? (
             <BoardEmpty
               title="No referrals yet"
               body={phase === "live" ? "Share your invite link to get on the board." : "The competition hasn't started."}
             />
           ) : (
-            <>
-              {showPodium && <BoardPodium entries={podium} loading={false} />}
-              <div className="border-t border-line lg:border-t-0">
-                {podium.map((e) => row(e, "lg:hidden"))}
-                {podium.map((e) => row(e, "hidden lg:block"))}
-                {shown.map((e) => row(e))}
-              </div>
-              {rest.length > visible && (
-                <div className="p-6 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setVisible((v) => v + PAGE)}
-                    className="rounded-full bg-surface hover:bg-nav-controls px-6 py-3 text-sm/none text-heading cursor-pointer motion-safe:transition-colors"
-                  >
-                    Show {Math.min(PAGE, rest.length - visible)} more
-                  </button>
-                </div>
-              )}
-            </>
+            <div className="pb-1">
+              <BoardList
+                entries={entries}
+                meRoot={you?.root ?? null}
+                details={(root) => details(byRoot.get(root)!)}
+                anchorId="comp-board"
+              />
+            </div>
           )}
         </section>
       </div>
 
-      {/* Your standing, pinned — only once the board is real and you're on it. */}
-      {you?.rank ? (
-        <YouBar
-          rank={you.rank}
-          root={you.root}
-          sub={`${you.count} referral${you.count === 1 ? "" : "s"}`}
-          value={fmtG(you.earnedWei)}
-          unit="G$"
-        />
-      ) : null}
     </>
   );
 }

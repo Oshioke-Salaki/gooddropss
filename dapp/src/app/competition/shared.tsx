@@ -1,14 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight, Check, ChevronDown, ChevronUp, Copy, Lock, RefreshCw, Timer, Users,
 } from "lucide-react";
 import clsx from "clsx";
 import { ProfileAvatar } from "@/components/ProfileAvatar";
-import { openProfile } from "@/components/profile/ProfileDrawer";
-import { Skeleton, IdentitySkeleton, AmountSkeleton } from "@/app/leaderboard/components/Skeleton";
-import { RankBadge, ordinal } from "@/app/leaderboard/components/RankBadge";
+import { Skeleton } from "@/app/leaderboard/components/Skeleton";
+import { ordinal } from "@/app/leaderboard/components/RankBadge";
 import { track } from "@/lib/analytics";
 
 // Shared presentation helpers for the two competition boards (points + referrals).
@@ -329,137 +328,256 @@ export interface BoardEntry {
   tags?: React.ReactNode;
 }
 
-const MEDALS = ["/first-medal.svg", "/second-medal.svg", "/third-medal.svg"];
+/** Gold, silver, bronze: the rank badge on each podium avatar. */
+const PODIUM_TONES = ["bg-[#F5B83D] text-white", "bg-[#AEB6C2] text-white", "bg-[#C8834F] text-white"];
+/** Rows shown at first (the podium counts as three), and how many each "Show more" adds. */
+const FIRST = 10;
+const STEP = 20;
 
-function Identity({ e, onDark = false }: { e: BoardEntry; onDark?: boolean }) {
-  return (
-    <div className="flex items-center gap-x-3 lg:gap-x-4 min-w-0">
-      <span className="lg:hidden shrink-0"><ProfileAvatar address={e.root} size={38} ringColor="transparent" /></span>
-      <span className="hidden lg:block shrink-0"><ProfileAvatar address={e.root} size={46} ringColor="transparent" /></span>
-      <div className="flex flex-col gap-y-2.5 lg:gap-y-3 min-w-0">
-        <span className="flex items-center gap-2 min-w-0">
-          <Link
-            href={`/hunter/${e.root}`}
-            onClick={(ev) => ev.stopPropagation()}
-            className={clsx("text-base/none lg:text-lg/none truncate motion-safe:transition-opacity hover:opacity-80",
-              onDark ? "text-white" : "text-heading")}
-          >
-            {nameOrShort(e.username, e.root)}
-          </Link>
-          {e.tags}
-        </span>
-        <span className={clsx("text-sm/none truncate", onDark ? "text-white/70" : "text-nav-muted")}>{e.sub}</span>
-      </div>
-    </div>
-  );
-}
-
-function Amount({ e, onDark = false }: { e: BoardEntry; onDark?: boolean }) {
-  return (
-    <div className="flex flex-col gap-y-2.5 lg:gap-y-3 items-end shrink-0">
-      <span className={clsx("text-base/none lg:text-lg/none tabular-nums", onDark ? "text-white" : "text-heading")}>{e.value}</span>
-      <span className={clsx("text-sm/none", onDark ? "text-white/70" : "text-nav-muted")}>{e.unit}</span>
-    </div>
-  );
-}
+// ── Podium ────────────────────────────────────────────────────────────────────
 
 /**
- * Top three, side by side — desktop only. Below lg the same three render as
- * ordinary rows whose rank badge is the medal, exactly like the leaderboard.
- *
- * The board card is narrower than the leaderboard page (it shares the row with
- * the overview card), so each cell stacks name, sub and amount under a smaller
- * medal rather than spreading them out side by side.
+ * The top three as cards, at every width: second, first, third, with first
+ * raised and filled. Tapping one opens their details under the podium.
  */
-export function BoardPodium({ entries, loading }: { entries: BoardEntry[]; loading: boolean }) {
-  const cells = loading
-    ? MEDALS.map((m, i) => ({ medal: m, e: null as BoardEntry | null, key: String(i) }))
-    : entries.slice(0, 3).map((e, i) => ({ medal: MEDALS[i], e, key: e.root }));
+function Podium({ entries, meRoot, open, onOpen }: {
+  entries: BoardEntry[]; meRoot: string | null; open: string | null; onOpen: (root: string) => void;
+}) {
+  const order = [entries[1], entries[0], entries[2]];
   return (
-    <div className="hidden lg:flex border-t border-line">
-      {cells.map(({ medal, e, key }) => (
-        <div key={key} className="flex-1 flex items-center gap-x-2 min-w-0 py-2 pr-5 border-r border-line last:border-r-0">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={medal} alt="" width={140} height={140} className="w-24 h-24 shrink-0 -ml-1" />
-          {e ? (
-            <div className="flex flex-col gap-y-2.5 min-w-0 flex-1">
-              <span className="flex items-center gap-x-2.5 min-w-0">
-                <ProfileAvatar address={e.root} size={32} ringColor="transparent" />
-                <Link
-                  href={`/hunter/${e.root}`}
-                  className="text-base/none text-heading truncate motion-safe:transition-opacity hover:opacity-80"
-                >
-                  {nameOrShort(e.username, e.root)}
-                </Link>
+    <div className="grid grid-cols-3 gap-2 sm:gap-3 items-end px-4 lg:px-6 pt-2">
+      {order.map((e) => {
+        const first = e.rank === 1;
+        const selected = open === e.root;
+        return (
+          <button
+            key={e.root}
+            type="button"
+            onClick={() => onOpen(e.root)}
+            aria-expanded={selected}
+            aria-label={`${ordinal(e.rank)}: ${nameOrShort(e.username, e.root)}, ${e.value} ${e.unit}`}
+            className={clsx(
+              "relative min-w-0 rounded-2xl sm:rounded-3xl flex flex-col items-center text-center cursor-pointer",
+              "px-2 sm:px-3 motion-safe:transition-[transform,box-shadow] motion-safe:duration-200 hover:-translate-y-0.5",
+              first ? "bg-brand text-white pt-5 pb-4 sm:pt-6 sm:pb-5" : "bg-surface text-heading pt-4 pb-3.5 sm:pt-5 sm:pb-4",
+              selected && (first ? "ring-2 ring-offset-2 ring-brand" : "ring-2 ring-brand"),
+            )}
+          >
+            <span className="relative">
+              <ProfileAvatar address={e.root} size={first ? 60 : 48} ringColor="transparent" />
+              <span aria-hidden className={clsx(
+                "absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center font-anta text-xs/none",
+                "ring-[3px]", first ? "ring-brand" : "ring-surface", PODIUM_TONES[e.rank - 1],
+              )}>
+                {e.rank}
               </span>
-              <span className="text-sm/none text-nav-muted truncate">{e.sub}</span>
-              <span className="text-sm/none text-heading tabular-nums truncate">
-                {e.value} <span className="text-nav-muted">{e.unit}</span>
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-y-3 min-w-0 flex-1">
-              <Skeleton className="h-8 w-8" />
-              <Skeleton className="h-[14px] w-24" />
-              <Skeleton className="h-[14px] w-16" />
-            </div>
-          )}
-        </div>
+            </span>
+            <span className={clsx("mt-3.5 w-full truncate text-sm/none sm:text-base/none", first ? "text-white" : "text-heading")}>
+              {meRoot === e.root ? "You" : nameOrShort(e.username, e.root)}
+            </span>
+            <span className={clsx("mt-2 w-full truncate tabular-nums text-sm/none", first ? "text-white" : "text-heading")}>
+              {e.value} <span className={first ? "text-white/70" : "text-nav-muted"}>{e.unit}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PodiumSkeleton() {
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:gap-3 items-end px-4 lg:px-6 pt-2">
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className={clsx("!rounded-2xl sm:!rounded-3xl", i === 1 ? "h-[150px] sm:h-[160px]" : "h-[128px] sm:h-[136px]")} />
       ))}
     </div>
   );
 }
 
-/**
- * One board row. Mirrors the leaderboard's RankRow geometry (rank slot, avatar,
- * two text lines, amount) and adds a chevron that reveals `details` underneath.
- */
-export function BoardRow({
-  e, isMe, open, onToggle, details, className = "",
-}: {
-  e: BoardEntry; isMe: boolean; open: boolean; onToggle: () => void; details: React.ReactNode; className?: string;
+// ── Rows ──────────────────────────────────────────────────────────────────────
+
+/** One compact row: rank, avatar, name over a single detail line, value, chevron. */
+function Row({ e, isMe, open, onToggle, details, pinned = false }: {
+  e: BoardEntry; isMe: boolean; open: boolean; onToggle: () => void; details: React.ReactNode; pinned?: boolean;
 }) {
-  const showsMedal = e.rank <= 3 && !isMe;
   return (
-    <div className={clsx("border-b border-line last:border-0", isMe && "bg-brand-soft/40", className)}>
+    <div className={clsx(
+      "border-t border-line first:border-t-0",
+      isMe && "bg-brand-soft",
+      pinned && "sticky bottom-0 z-10 shadow-[0_-8px_24px_-12px_#00000026]",
+    )}>
       <div
         role="button"
         tabIndex={0}
         aria-expanded={open}
         onClick={onToggle}
         onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); onToggle(); } }}
-        className={clsx("flex justify-between items-center gap-3 pr-4 lg:pr-6 cursor-pointer motion-safe:transition-colors",
-          !isMe && "hover:bg-surface/60")}
+        className={clsx("flex items-center gap-3 px-4 lg:px-6 h-16 cursor-pointer motion-safe:transition-colors",
+          !isMe && "hover:bg-surface/70")}
       >
-        <div className="flex items-center min-w-0">
-          <div className={clsx("shrink-0", showsMedal ? "p-0 lg:p-5.75" : "p-[17px] lg:p-5.75")}>
-            <RankBadge rank={e.rank} highlight={isMe} />
+        <span className={clsx("w-7 shrink-0 text-center font-anta text-sm/none tabular-nums",
+          isMe ? "text-brand" : "text-nav-muted")}>
+          {e.rank}
+        </span>
+        <ProfileAvatar address={e.root} size={36} ringColor="transparent" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link
+              href={`/hunter/${e.root}`}
+              onClick={(ev) => ev.stopPropagation()}
+              className="text-[15px]/none text-heading truncate motion-safe:transition-opacity hover:opacity-70"
+            >
+              {nameOrShort(e.username, e.root)}
+            </Link>
+            {isMe && <span className="shrink-0 rounded-full bg-brand text-white px-2 py-1 text-[11px]/none">You</span>}
+            {e.tags}
           </div>
-          <Identity e={e} />
+          <p className="mt-1.5 text-xs/none text-nav-muted truncate">{e.sub}</p>
         </div>
-        <div className="flex items-center gap-3 lg:gap-5 shrink-0">
-          <Amount e={e} />
-          <span
-            aria-hidden
-            className="w-9 h-9 rounded-full bg-surface flex items-center justify-center text-heading shrink-0"
-          >
-            {open ? <ChevronUp className="w-4 h-4" strokeWidth={2} /> : <ChevronDown className="w-4 h-4" strokeWidth={2} />}
-          </span>
-        </div>
+        <p className="shrink-0 text-right tabular-nums whitespace-nowrap">
+          <span className="text-[15px]/none text-heading">{e.value}</span>
+          <span className="text-xs/none text-nav-muted"> {e.unit}</span>
+        </p>
+        <ChevronDown aria-hidden strokeWidth={2}
+          className={clsx("w-4 h-4 shrink-0 text-nav-muted motion-safe:transition-transform", open && "rotate-180")} />
       </div>
-      {open && <div className="px-4 lg:px-6 pb-5 pt-1 flex flex-col gap-y-4">{details}</div>}
+      {open && <div className="px-4 lg:px-6 pb-5 pt-1 flex flex-col gap-y-4 lg:pl-[88px]">{details}</div>}
     </div>
   );
 }
 
-export function BoardRowSkeleton() {
+function RowSkeleton() {
   return (
-    <div className="border-b border-line last:border-0 flex justify-between items-center gap-3 pr-6">
-      <div className="flex items-center min-w-0">
-        <div className="p-[17px] lg:p-5.75 shrink-0"><Skeleton className="w-11.5 h-11.5" /></div>
-        <IdentitySkeleton />
-      </div>
-      <AmountSkeleton />
+    <div className="border-t border-line first:border-t-0 flex items-center gap-3 px-4 lg:px-6 h-16">
+      <Skeleton className="w-6 h-3.5" />
+      <Skeleton className="w-9 h-9 rounded-full" />
+      <div className="flex-1 flex flex-col gap-y-2"><Skeleton className="h-3.5 w-28" /><Skeleton className="h-3 w-40 max-w-full" /></div>
+      <Skeleton className="h-3.5 w-14" />
+    </div>
+  );
+}
+
+export function BoardListSkeleton() {
+  return (
+    <>
+      <PodiumSkeleton />
+      <div className="mt-4 border-t border-line">{Array.from({ length: 7 }, (_, i) => <RowSkeleton key={i} />)}</div>
+    </>
+  );
+}
+
+/**
+ * The whole board body: podium, the first rows, "Show more" in steps, and
+ * your own row kept in view. Long boards stay short by default (top ten), and
+ * nobody has to scroll a hundred rows to find themselves: when you're further
+ * down, your row sits under the list and stays pinned to the bottom of the
+ * screen while the board is on it.
+ */
+export function BoardList({ entries, meRoot, details, anchorId }: {
+  entries: BoardEntry[];
+  meRoot: string | null;
+  details: (root: string) => React.ReactNode;
+  /** Scrolled back into view when the list collapses. */
+  anchorId: string;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const hasPodium = entries.length >= 3;
+  const podium = hasPodium ? entries.slice(0, 3) : [];
+  const rest = hasPodium ? entries.slice(3) : entries;
+  const first = hasPodium ? FIRST - 3 : FIRST;
+  const [shown, setShown] = useState(first);
+
+  const visible = rest.slice(0, shown);
+  const meIndex = meRoot ? rest.findIndex((e) => e.root === meRoot) : -1;
+  const meBelow = meIndex >= shown ? rest[meIndex] : null;
+  const toggle = (root: string) => setOpen((o) => (o === root ? null : root));
+  const podiumOpen = podium.find((e) => e.root === open) ?? null;
+  const total = entries.length;
+  const showing = Math.min(total, podium.length + shown);
+
+  const collapse = () => {
+    setShown(first);
+    document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <>
+      {hasPodium && <Podium entries={podium} meRoot={meRoot} open={open} onOpen={toggle} />}
+      {podiumOpen && (
+        <div className="mx-4 lg:mx-6 mt-3 rounded-2xl bg-surface p-4 flex flex-col gap-y-4">
+          <p className="text-sm/none text-heading">
+            {ordinal(podiumOpen.rank)} · {nameOrShort(podiumOpen.username, podiumOpen.root)}
+            <span className="text-nav-muted"> · {podiumOpen.sub}</span>
+          </p>
+          {details(podiumOpen.root)}
+        </div>
+      )}
+
+      {rest.length > 0 && (
+        <div className={clsx(hasPodium && "mt-4", "border-t border-line")}>
+          {visible.map((e) => (
+            <Row key={e.root} e={e} isMe={e.root === meRoot} open={open === e.root} onToggle={() => toggle(e.root)} details={details(e.root)} />
+          ))}
+          {meBelow && (
+            <>
+              <div aria-hidden className="border-t border-line h-6 flex items-center justify-center gap-1">
+                {[0, 1, 2].map((i) => <span key={i} className="w-1 h-1 rounded-full bg-nav-muted/40" />)}
+              </div>
+              <Row e={meBelow} isMe pinned open={open === meBelow.root} onToggle={() => toggle(meBelow.root)} details={details(meBelow.root)} />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Footer: where you are in the list, and the controls. */}
+      {total > FIRST && (
+        <div className="border-t border-line px-4 lg:px-6 py-4 flex items-center justify-between gap-3">
+          <span className="text-sm/none text-nav-muted">
+            Top <span className="text-heading tabular-nums">{showing}</span> of <span className="tabular-nums">{total.toLocaleString("en-US")}</span>
+          </span>
+          <div className="flex items-center gap-2">
+            {shown > first && (
+              <button type="button" onClick={collapse}
+                className="h-10 px-4 rounded-full text-sm/none text-nav-muted cursor-pointer motion-safe:transition-colors hover:text-heading hover:bg-surface">
+                Show less
+              </button>
+            )}
+            {shown < rest.length && (
+              <button type="button" onClick={() => setShown((n) => n + STEP)}
+                className="h-10 px-5 rounded-full bg-surface text-sm/none text-heading cursor-pointer motion-safe:transition-colors hover:bg-nav-controls">
+                Show {Math.min(STEP, rest.length - shown)} more
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Desktop sidebar that stays in view while the board scrolls. A sidebar taller
+ * than the screen scrolls with the page until its end is showing, then holds,
+ * so nothing in it is ever out of reach.
+ */
+export function StickyAside({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(96);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const nav = 72 + 24;
+    const place = () => setTop(Math.min(nav, window.innerHeight - el.offsetHeight - 24));
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    window.addEventListener("resize", place);
+    return () => { ro.disconnect(); window.removeEventListener("resize", place); };
+  }, []);
+  return (
+    <div ref={ref} className={clsx("lg:sticky", className)} style={{ top }}>
+      {children}
     </div>
   );
 }
@@ -489,40 +607,5 @@ export function LockedTag({ n }: { n: number }) {
     <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2 py-1 text-xs/none text-nav-muted whitespace-nowrap shrink-0">
       <Lock className="w-3 h-3" strokeWidth={2} /> {n} to unlock
     </span>
-  );
-}
-
-/**
- * Your own standing, pinned above the fold — the leaderboard's MeBar with the
- * amount made generic (points on one board, G$ on the other).
- */
-export function YouBar({ rank, root, sub, value, unit }: {
-  rank: number; root: string; sub: string; value: string; unit: string;
-}) {
-  return (
-    <div
-      className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[900] w-[340px] lg:w-100 max-w-[calc(100vw-32px)]
-        bg-[#00113866] backdrop-blur-md rounded-full py-2.25 pl-2.25 pr-6
-        flex justify-between items-center gap-3 shadow-[0px_0px_12px_0px_#00000014]"
-    >
-      <div className="flex items-center gap-x-2 min-w-0">
-        <RankBadge rank={rank} highlight />
-        <button
-          type="button"
-          onClick={() => openProfile(root, rank)}
-          className="flex items-center gap-x-3 min-w-0 text-left cursor-pointer motion-safe:transition-opacity hover:opacity-80"
-        >
-          <ProfileAvatar address={root} size={38} ringColor="transparent" />
-          <span className="flex flex-col gap-y-2.5 min-w-0">
-            <span className="text-base/none text-white">You</span>
-            <span className="text-sm/none text-white/70 truncate">{sub}</span>
-          </span>
-        </button>
-      </div>
-      <div className="flex flex-col gap-y-2.5 items-end shrink-0">
-        <span className="text-base/none text-white tabular-nums">{value}</span>
-        <span className="text-sm/none text-white/70">{unit}</span>
-      </div>
-    </div>
   );
 }

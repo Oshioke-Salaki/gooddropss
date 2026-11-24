@@ -9,7 +9,7 @@ import { Skeleton } from "@/app/leaderboard/components/Skeleton";
 import {
   fmtG, fmtScore, useNow, usePoll,
   Countdown, HowStep, HowToPlay, StatCard, Chip, InviteLink, SignInCard, CrossLink, useOtherStanding,
-  BoardHeader, BoardEmpty, BoardPodium, BoardRow, BoardRowSkeleton, PersonPill, YouBar,
+  BoardHeader, BoardEmpty, BoardList, BoardListSkeleton, StickyAside, PersonPill,
   type Phase, type BoardEntry,
 } from "./shared";
 
@@ -41,18 +41,14 @@ interface Props {
   runUp?: boolean;
 }
 
-const PAGE = 25;
-
 // The POINTS competition: drop + claim + refer + downline network bonus, top-N
 // split the pot. Only mounted while its tab is selected, so switching tabs never
 // pays for the other board's computation.
 export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runUp }: Props) {
   const [data, setData] = useState<Data | null>(null);
   const [failed, setFailed] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [howOpen, setHowOpen] = useState(false);
-  const [visible, setVisible] = useState(PAGE);
 
   const load = useCallback((force = false) => {
     const p = new URLSearchParams();
@@ -139,10 +135,6 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runU
 
   const byRoot = useMemo(() => new Map(participants.map((p) => [p.root, p])), [participants]);
   const loading = !data;
-  const showPodium = entries.length >= 3;
-  const podium = showPodium ? entries.slice(0, 3) : [];
-  const rest = showPodium ? entries.slice(3) : entries;
-  const shown = rest.slice(0, visible);
 
   const details = (p: Participant) => (
     <>
@@ -188,8 +180,8 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runU
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-6 lg:gap-12 items-start">
-        {/* ── Left: overview + you ─────────────────────────────────────────── */}
-        <div className="flex flex-col gap-6 min-w-0">
+        {/* ── Left: overview + you (stays in view on desktop) ───────────────── */}
+        <StickyAside className="flex flex-col gap-6 min-w-0">
           <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] p-6 flex flex-col gap-y-6">
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-y-3 min-w-0">
@@ -300,10 +292,11 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runU
           ) : (
             <SignInCard body="Sign in to get your invite link and join the competition." onSignIn={onSignIn} />
           )}
-        </div>
+        </StickyAside>
 
         {/* ── Right: the board ─────────────────────────────────────────────── */}
-        <section className="bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-hidden min-w-0">
+        {/* overflow-clip, not hidden: hidden would stop your pinned row sticking. */}
+        <section id="comp-board" className="scroll-mt-28 bg-white rounded-3xl shadow-[0px_0px_12px_0px_#0000000A] overflow-clip min-w-0">
           <BoardHeader
             title="Leaderboard"
             count={participants.length}
@@ -313,83 +306,25 @@ export function PointsBoard({ address, myLink, onSwitch, onSignIn, onPhase, runU
             loading={loading}
           />
           {loading ? (
-            <>
-              <BoardPodium entries={[]} loading />
-              <div className="border-t border-line lg:border-t-0">
-                {Array.from({ length: 6 }, (_, i) => <BoardRowSkeleton key={i} />)}
-              </div>
-            </>
+            <BoardListSkeleton />
           ) : entries.length === 0 ? (
             <BoardEmpty
               title="Nobody on the board yet"
               body={phase === "live" ? "Drop G$ for people, claim other drops and refer friends to get on the board." : "The competition hasn't started."}
             />
           ) : (
-            <>
-              {showPodium && <BoardPodium entries={podium} loading={false} />}
-              <div className="border-t border-line lg:border-t-0">
-                {podium.map((e) => (
-                  <BoardRow
-                    key={e.root}
-                    className="lg:hidden"
-                    e={e}
-                    isMe={!!you && you.root === e.root}
-                    open={expanded === e.root}
-                    onToggle={() => setExpanded(expanded === e.root ? null : e.root)}
-                    details={details(byRoot.get(e.root)!)}
-                  />
-                ))}
-                {/* Desktop: the podium three still need their details somewhere —
-                    they appear as rows only below lg, so at lg the podium cells
-                    are the summary and details live in the rows list below. */}
-                {podium.map((e) => (
-                  <BoardRow
-                    key={`lg-${e.root}`}
-                    className="hidden lg:block"
-                    e={e}
-                    isMe={!!you && you.root === e.root}
-                    open={expanded === e.root}
-                    onToggle={() => setExpanded(expanded === e.root ? null : e.root)}
-                    details={details(byRoot.get(e.root)!)}
-                  />
-                ))}
-                {shown.map((e) => (
-                  <BoardRow
-                    key={e.root}
-                    e={e}
-                    isMe={!!you && you.root === e.root}
-                    open={expanded === e.root}
-                    onToggle={() => setExpanded(expanded === e.root ? null : e.root)}
-                    details={details(byRoot.get(e.root)!)}
-                  />
-                ))}
-              </div>
-              {rest.length > visible && (
-                <div className="p-6 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => setVisible((v) => v + PAGE)}
-                    className="rounded-full bg-surface hover:bg-nav-controls px-6 py-3 text-sm/none text-heading cursor-pointer motion-safe:transition-colors"
-                  >
-                    Show {Math.min(PAGE, rest.length - visible)} more
-                  </button>
-                </div>
-              )}
-            </>
+            <div className="pb-1">
+              <BoardList
+                entries={entries}
+                meRoot={you?.root ?? null}
+                details={(root) => details(byRoot.get(root)!)}
+                anchorId="comp-board"
+              />
+            </div>
           )}
         </section>
       </div>
 
-      {/* Your standing, pinned — only once the board is real and you're on it. */}
-      {you?.rank ? (
-        <YouBar
-          rank={you.rank}
-          root={you.root}
-          sub={`${you.reach} reached · ${you.claims} claimed`}
-          value={fmtScore(you.score)}
-          unit="points"
-        />
-      ) : null}
     </>
   );
 }
