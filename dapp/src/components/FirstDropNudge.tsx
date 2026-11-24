@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Gift, MapPin, Sparkles } from "lucide-react";
+import { Coins, Gift, MapPin } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { useSignedInAccount } from "@/hooks/useSignedInAccount";
 import { useFirstDrop } from "@/hooks/useFirstDrop";
@@ -169,7 +169,7 @@ function Scene({ bonusG }: { bonusG: number }) {
         </div>
       </div>
       <div className="absolute left-4 bottom-4 sm:left-6 sm:bottom-5 flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1.5 text-[11px]/none text-white backdrop-blur-sm">
-        <Sparkles className="h-3.5 w-3.5" strokeWidth={2} /> First drop bonus
+        <Gift className="h-3.5 w-3.5" strokeWidth={2} /> First drop bonus
       </div>
     </div>
   );
@@ -178,7 +178,7 @@ function Scene({ bonusG }: { bonusG: number }) {
 const STEPS = [
   { icon: MapPin, title: "Pick a spot", body: "Where people pass" },
   { icon: Gift, title: "Hide G$", body: "Any amount" },
-  { icon: Sparkles, title: "Get 200 G$", body: "Once it's live" },
+  { icon: Coins, title: "Get 200 G$", body: "Once it's live" },
 ] as const;
 
 /** The sheet itself, state in, events out (kept separate so it can be previewed). */
