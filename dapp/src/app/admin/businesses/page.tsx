@@ -11,6 +11,7 @@ import { Sheet } from "@/components/ui/Sheet";
 import {
   AdminPage, Button, Card, EmptyState, Field, Hint, Input, RowsSkeleton, Select, Tag,
 } from "@/components/admin/ui";
+import { SpotStatsCard } from "@/components/admin/SpotStatsCard";
 
 const STATUS_ICON: Record<SpotStatus, LucideIcon> = {
   active: CircleCheck, pending: Clock, paused: Pause, suspended: Ban, rejected: XCircle,
@@ -84,6 +85,8 @@ export default function AdminBusinesses() {
         </Button>
       }
     >
+      <SpotStatsCard />
+
       <Hint text={err} tone="bad" className="mb-3" />
 
       {spots === null ? (
