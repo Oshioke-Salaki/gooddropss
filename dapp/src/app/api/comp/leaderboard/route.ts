@@ -39,12 +39,16 @@ export async function GET(req: NextRequest) {
     () => computeScores(cfg),
   );
 
-  const allRoots = [...new Set(entries.flatMap((a) => [a.root, ...a.claimers.map((c) => c.root)]))];
+  const allRoots = [...new Set(entries.flatMap((a) => [a.root, ...(a.aliases ?? []), ...a.claimers.map((c) => c.root)]))];
   const nameOf = await usernames(redis, allRoots);
+  // A row that folds in a person's newer identity shows the name they use now.
+  const displayName = (a: { root: string; aliases?: string[] }) =>
+    (a.aliases ?? []).map((r) => nameOf.get(r)).find((n) => !!n) ?? nameOf.get(a.root) ?? null;
 
   const participants = entries.map((a, i) => ({
     root: a.root,
-    username: nameOf.get(a.root) ?? null,
+    aliases: a.aliases ?? [],
+    username: displayName(a),
     reach: a.reach,
     claims: a.claims,
     refs: a.refs,
@@ -62,12 +66,12 @@ export async function GET(req: NextRequest) {
   }));
 
   type P = (typeof participants)[number];
-  let you: P | { root: string; username: string | null; reach: number; claims: number; refs: number; depth: number; downline: number; base: number; score: number; dropsClaimed: number; gDropped: number; rank: null; prizeG: number; claimers: ClaimerRef[] } | null = null;
+  let you: P | { root: string; aliases: string[]; username: string | null; reach: number; claims: number; refs: number; depth: number; downline: number; base: number; score: number; dropsClaimed: number; gDropped: number; rank: null; prizeG: number; claimers: ClaimerRef[] } | null = null;
   if (address && ADDR_RE.test(address)) {
     const root = await resolveIdentityRoot(address.toLowerCase());
-    const idx = participants.findIndex((p) => p.root === root);
+    const idx = participants.findIndex((p) => p.root === root || p.aliases.includes(root));
     you = idx >= 0 ? participants[idx]
-      : { root, username: nameOf.get(root) ?? null, reach: 0, claims: 0, refs: 0, depth: 0, downline: 0, base: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
+      : { root, aliases: [] as string[], username: nameOf.get(root) ?? null, reach: 0, claims: 0, refs: 0, depth: 0, downline: 0, base: 0, score: 0, dropsClaimed: 0, gDropped: 0, rank: null, prizeG: 0, claimers: [] };
   }
 
   // ?me=1 — just this address's standing, for the cross-link on the other board.

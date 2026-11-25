@@ -8,6 +8,7 @@ import {
 } from "@/lib/competition";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
+const ADDR_RE = /^0x[0-9a-f]{40}$/;
 
 export interface ReachClaimer {
   root: string;        // a person who claimed your drop(s)
@@ -28,6 +29,8 @@ export interface ScoreEntry {
   gDropped: number;      // total G$ that actually reached people (whole G$)
   lastAt: number;        // unix secs of their most recent scoring event (tiebreak)
   claimers: ReachClaimer[];
+  /** Other identity roots of the same person, folded into this entry (see aliasing). */
+  aliases?: string[];
 }
 
 export interface CompStats {
@@ -94,7 +97,27 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
   const addrs = new Set<string>();
   for (const d of claimed) { addrs.add(d.dropper.toLowerCase()); addrs.add(d.claimer.toLowerCase()); }
   const roots = await resolveRoots([...addrs]);
-  const rootOf = (a: string) => roots.get(a.toLowerCase()) ?? a.toLowerCase();
+
+  // One person, one row. A GoodDollar root can change: when a verification lapses
+  // and the wallet re-verifies on its own, it becomes a NEW root. Their referral
+  // ACCOUNT, though, is bound once and never moves (keys.refAccount), so their
+  // referrals and network stay on the old key while new drops and claims land on
+  // the new one, splitting them in two. Fold every root into the account it's
+  // bound to, so it's all scored together. The binding is only ever written for
+  // a referrer's own wallet and root, so this can't merge two different people.
+  const rawRoots = [...new Set([...addrs].map((a) => roots.get(a) ?? a))];
+  const acctRaw = rawRoots.length ? await redis.mget<(string | null)[]>(...rawRoots.map((r) => keys.refAccount(r))) : [];
+  const aliasOf = new Map<string, string>();
+  rawRoots.forEach((r, i) => {
+    const a = acctRaw[i]?.toLowerCase();
+    if (a && ADDR_RE.test(a) && a !== r) aliasOf.set(r, a);
+  });
+  const foldedInto = new Map<string, Set<string>>();
+  for (const [r, a] of aliasOf) addTo(foldedInto, a, r);
+  const rootOf = (a: string) => {
+    const r = roots.get(a.toLowerCase()) ?? a.toLowerCase();
+    return aliasOf.get(r) ?? r;
+  };
 
   const dropperClaimers = new Map<string, Map<string, bigint>>();
   const claimerDroppers = new Map<string, Set<string>>();
@@ -222,6 +245,7 @@ export async function computeScores(cfg: CompConfig): Promise<ScoreBoard> {
       depth, downline: downlineOf.get(root)?.size ?? 0, base,
       score, dropsClaimed: b?.dropsClaimed ?? 0, gDropped: b?.gDropped ?? 0,
       lastAt: lastAt.get(root) ?? 0, claimers: b?.claimers ?? [],
+      ...(foldedInto.has(root) ? { aliases: [...foldedInto.get(root)!] } : {}),
     });
   }
 
