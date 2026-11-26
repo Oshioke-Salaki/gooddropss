@@ -3,10 +3,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Banknote, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays,
+  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Banknote, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays, Fuel, Copy, Check,
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
+import type { RewardGas } from "@/lib/rewardGas";
 import type { Landmark, Spot } from "@/types";
 import { spotStatus } from "@/lib/spotStatus";
 import { Logo } from "@/components/Logo";
@@ -37,6 +38,7 @@ const LINK_ACTIVE = "bg-nav-active-bg text-nav-active";
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pending, setPending] = useState(0);
+  const [gas, setGas] = useState<(RewardGas & { wallet: string }) | null>(null);
   const [reports, setReports] = useState(0);
   const [pendingBiz, setPendingBiz] = useState(0);
   const [eventReview, setEventReview] = useState(0);
@@ -76,7 +78,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         .then((r) => (r.ok ? r.json() : { review: [] }))
         .then((d) => { if (alive && Array.isArray(d.review)) setEventReview(d.review.length); })
         .catch(() => {});
-    const loadAll = () => { loadSuggestions(); loadReports(); loadBusinesses(); loadEvents(); };
+    // Reward wallet gas: payouts, bonuses, chests and gas top-ups all stop when it runs dry.
+    const loadGas = () =>
+      fetch("/api/admin/reward-gas", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (alive && d && typeof d.payoutsLeft === "number") setGas(d); })
+        .catch(() => {});
+    const loadAll = () => { loadSuggestions(); loadReports(); loadBusinesses(); loadEvents(); loadGas(); };
     loadAll();
     window.addEventListener("gd:landmarks-updated", loadSuggestions);
     window.addEventListener("gd:moderation-updated", loadReports);
@@ -182,7 +190,45 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Page content */}
-      <main className="min-w-0 flex-1">{children}</main>
+      <main className="min-w-0 flex-1">
+        {gas && gas.level !== "ok" && <GasBanner gas={gas} />}
+        {children}
+      </main>
+    </div>
+  );
+}
+
+/** Shown on every admin page while the reward wallet is low on CELO for gas. */
+function GasBanner({ gas }: { gas: RewardGas & { wallet: string } }) {
+  const [copied, setCopied] = useState(false);
+  const critical = gas.level === "critical";
+  async function copy() {
+    try { await navigator.clipboard.writeText(gas.wallet); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  }
+  return (
+    <div
+      role="alert"
+      className={clsx(
+        "mx-4 lg:mx-10 mt-4 rounded-2xl px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 text-sm/[140%]",
+        critical ? "bg-danger/10 text-danger" : "bg-[#FFF4E5] text-[#8A4B00]",
+      )}
+    >
+      <Fuel className="w-5 h-5 shrink-0" strokeWidth={1.9} />
+      <p className="flex-1 min-w-0">
+        <span className="text-heading">{critical ? "Reward wallet is out of gas." : "Reward wallet is low on gas."}</span>{" "}
+        {gas.celo} CELO left: about {gas.payoutsLeft} payout{gas.payoutsLeft === 1 ? "" : "s"} at today&apos;s gas price
+        {gas.topUpsLeft > 0 ? `, and ${gas.topUpsLeft} gas top-up${gas.topUpsLeft === 1 ? "" : "s"} for players` : ", and no more gas top-ups for players"}.{" "}
+        {critical ? "Referral payouts, bonuses, welcome chests and gas top-ups will fail until it's refilled. " : ""}
+        Send about {Number(gas.topUpCelo).toFixed(1)} CELO.
+      </p>
+      <button
+        type="button"
+        onClick={copy}
+        className="shrink-0 h-9 px-4 rounded-full bg-white text-heading text-sm/none flex items-center gap-2 cursor-pointer hover:bg-surface"
+      >
+        {copied ? <Check className="w-4 h-4" strokeWidth={2} /> : <Copy className="w-4 h-4" strokeWidth={2} />}
+        {copied ? "Copied" : `Copy ${gas.wallet.slice(0, 6)}…${gas.wallet.slice(-4)}`}
+      </button>
     </div>
   );
 }

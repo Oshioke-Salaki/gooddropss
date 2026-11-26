@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { SUBGRAPH_URL } from "@/lib/subgraphClient";
 import { indexerLag } from "@/lib/chainDrops";
 import { mirrorInfo } from "@/lib/dropMirror";
-import { createPublicClient, http, formatEther, parseEther } from "viem";
+import { createPublicClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
@@ -10,6 +10,7 @@ import { isAdminAuthed } from "@/lib/adminAuth";
 import { antispoofMode } from "@/lib/antispoof";
 import { GOOD_DROPS_BADGES_ADDRESS, GOOD_DROPS_BADGES_ABI } from "@/lib/contracts";
 import { normalizePk } from "@/lib/pk";
+import { readRewardGas } from "@/lib/rewardGasServer";
 
 export const runtime = "nodejs";
 
@@ -143,14 +144,15 @@ export async function GET() {
     checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "off", detail: "GAS_FAUCET_KEY unset — hunters with 0 CELO can't pay claim gas." });
   } else {
     try {
-      const client = createPublicClient({ chain: celo, transport: http("https://forno.celo.org") });
       const account = privateKeyToAccount(faucetKey);
-      const bal = await client.getBalance({ address: account.address });
-      const low = bal < parseEther("2");
+      // The faucet is the reward wallet: payouts, bonuses, chests and gas top-ups
+      // all spend its CELO, so it's measured in payouts left at today's gas price.
+      const g = await readRewardGas();
       checks.push({
-        key: "gasFaucet", label: "Gas top-up faucet",
-        status: low ? "warn" : "ok",
-        detail: `${Number(formatEther(bal)).toFixed(2)} CELO in ${account.address.slice(0, 8)}…${low ? " — LOW, refill soon." : "."}`,
+        key: "gasFaucet", label: "Reward wallet gas",
+        status: g.level === "critical" ? "error" : g.level === "low" ? "warn" : "ok",
+        detail: `${g.celo} CELO in ${account.address.slice(0, 8)}…, enough for about ${g.payoutsLeft.toLocaleString("en-US")} payouts at ${g.gwei} gwei and ${g.topUpsLeft} player gas top-ups.`
+          + (g.level === "ok" ? "" : ` Send about ${Number(g.topUpCelo).toFixed(1)} CELO.`),
       });
     } catch {
       checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "warn", detail: "Configured but balance check failed (RPC)." });

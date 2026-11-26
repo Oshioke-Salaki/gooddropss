@@ -4,13 +4,13 @@ import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
 import { normalizePk } from "@/lib/pk";
 import { G_TOKEN_ADDRESS, REWARD_WALLET_ADDRESS } from "@/lib/contracts";
+import { rewardGasStatus } from "@/lib/rewardGas";
 import { getRefCompConfig, type RefCompConfig } from "@/lib/competition";
 import { computeReferralBoard } from "@/lib/competitionReferral";
 
 // The reward wallet — GAS_FAUCET_KEY MUST resolve to this address, or we abort.
 export const REWARD_WALLET = getAddress(REWARD_WALLET_ADDRESS);
 const RPC = "https://forno.celo.org";
-const LOW_GAS = 5n * 10n ** 15n; // ~0.005 CELO — hundreds of transfers of headroom
 
 export interface RefPayoutResult {
   ok: boolean;
@@ -97,15 +97,25 @@ export async function runRefPayout({ confirm = true }: RefPayoutOpts = {}): Prom
     let walletBal = (await publicClient.readContract({
       address: G_TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [REWARD_WALLET],
     })) as bigint;
-    const gasWei = await publicClient.getBalance({ address: REWARD_WALLET });
+    const [gasWei, gasPrice] = await Promise.all([
+      publicClient.getBalance({ address: REWARD_WALLET }),
+      publicClient.getGasPrice(),
+    ]);
 
     const snapshot = () => ({
       potWei: potWei.toString(),
       potSpentWei: spent.toString(),
       walletBalWei: walletBal.toString(),
       gasWei: gasWei.toString(),
-      lowGas: gasWei < LOW_GAS,
+      lowGas: rewardGasStatus(gasWei, gasPrice).level !== "ok",
     });
+
+    // Not even one transfer's gas: stop here and say so, rather than marking and
+    // rolling back every row each run.
+    if (rewardGasStatus(gasWei, gasPrice).payoutsLeft === 0) {
+      console.error("[refPayout] reward wallet out of gas", gasWei.toString());
+      return { ...EMPTY, ...snapshot(), reason: "out-of-gas" };
+    }
 
     // Who is owed what, and exactly which slots that payment settles.
     const rows = await Promise.all(
@@ -178,6 +188,7 @@ export async function runRefPayout({ confirm = true }: RefPayoutOpts = {}): Prom
           address: G_TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [to, amount],
         });
       } catch (e) {
+        const reason = (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message;
         // Nothing left the wallet — undo the mark so the next run retries cleanly.
         if (r.alreadyPaid > 0n) await redis.set(keys.refPaid(cfg.id, r.root), r.alreadyPaid.toString());
         else await redis.del(keys.refPaid(cfg.id, r.root));
@@ -185,11 +196,10 @@ export async function runRefPayout({ confirm = true }: RefPayoutOpts = {}): Prom
         if (newLock.length) await redis.srem(keys.refPaidSlots(cfg.id), newLock[0], ...newLock.slice(1));
         await redis.lpush(keys.refPayoutLog(cfg.id), {
           root: r.root, to, wei: amount.toString(), tx: null, at: new Date().toISOString(), status: "rolled-back",
+          // Kept so a stuck payout explains itself (it was "out of gas" for a day and a half once).
+          error: String(reason).slice(0, 200),
         });
-        errors.push({
-          root: r.root, stage: "broadcast",
-          error: (e as { shortMessage?: string; message?: string }).shortMessage ?? (e as Error).message,
-        });
+        errors.push({ root: r.root, stage: "broadcast", error: reason });
         continue;
       }
 
