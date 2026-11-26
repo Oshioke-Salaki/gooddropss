@@ -3,11 +3,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Banknote, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays, Fuel, Copy, Check,
+  Lightbulb, Flag, Tag, Store, Medal, ChartColumn, Banknote, Gift, HeartPulse, Map, LogOut, Equal, X, CalendarDays, Fuel, Copy, Check, Wallet,
   type LucideIcon,
 } from "lucide-react";
 import clsx from "clsx";
-import type { RewardGas } from "@/lib/rewardGas";
+import type { RewardFunds, RewardGas } from "@/lib/rewardGas";
 import type { Landmark, Spot } from "@/types";
 import { spotStatus } from "@/lib/spotStatus";
 import { Logo } from "@/components/Logo";
@@ -38,7 +38,7 @@ const LINK_ACTIVE = "bg-nav-active-bg text-nav-active";
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pending, setPending] = useState(0);
-  const [gas, setGas] = useState<(RewardGas & { wallet: string }) | null>(null);
+  const [gas, setGas] = useState<(RewardGas & RewardFunds & { wallet: string }) | null>(null);
   const [reports, setReports] = useState(0);
   const [pendingBiz, setPendingBiz] = useState(0);
   const [eventReview, setEventReview] = useState(0);
@@ -78,7 +78,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         .then((r) => (r.ok ? r.json() : { review: [] }))
         .then((d) => { if (alive && Array.isArray(d.review)) setEventReview(d.review.length); })
         .catch(() => {});
-    // Reward wallet gas: payouts, bonuses, chests and gas top-ups all stop when it runs dry.
+    // Reward wallet: payouts, bonuses and chests stall when it runs out of gas or of G$.
     const loadGas = () =>
       fetch("/api/admin/reward-gas", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
@@ -191,17 +191,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
       {/* Page content */}
       <main className="min-w-0 flex-1">
-        {gas && gas.level !== "ok" && <GasBanner gas={gas} />}
+        {gas && (gas.level !== "ok" || gas.gLevel !== "ok") && <GasBanner gas={gas} />}
         {children}
       </main>
     </div>
   );
 }
 
-/** Shown on every admin page while the reward wallet is low on CELO for gas. */
-function GasBanner({ gas }: { gas: RewardGas & { wallet: string } }) {
+/** Shown on every admin page while the reward wallet is low on CELO for gas, or on G$. */
+function GasBanner({ gas }: { gas: RewardGas & RewardFunds & { wallet: string } }) {
   const [copied, setCopied] = useState(false);
-  const critical = gas.level === "critical";
+  const critical = gas.level === "critical" || gas.gLevel === "critical";
+  const gasLow = gas.level !== "ok", gLow = gas.gLevel !== "ok";
+  const Icon = gasLow ? Fuel : Wallet;
   async function copy() {
     try { await navigator.clipboard.writeText(gas.wallet); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
   }
@@ -213,13 +215,22 @@ function GasBanner({ gas }: { gas: RewardGas & { wallet: string } }) {
         critical ? "bg-danger/10 text-danger" : "bg-[#FFF4E5] text-[#8A4B00]",
       )}
     >
-      <Fuel className="w-5 h-5 shrink-0" strokeWidth={1.9} />
-      <p className="flex-1 min-w-0">
-        <span className="text-heading">{critical ? "Reward wallet is out of gas." : "Reward wallet is low on gas."}</span>{" "}
-        {gas.celo} CELO left: about {gas.payoutsLeft} payout{gas.payoutsLeft === 1 ? "" : "s"} at today&apos;s gas price.{" "}
-        {critical ? "Referral payouts, bonuses and welcome chests will fail until it's refilled. " : ""}
-        Send about {Number(gas.topUpCelo).toFixed(1)} CELO.
-      </p>
+      <Icon className="w-5 h-5 shrink-0" strokeWidth={1.9} />
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        {gLow && (
+          <p>
+            <span className="text-heading">{gas.gLevel === "critical" ? "Reward wallet is almost out of G$." : "Reward wallet is low on G$."}</span>{" "}
+            {gas.g.toLocaleString("en-US")} G$ left. Send about {gas.topUpG.toLocaleString("en-US")} G$.
+          </p>
+        )}
+        {gasLow && (
+          <p>
+            <span className="text-heading">{gas.level === "critical" ? "Reward wallet is out of gas." : "Reward wallet is low on gas."}</span>{" "}
+            {gas.celo} CELO left: about {gas.payoutsLeft} payout{gas.payoutsLeft === 1 ? "" : "s"} at today&apos;s gas price. Send about {Number(gas.topUpCelo).toFixed(1)} CELO.
+          </p>
+        )}
+        {critical && <p>Referral payouts, bonuses and welcome chests wait until it&apos;s refilled. Nothing is lost; they go out once it is.</p>}
+      </div>
       <button
         type="button"
         onClick={copy}

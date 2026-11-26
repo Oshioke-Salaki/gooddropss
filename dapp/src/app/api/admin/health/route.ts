@@ -154,6 +154,12 @@ export async function GET() {
         detail: `${g.celo} CELO in ${account.address.slice(0, 8)}…, enough for about ${g.payoutsLeft.toLocaleString("en-US")} payouts at ${g.gwei} gwei.`
           + (g.level === "ok" ? "" : ` Send about ${Number(g.topUpCelo).toFixed(1)} CELO.`),
       });
+      checks.push({
+        key: "rewardG", label: "Reward wallet G$",
+        status: g.gLevel === "critical" ? "error" : g.gLevel === "low" ? "warn" : "ok",
+        detail: `${g.g.toLocaleString("en-US")} G$ for referral payouts, first-drop bonuses and welcome chests.`
+          + (g.gLevel === "ok" ? "" : ` Send about ${g.topUpG.toLocaleString("en-US")} G$.`),
+      });
     } catch {
       checks.push({ key: "gasFaucet", label: "Gas top-up faucet", status: "warn", detail: "Configured but balance check failed (RPC)." });
     }

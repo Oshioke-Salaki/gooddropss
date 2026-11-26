@@ -41,3 +41,30 @@ export function rewardGasStatus(balanceWei: bigint, gasPriceWei: bigint): Reward
   const topUp = level === "ok" || balanceWei >= target ? 0n : target - balanceWei;
   return { level, payoutsLeft, celo: fmt(balanceWei), topUpCelo: fmt(topUp), gwei: Math.round(Number(gasPriceWei) / 1e9) };
 }
+
+// ── G$ in the reward wallet ──────────────────────────────────────────────────
+// It ran out of G$ on 26 Nov 2026 and referral payouts and first-drop bonuses
+// queued up unpaid for hours. These payouts wait safely when it's short, but
+// nobody knew. Counted in referral payouts left (4,000 G$ each this season).
+
+/** Below this, warn: refill soon (about 25 referral payouts). */
+export const LOW_G = 100_000;
+/** Below this, payouts are about to stall. */
+export const CRITICAL_G = 20_000;
+/** A comfortable balance to refill to. */
+export const TARGET_G = 300_000;
+
+export interface RewardFunds {
+  gLevel: GasLevel;
+  /** Whole G$ held. */
+  g: number;
+  /** Whole G$ to send to get back to TARGET_G (0 when ok). */
+  topUpG: number;
+}
+
+/** Pure: what the G$ balance means. */
+export function rewardFundsStatus(gWei: bigint): RewardFunds {
+  const g = Number(gWei / 10n ** 18n);
+  const gLevel: GasLevel = g < CRITICAL_G ? "critical" : g < LOW_G ? "low" : "ok";
+  return { gLevel, g, topUpG: gLevel === "ok" ? 0 : Math.max(0, TARGET_G - g) };
+}

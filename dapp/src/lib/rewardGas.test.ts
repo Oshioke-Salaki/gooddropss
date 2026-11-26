@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rewardGasStatus, TRANSFER_GAS, LOW_PAYOUTS, CRITICAL_PAYOUTS } from "@/lib/rewardGas";
+import { rewardGasStatus, rewardFundsStatus, TRANSFER_GAS, LOW_PAYOUTS, CRITICAL_PAYOUTS, LOW_G, CRITICAL_G } from "@/lib/rewardGas";
 
 const gwei = (n: number) => BigInt(n) * 10n ** 9n;
 const celo = (n: number) => BigInt(Math.round(n * 1e4)) * 10n ** 14n;
@@ -25,5 +25,12 @@ describe("reward wallet gas", () => {
     const s = rewardGasStatus(celo(5.0436), gwei(202));
     expect(s.celo).toBe("5.0436");
     expect(s.gwei).toBe(202);
+  });
+  it("flags the 26 Nov G$ outage (50 G$) as critical, and a full wallet as ok", () => {
+    const G = (n: number) => BigInt(n) * 10n ** 18n;
+    expect(rewardFundsStatus(G(50))).toEqual({ gLevel: "critical", g: 50, topUpG: 299_950 });
+    expect(rewardFundsStatus(G(CRITICAL_G)).gLevel).toBe("low");
+    expect(rewardFundsStatus(G(LOW_G)).gLevel).toBe("ok");
+    expect(rewardFundsStatus(G(259_050))).toEqual({ gLevel: "ok", g: 259_050, topUpG: 0 });
   });
 });
