@@ -142,7 +142,7 @@ export function SendGModal({ address, balance, onClose }: Props) {
       if (fe.kind === "rejected") { setStatus("idle"); return; }
       setStatus("error");
       setErr(fe.kind === "gas"
-        ? "Sending needs a tiny amount of CELO to cover the cost, and this wallet doesn't have enough. Add a little, then try again."
+        ? "Your wallet needs a small top-up to send. Ask in the GoodDrops Telegram community and we'll help, then try again."
         : fe.kind === "unknown" ? "That send didn't go through. Nothing left your wallet. Please try again." : fe.message);
     }
   }

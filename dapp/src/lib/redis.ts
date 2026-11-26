@@ -164,6 +164,8 @@ export const keys = {
   welcomeLive:       ()                      => `gd:wc:live`,                         // ZSET dropId → expiry: chests to reclaim once they run out
   welcomeIssuedG:    ()                      => `gd:wc:issued:g`,                     // integer whole G$ hidden in chests, net of reclaims (budget)
   welcomeConfig:     ()                      => `gd:wc:config`,                       // JSON Partial<WelcomeConfig> (admin overrides)
+  // Withdrawals paused by an admin (e.g. GoodCash upgrading): "1" while paused.
+  cashOutPaused:     ()                      => `gd:cashout:paused`,
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

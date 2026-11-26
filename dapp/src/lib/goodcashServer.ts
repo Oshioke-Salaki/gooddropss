@@ -11,7 +11,7 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import type { Redis } from "@upstash/redis";
-import { getRedis } from "@/lib/redis";
+import { getRedis, keys } from "@/lib/redis";
 import type { CashOutStatus } from "@/lib/goodcash";
 
 const API = "https://api.goodcash.xyz";
@@ -27,6 +27,23 @@ export function gcConfig(): { key: string; mode: Mode } | null {
 }
 
 /** Whether the app should offer cash out. Test mode only where we ask for it. */
+/**
+ * Withdrawals paused by an admin (GoodCash maintenance and the like). New ones are
+ * refused; ones already under way still finish. Never throws: if the flag can't be
+ * read, withdrawals stay as they were.
+ */
+export async function cashOutPaused(): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return false;
+  try { return (await r.get(keys.cashOutPaused())) != null; } catch { return false; }
+}
+
+export async function setCashOutPaused(paused: boolean): Promise<void> {
+  const r = getRedis();
+  if (!r) throw new Error("storage unavailable");
+  if (paused) await r.set(keys.cashOutPaused(), "1"); else await r.del(keys.cashOutPaused());
+}
+
 export function cashOutEnabled(): boolean {
   const c = gcConfig();
   if (!c) return false;

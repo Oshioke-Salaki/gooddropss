@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { banks, cashOutEnabled, gc, gcConfig, type GcLimits } from "@/lib/goodcashServer";
+import { banks, cashOutEnabled, cashOutPaused, gc, gcConfig, type GcLimits } from "@/lib/goodcashServer";
 import { withdrawCapG } from "@/lib/goodcash";
 
 export const runtime = "nodejs";
@@ -16,6 +16,9 @@ async function reachable(): Promise<boolean> {
 // whether it's on, the limits and the banks.
 export async function GET(req: NextRequest) {
   if (!cashOutEnabled()) return NextResponse.json({ enabled: false });
+  // Paused by an admin: the button stays, with a calm "back soon" note, so nobody
+  // thinks withdrawing went away. GoodCash isn't asked, it may be mid-upgrade.
+  const paused = await cashOutPaused();
   // "Is it on?" for the wallet menu: only when GoodCash actually answers us, so
   // nobody is shown a cash-out button that can't work. Checked at most every
   // few minutes per server instance.
@@ -24,8 +27,11 @@ export async function GET(req: NextRequest) {
     // country from their connection; the app also checks the device time zone
     // when this is missing (local development).
     const country = req.headers.get("x-vercel-ip-country");
+    if (paused) return NextResponse.json({ enabled: true, paused: true, country }, { headers: { "Cache-Control": "private, max-age=60" } });
     return NextResponse.json({ enabled: await reachable(), country }, { headers: { "Cache-Control": "private, max-age=60" } });
   }
+
+  if (paused) return NextResponse.json({ enabled: true, paused: true });
 
   const [limits, bankList] = await Promise.all([gc<GcLimits>("/v1/limits"), banks()]);
   if (!limits.ok || !bankList.ok) {

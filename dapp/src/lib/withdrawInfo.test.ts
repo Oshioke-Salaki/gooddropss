@@ -30,7 +30,7 @@ describe("getWithdrawInfo", () => {
   it("asks once per page view and shares the answer", async () => {
     fetchMock.mockImplementation((url: string) => json(url.includes("probe") ? { enabled: true, country: "NG" } : { receive: { naira: 16_000 } }));
     const [a, b] = await Promise.all([w.getWithdrawInfo(), w.getWithdrawInfo()]);
-    expect(a).toEqual({ enabled: true, inNigeria: true, nairaPerG: expect.closeTo(0.1584) });
+    expect(a).toEqual({ enabled: true, paused: false, inNigeria: true, nairaPerG: expect.closeTo(0.1584) });
     expect(b).toEqual(a);
     expect(fetchMock).toHaveBeenCalledTimes(2); // one probe, one quote
     expect(w.peekWithdrawInfo()).toEqual(a);
@@ -38,6 +38,11 @@ describe("getWithdrawInfo", () => {
   it("skips the rate when withdrawals are off", async () => {
     fetchMock.mockImplementation(() => json({ enabled: false, country: "NG" }));
     expect(await w.getWithdrawInfo()).toMatchObject({ enabled: false, nairaPerG: null });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("while paused keeps the button but skips the rate", async () => {
+    fetchMock.mockImplementation(() => json({ enabled: true, paused: true, country: "NG" }));
+    expect(await w.getWithdrawInfo()).toMatchObject({ enabled: true, paused: true, nairaPerG: null });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("never rejects, and retries after a failure", async () => {

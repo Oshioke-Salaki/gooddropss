@@ -42,7 +42,7 @@ export const DURATIONS = [
 /** Plain words for a failed drop, never the wallet's raw text. */
 function dropErrorMessage(e: unknown): string {
   const fe = friendlyClaimError(e);
-  if (fe.kind === "gas") return "We couldn't cover the small cost of hiding this just now. Give it a minute, then try again. Nothing was spent.";
+  if (fe.kind === "gas") return "Your wallet needs a small top-up to hide this. Ask in the GoodDrops Telegram community and we'll help, then try again. Nothing was spent.";
   if (fe.kind === "network") return fe.message;
   return "That drop didn't go through, and none of your G$ was spent. Please try again.";
 }

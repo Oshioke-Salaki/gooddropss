@@ -2,7 +2,7 @@
 //
 // The reward wallet (REWARD_WALLET_ADDRESS) sends every referral payout and
 // first-drop bonus, hides welcome chests, and tops up players' CELO so they can
-// claim. All of it needs CELO for gas. When it ran dry in Nov 2026, payouts failed
+// claim (until Nov 2026). All of it needs CELO for gas. When it ran dry in Nov 2026, payouts failed
 // silently for a day and a half: the old check (a fixed 0.005 CELO) assumed cheap
 // gas, but a G$ transfer costs ~215k gas and the price had climbed to ~200 gwei.
 //
@@ -27,25 +27,17 @@ export interface RewardGas {
   topUpCelo: string;
   /** Gas price in gwei, rounded. */
   gwei: number;
-  /** Player gas top-ups the balance still covers. They pause below 2 top-ups' worth (see /api/gas-topup). */
-  topUpsLeft: number;
 }
-
-/** Matches /api/gas-topup's default (GAS_TOPUP_AMOUNT_CELO). */
-export const TOPUP_WEI = 5n * 10n ** 17n;
 
 const fmt = (wei: bigint) => (Number(wei / 10n ** 14n) / 10_000).toFixed(4);
 
 /** Pure: what the balance and gas price mean. */
-export function rewardGasStatus(balanceWei: bigint, gasPriceWei: bigint, topUpWei: bigint = TOPUP_WEI): RewardGas {
+export function rewardGasStatus(balanceWei: bigint, gasPriceWei: bigint): RewardGas {
   const perPayout = (gasPriceWei > 0n ? gasPriceWei : 1n) * TRANSFER_GAS;
   const payoutsLeft = Number(balanceWei / perPayout);
   const level: GasLevel = payoutsLeft < CRITICAL_PAYOUTS ? "critical" : payoutsLeft < LOW_PAYOUTS ? "low" : "ok";
-  // Aim for 100 payouts plus 10 player top-ups (top-ups are the big CELO spend).
-  const target = perPayout * 100n + topUpWei * 10n;
+  // Aim for 100 payouts of headroom (player gas top-ups are off since Nov 2026).
+  const target = perPayout * 100n;
   const topUp = level === "ok" || balanceWei >= target ? 0n : target - balanceWei;
-  // The top-up route keeps two top-ups' worth back, so that reserve isn't spendable on them.
-  const spare = balanceWei - topUpWei * 2n;
-  const topUpsLeft = topUpWei > 0n && spare > 0n ? Number(spare / topUpWei) : 0;
-  return { level, payoutsLeft, celo: fmt(balanceWei), topUpCelo: fmt(topUp), gwei: Math.round(Number(gasPriceWei) / 1e9), topUpsLeft };
+  return { level, payoutsLeft, celo: fmt(balanceWei), topUpCelo: fmt(topUp), gwei: Math.round(Number(gasPriceWei) / 1e9) };
 }

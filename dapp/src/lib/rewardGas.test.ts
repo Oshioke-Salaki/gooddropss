@@ -26,8 +26,4 @@ describe("reward wallet gas", () => {
     expect(s.celo).toBe("5.0436");
     expect(s.gwei).toBe(202);
   });
-  it("counts player top-ups above the two kept back", () => {
-    expect(rewardGasStatus(celo(5.0436), gwei(202)).topUpsLeft).toBe(8);
-    expect(rewardGasStatus(celo(0.9), gwei(202)).topUpsLeft).toBe(0);
-  });
 });

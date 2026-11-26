@@ -151,7 +151,7 @@ export async function GET() {
       checks.push({
         key: "gasFaucet", label: "Reward wallet gas",
         status: g.level === "critical" ? "error" : g.level === "low" ? "warn" : "ok",
-        detail: `${g.celo} CELO in ${account.address.slice(0, 8)}…, enough for about ${g.payoutsLeft.toLocaleString("en-US")} payouts at ${g.gwei} gwei and ${g.topUpsLeft} player gas top-ups.`
+        detail: `${g.celo} CELO in ${account.address.slice(0, 8)}…, enough for about ${g.payoutsLeft.toLocaleString("en-US")} payouts at ${g.gwei} gwei.`
           + (g.level === "ok" ? "" : ` Send about ${Number(g.topUpCelo).toFixed(1)} CELO.`),
       });
     } catch {

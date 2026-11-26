@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseUnits } from "viem";
 import {
-  banks, cashOutEnabled, gc, gcConfig, lagosDay, markDay, saveOrder, store, toView, underLimit, withPersonLock,
+  banks, cashOutEnabled, cashOutPaused, gc, gcConfig, lagosDay, markDay, saveOrder, store, toView, underLimit, withPersonLock,
   ACCOUNT_RE, ADDR_RE, AMOUNT_RE, type GcCashOut, type GcLimits,
 } from "@/lib/goodcashServer";
 import { checkCashOutTx, withdrawCapG, type CashOutOrder, type CashOutTx, type FeeLine, type Quote } from "@/lib/goodcash";
@@ -27,6 +27,7 @@ const fail = (error: string, status: number, code?: string, extra?: Record<strin
 // person, across all their linked wallets) and abuse of the name lookup.
 export async function POST(req: NextRequest) {
   if (!cashOutEnabled()) return fail("Withdrawals aren't available yet.", 404);
+  if (await cashOutPaused()) return fail("Withdrawals are taking a short break while our cash-out partner upgrades. Your G$ is safe in your wallet. Please try again soon.", 503, "paused");
   const s = store();
   if (!s) return fail("Withdrawals are busy right now. Please try again in a moment.", 503);
 

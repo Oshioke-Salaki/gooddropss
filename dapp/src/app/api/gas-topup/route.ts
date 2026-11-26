@@ -76,6 +76,10 @@ function clientIp(req: NextRequest): string {
 // POST /api/gas-topup  Body: { address }
 // 200 {ok:true, tx} | 200 {ok:false, reason} (benign skip) | 4xx on abuse gates
 export async function POST(req: NextRequest) {
+  // Off since Nov 2026: most top-ups went to sponsored wallets that never needed
+  // CELO, and wallet users ask for gas in the Telegram community instead. Set
+  // GAS_TOPUP_ENABLED=1 to turn it back on.
+  if (process.env.GAS_TOPUP_ENABLED !== "1") return NextResponse.json({ ok: false, reason: "off" });
   const faucetKey = normalizePk(process.env.GAS_FAUCET_KEY);
   if (!faucetKey) return NextResponse.json({ ok: false, reason: "not_configured" });
 
@@ -83,14 +87,25 @@ export async function POST(req: NextRequest) {
   if (!redis) return NextResponse.json({ ok: false, reason: "storage_unavailable" });
 
   let address: string;
+  let forClaim = false;
   try {
     const body = await req.json();
     address = String(body.address ?? "");
+    forClaim = body.forClaim === true;
   } catch {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   if (!ADDR_RE.test(address)) return NextResponse.json({ error: "Invalid address" }, { status: 400 });
   address = address.toLowerCase();
+
+  // Gate 0 — wallets we already sponsor (EIP-7702 delegated email/Google wallets)
+  // don't need CELO. The background check used to top them up anyway: 32 of 45
+  // top-ups in Nov 2026, nearly all left unspent. Only a claim that's about to
+  // run (the sponsor couldn't cover it) gets one.
+  if (!forClaim) {
+    const code = await publicClient.getCode({ address: address as `0x${string}` }).catch(() => undefined);
+    if (code && code.toLowerCase().startsWith("0xef0100")) return NextResponse.json({ ok: false, reason: "sponsored" });
+  }
 
   // Gate 1 — verified human (fails closed on RPC error).
   if (!(await isVerifiedHuman(address))) {

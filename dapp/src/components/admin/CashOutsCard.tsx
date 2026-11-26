@@ -7,7 +7,7 @@ import { Button, Card, EmptyState, Hint, SectionTitle, Stat, Tag } from "./ui";
 
 interface PaidRow { id: string; wallet: string; amountG: string; naira: number; nairaPerDollar: number; txHash: string | null; paidAt: string }
 interface Health { mode: "live" | "test"; partnerName: string | null; partnerFeePercent: number | null; webhookUrl: string | null; webhookReady: boolean }
-interface Data { configured: boolean; mode?: "live" | "test"; count?: number; g?: number; naira?: number; people?: number; recent?: PaidRow[]; health?: Health; error?: string }
+interface Data { configured: boolean; paused?: boolean; mode?: "live" | "test"; count?: number; g?: number; naira?: number; people?: number; recent?: PaidRow[]; health?: Health; error?: string }
 
 const g = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
@@ -44,6 +44,22 @@ export function CashOutsCard() {
   };
   const h = data?.health;
 
+  // Pause/resume (GoodCash maintenance). Players keep the button and see a calm
+  // "short break" note; withdrawals already under way still finish.
+  const [toggling, setToggling] = useState(false);
+  const [pauseErr, setPauseErr] = useState("");
+  const togglePause = async () => {
+    if (!data) return;
+    const action = data.paused ? "resume" : "pause";
+    setToggling(true); setPauseErr("");
+    try {
+      const r = await fetch("/api/admin/cashouts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setPauseErr(d.error ?? "Couldn't save. Try again."); return; }
+      setData((cur) => (cur ? { ...cur, paused: !!d.paused } : cur));
+    } finally { setToggling(false); }
+  };
+
   const loading = !data && !err;
   return (
     <Card className="mb-6">
@@ -56,6 +72,24 @@ export function CashOutsCard() {
         <EmptyState icon={Landmark} title="Withdrawals aren't switched on" body="GOODCASH_SECRET_KEY must be a GoodCash secret key (it starts with gc_sk_live_). A publishable key (gc_pk_) won't work here." />
       ) : (
         <>
+          {data && (
+            <div className={`rounded-2xl p-4 mb-5 flex items-center justify-between gap-3 flex-wrap ${data.paused ? "bg-[#FFF4E5]" : "border border-line"}`}>
+              <div className="min-w-0">
+                <p className="text-sm/none text-heading flex items-center gap-2">
+                  Withdrawals {data.paused ? <Tag tone="warn">Paused</Tag> : <Tag tone="good">Open</Tag>}
+                </p>
+                <p className="text-sm/[145%] text-nav-muted mt-2">
+                  {data.paused
+                    ? "Players see \"Withdrawals are taking a short break\" and that their G$ is safe. Ones already under way still finish."
+                    : "Pause while GoodCash is upgrading. Players keep the button and see a calm note instead."}
+                </p>
+                <Hint text={pauseErr} tone="bad" className="mt-2" />
+              </div>
+              <Button variant={data.paused ? "primary" : "secondary"} busy={toggling} onClick={togglePause}>
+                {toggling ? "Saving…" : data.paused ? "Resume withdrawals" : "Pause withdrawals"}
+              </Button>
+            </div>
+          )}
           {h && (
             <div className="rounded-2xl border border-line p-4 mb-5 flex flex-col gap-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">

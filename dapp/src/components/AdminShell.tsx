@@ -216,9 +216,8 @@ function GasBanner({ gas }: { gas: RewardGas & { wallet: string } }) {
       <Fuel className="w-5 h-5 shrink-0" strokeWidth={1.9} />
       <p className="flex-1 min-w-0">
         <span className="text-heading">{critical ? "Reward wallet is out of gas." : "Reward wallet is low on gas."}</span>{" "}
-        {gas.celo} CELO left: about {gas.payoutsLeft} payout{gas.payoutsLeft === 1 ? "" : "s"} at today&apos;s gas price
-        {gas.topUpsLeft > 0 ? `, and ${gas.topUpsLeft} gas top-up${gas.topUpsLeft === 1 ? "" : "s"} for players` : ", and no more gas top-ups for players"}.{" "}
-        {critical ? "Referral payouts, bonuses, welcome chests and gas top-ups will fail until it's refilled. " : ""}
+        {gas.celo} CELO left: about {gas.payoutsLeft} payout{gas.payoutsLeft === 1 ? "" : "s"} at today&apos;s gas price.{" "}
+        {critical ? "Referral payouts, bonuses and welcome chests will fail until it's refilled. " : ""}
         Send about {Number(gas.topUpCelo).toFixed(1)} CELO.
       </p>
       <button

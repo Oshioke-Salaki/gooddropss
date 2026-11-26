@@ -25,6 +25,8 @@ import {
 
 export interface Setup {
   enabled: boolean;
+  /** Paused by us for a while (GoodCash upgrading): nothing new starts, nothing is wrong. */
+  paused?: boolean;
   mode?: "live" | "test";
   minimumG?: number;
   maximumG?: number;

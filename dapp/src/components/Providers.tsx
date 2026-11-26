@@ -9,7 +9,6 @@ import { AuthLoadingGate } from "@/components/AuthLoadingGate";
 import { ValoraDeepLink } from "@/components/ValoraDeepLink";
 import { ReferralCapture } from "@/components/ReferralCapture";
 import { ReferralAutoCredit } from "@/components/ReferralAutoCredit";
-import { GasTopup } from "@/components/GasTopup";
 import { BadgeCelebration } from "@/components/BadgeCelebration";
 import { installClientErrorReporter } from "@/lib/clientErrors";
 import { Toaster } from "@/components/ui/Toaster";
@@ -88,7 +87,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ChainGuard />
           <ReferralCapture />
           <ReferralAutoCredit />
-          <GasTopup />
           <BadgeCelebration />
           <ChestReward />
           {children}

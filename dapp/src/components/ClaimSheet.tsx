@@ -1,4 +1,5 @@
 "use client";
+import { GasHelpLink } from "@/components/GasHelpLink";
 import { useState, useEffect, useRef } from "react";
 import { m } from "framer-motion";
 import { useAccount } from "wagmi";
@@ -689,9 +690,12 @@ export function ClaimSheet({ drop, userLocation, onClose, onSuccess, onHunt, onO
                       ) : undefined}
                     />
                   ) : (
-                    <p role="alert" className="rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm/[140%] text-danger">
-                      {errMsg}
-                    </p>
+                    <div>
+                      <p role="alert" className="rounded-2xl bg-[#FFF1F1] px-4 py-3 text-sm/[140%] text-danger">
+                        {errMsg}
+                      </p>
+                      <GasHelpLink message={errMsg} />
+                    </div>
                   ))}
 
                   {/* ── Claim button (task drops swap in the unlock panel) ── */}

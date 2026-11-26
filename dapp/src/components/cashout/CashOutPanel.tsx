@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatUnits } from "viem";
 import {
-  X, Loader2, Check, Plus, Globe, Send, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, Clock,
+  X, Loader2, Check, Plus, Globe, Send, ChevronLeft, ChevronDown, ChevronRight, Search, Landmark, AlertCircle, Clock, ShieldCheck,
 } from "lucide-react";
 import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { BigAmountInput } from "@/components/ui/BigAmountInput";
@@ -177,7 +177,7 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
               <span className="shrink-0 py-1 px-2.5 rounded-full bg-streak-bg text-streak text-xs/none">Test mode</span>
             )}
           </div>
-          {!following && available && setup?.enabled && !setup.error && (
+          {!following && available && setup?.enabled && !setup.paused && !setup.error && (
             <div className="ml-auto mr-1 flex items-center gap-1.5" aria-label={`Step ${stepIndex + 1} of 3`}>
               {[0, 1, 2].map((i) => (
                 <span key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === stepIndex ? "w-5 bg-brand" : i < stepIndex ? "w-1.5 bg-brand/40" : "w-1.5 bg-line"}`} />
@@ -213,6 +213,15 @@ export function CashOutPanel({ address, balance, available = true, onSend, onClo
         <div className="flex flex-col gap-4" aria-busy="true">
           <div className="h-[120px] rounded-3xl bg-surface animate-pulse" />
           <div className="h-14 rounded-full bg-surface animate-pulse" />
+        </div>
+      ) : setup.paused ? (
+        <div className="flex flex-col items-center text-center gap-3 pt-2 pb-1">
+          <span className="w-12 h-12 rounded-full bg-brand-soft text-brand flex items-center justify-center"><ShieldCheck className="w-6 h-6" strokeWidth={1.9} /></span>
+          <p className="text-base/[130%] text-heading">Withdrawals are taking a short break</p>
+          <p className="text-sm/[150%] text-nav-muted max-w-[310px]">
+            Our cash-out partner is upgrading their systems. Your G$ is safe in your wallet, and you can keep hunting and sending as usual. Withdrawals will be back soon.
+          </p>
+          <button className={`${BTN} mt-2`} onClick={onClose}>Got it</button>
         </div>
       ) : !setup.enabled ? (
         <Notice title="Withdrawals are coming soon" body="You'll be able to send G$ straight to your bank account from here." />

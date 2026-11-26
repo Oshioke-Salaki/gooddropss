@@ -105,7 +105,7 @@ export function friendlyClaimError(raw: unknown): FriendlyError {
   // Gas / faucet — the big one behind the reported errors. Not enough CELO for the
   // network fee, or GoodDollar's gas faucet couldn't top the wallet up.
   if (/insufficient funds|insufficient balance|gas \* price|gas required exceeds|balance threshold|after faucet|faucet|out of gas|not enough celo|funds for gas/.test(m))
-    return { message: "We couldn't cover the small cost of this just now. Give it a minute, then tap Try again.", terminal: false, kind: "gas" };
+    return { message: "Your wallet needs a small top-up to do this. Ask in the GoodDrops Telegram community and we'll help, then tap Try again.", terminal: false, kind: "gas" };
 
   // Server proof expired / already used → just retry to mint a fresh one.
   if (/proofexpired|proof expired|proofalreadyused|proof (has )?(already )?(been )?(used|expired)|deadline (passed|exceeded|expired)|signature expired/.test(m))
@@ -131,7 +131,7 @@ export function friendlyUbiError(raw: unknown): string {
   const fe = friendlyClaimError(raw);
   if (fe.kind === "rejected") return "";
   if (fe.kind === "gas")
-    return "We couldn't cover the small cost of collecting your UBI just now. Try again in a minute.";
+    return "Your wallet needs a small top-up to collect your UBI. Ask in the GoodDrops Telegram community and we'll help, then try again.";
   if (fe.kind === "unknown") return "Couldn't claim your UBI right now — please try again.";
   return fe.message;
 }

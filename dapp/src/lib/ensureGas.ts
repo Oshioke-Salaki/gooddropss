@@ -1,40 +1,28 @@
 import { publicClient } from "@/lib/publicClient";
 import { weiNeeded } from "@/lib/gasNeeds";
 
+/** Thrown when a wallet can't pay the network fee. Its message maps to the "gas" error. */
+export class NotEnoughGasError extends Error {
+  constructor() { super("not enough celo for gas"); this.name = "NotEnoughGasError"; }
+}
+
 /**
- * Make sure a verified hunter has gas BEFORE we ask them to sign a claim, so a
- * background top-up that hasn't mined yet, or a freshly-empty wallet, never
- * becomes an "insufficient funds" failure mid-claim.
+ * Check a wallet can pay gas BEFORE we ask it to sign, so a short wallet gets a
+ * clear "ask for gas in the community" message instead of a failed transaction.
+ *
+ * We no longer top wallets up ourselves (Nov 2026): email and Google wallets
+ * have their gas paid, and wallet users ask in the Telegram community.
  *
  * - "Enough" comes from the live gas price (see gasNeeds), not a fixed number.
- * - Fast-paths when they already have enough, so no added latency.
- * - Triggers the faucet (the server enforces every limit), then polls the
- *   balance until the top-up lands.
- * - Best-effort: NEVER throws. If it can't top up in time, the claim proceeds
- *   and surfaces its own clear error rather than us blocking it.
+ * - Throws NotEnoughGasError only when the wallet is definitely short; if the
+ *   chain can't be read, the action goes ahead and reports its own result.
+ * `_onToppingUp` is kept so callers don't change; nothing is topped up now.
  */
-export async function ensureGasForClaim(
-  address: `0x${string}`,
-  onToppingUp?: () => void,
-): Promise<void> {
+export async function ensureGasForClaim(address: `0x${string}`, _onToppingUp?: () => void): Promise<void> {
+  let short = false;
   try {
     const need = weiNeeded(await publicClient.getGasPrice());
-    if ((await publicClient.getBalance({ address })) >= need) return;
-    onToppingUp?.();
-    const res = await fetch("/api/gas-topup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address }),
-    }).catch(() => null);
-    // The faucet said no (not verified, cooldown, cap...) or is unreachable:
-    // nothing is coming, so don't make the user wait for it.
-    const body = res ? await res.json().catch(() => null) as { ok?: boolean; reason?: string } | null : null;
-    if (!body?.ok && body?.reason !== "in_progress") return;
-    // Poll until the top-up lands, or give up after ~22s and let the claim try.
-    const deadline = Date.now() + 22_000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 2000));
-      if ((await publicClient.getBalance({ address })) >= need) return;
-    }
-  } catch { /* best-effort: never block the claim on our own error */ }
+    short = (await publicClient.getBalance({ address })) < need;
+  } catch { /* can't tell: let the action try */ }
+  if (short) throw new NotEnoughGasError();
 }

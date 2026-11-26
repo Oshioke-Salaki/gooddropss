@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
 import { ArrowLeft, Check, Gift, Loader2, Lock, Navigation, Puzzle } from "lucide-react";
 import { useFirstDrop } from "@/hooks/useFirstDrop";
+import { GasHelpLink } from "@/components/GasHelpLink";
 import { confirmTx } from "@/lib/txOutcome";
 import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
 import { parseDropHint } from "@/lib/utils";
@@ -413,6 +414,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
             <p role="alert" className="min-h-4 mb-3 px-2 text-sm/[140%] text-danger text-center">
               {claimStatus === "error" || claimStatus === "gone" ? errMsg : ""}
             </p>
+            {claimStatus === "error" && <div className="flex justify-center -mt-1 mb-3"><GasHelpLink message={errMsg} /></div>}
             <button
               type="button"
               onClick={
