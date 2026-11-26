@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { m } from "framer-motion";
 import { useAccount } from "wagmi";
 import { useSponsoredWrite } from "@/lib/useSponsoredWrite";
-import { ArrowLeft, Check, Loader2, Lock, Navigation, Puzzle } from "lucide-react";
+import { ArrowLeft, Check, Gift, Loader2, Lock, Navigation, Puzzle } from "lucide-react";
+import { useFirstDrop } from "@/hooks/useFirstDrop";
 import { confirmTx } from "@/lib/txOutcome";
 import { checkBeforeRetry, settleClaimError } from "@/lib/claimFlow";
 import { parseDropHint } from "@/lib/utils";
@@ -33,6 +34,9 @@ interface Props {
   /** Riddle and shop-task drops are claimed on the full claim screen (answer
    *  field, shop unlock). Called in range to hand over; falls back to onClose. */
   onHandOff?: () => void;
+  /** A welcome chest: the amount stays a surprise until it's opened, and the win
+   *  screen asks them to pass it on. */
+  chest?: { onPassItOn: () => void };
 }
 
 type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
@@ -40,9 +44,12 @@ type ClaimStatus = "idle" | "gassing" | "claiming" | "done" | "error" | "gone";
 const MAX_RANGE = 800;
 const BRAND = "#2727E2";
 
-export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords, onHandOff }: Props) {
+export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateToken, dropCoords, onHandOff, chest }: Props) {
   const { address } = useAccount();
   const { writeContractAsync, sponsored } = useSponsoredWrite();
+  // Only a chest's win screen offers the first-drop bonus, so only then is it read.
+  const { data: firstDrop } = useFirstDrop(chest ? address : undefined);
+  const passOnBonusG = firstDrop?.status === "offer" ? firstDrop.bonusG : 0;
 
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>("idle");
   const [errMsg, setErrMsg]           = useState("");
@@ -104,6 +111,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
   function claimed() {
     setClaimStatus("done");
     track("claim_succeeded", { rarity, surface: "hunt" });
+    if (chest) track("welcome_opened", { amountG: Number(drop.amount / 10n ** 18n) });
     fireChestReward(formatG$(drop.amount), rarity);
     if (address) {
       fetch("/api/engagement", {
@@ -212,15 +220,29 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
         </button>
 
         <div className="flex-1 min-w-0 flex flex-col gap-y-1.5">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-surface px-2.5 py-1.5 text-xs/none text-heading">
-              <span className="w-2 h-2 rounded-full" style={{ background: rarityInfo.color }} aria-hidden />
-              {rarityInfo.label}
-            </span>
-            <span className="text-xl/none text-heading truncate">{formatG$(drop.amount)} G$</span>
-          </div>
-          {drop.hint && (
-            <p className="text-sm/none text-nav-muted truncate">&ldquo;{drop.hint}&rdquo;</p>
+          {chest ? (
+            <>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-brand-soft px-2.5 py-1.5 text-xs/none text-brand">
+                  <Gift className="w-3.5 h-3.5" strokeWidth={2} aria-hidden /> Welcome chest
+                </span>
+                <span className="text-xl/none text-heading truncate">Mystery G$</span>
+              </div>
+              <p className="text-sm/none text-nav-muted truncate">Only you can open it</p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex items-center gap-1.5 shrink-0 rounded-full bg-surface px-2.5 py-1.5 text-xs/none text-heading">
+                  <span className="w-2 h-2 rounded-full" style={{ background: rarityInfo.color }} aria-hidden />
+                  {rarityInfo.label}
+                </span>
+                <span className="text-xl/none text-heading truncate">{formatG$(drop.amount)} G$</span>
+              </div>
+              {drop.hint && (
+                <p className="text-sm/none text-nav-muted truncate">&ldquo;{drop.hint}&rdquo;</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -236,18 +258,49 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
           >
             <Check className="w-12 h-12" strokeWidth={2.5} />
           </m.div>
-          <div className="flex flex-col gap-y-3">
-            <p className="text-[32px]/none text-heading">You got it</p>
-            <p className="text-base/[140%] text-nav-muted">{formatG$(drop.amount)} G$ is in your wallet.</p>
-          </div>
-          <button
-            type="button"
-            onClick={onSuccess}
-            className="h-14 px-10 rounded-full bg-brand text-white text-base/none cursor-pointer
-              motion-safe:transition-colors hover:bg-brand/90"
-          >
-            Back to map
-          </button>
+          {chest ? (
+            <>
+              <div className="flex flex-col gap-y-3 max-w-[340px]">
+                <p className="text-[32px]/none text-heading">You found {formatG$(drop.amount)} G$</p>
+                <p className="text-base/[140%] text-nav-muted">
+                  It&apos;s in your wallet. Now pass it on: hide some G$ for a friend to find
+                  {passOnBonusG > 0 ? <>, and we&apos;ll send you <span className="text-heading">{passOnBonusG.toLocaleString("en")} G$</span> for your first drop.</> : "."}
+                </p>
+              </div>
+              <div className="w-full max-w-[340px] flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => { track("welcome_tapped", { action: "pass_on" }); chest.onPassItOn(); }}
+                  className="h-14 w-full rounded-full bg-brand text-white text-base/none flex items-center justify-center gap-2 cursor-pointer
+                    motion-safe:transition-colors hover:bg-brand/90"
+                >
+                  <Gift className="w-5 h-5" strokeWidth={2} /> Hide G$ for a friend
+                </button>
+                <button
+                  type="button"
+                  onClick={onSuccess}
+                  className="h-12 w-full rounded-full text-base/none text-heading cursor-pointer motion-safe:transition-colors hover:bg-white"
+                >
+                  Back to map
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-y-3">
+                <p className="text-[32px]/none text-heading">You got it</p>
+                <p className="text-base/[140%] text-nav-muted">{formatG$(drop.amount)} G$ is in your wallet.</p>
+              </div>
+              <button
+                type="button"
+                onClick={onSuccess}
+                className="h-14 px-10 rounded-full bg-brand text-white text-base/none cursor-pointer
+                  motion-safe:transition-colors hover:bg-brand/90"
+              >
+                Back to map
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div
@@ -379,7 +432,7 @@ export function HuntingMode({ drop, userLocation, onClose, onSuccess, privateTok
                claimStatus === "gone"     ? <><ArrowLeft className="w-5 h-5" strokeWidth={2} /> Back to the map</> :
                claimStatus === "error"    ? "Try again" :
                needsFullScreen && isClose ? <><Puzzle className="w-5 h-5" strokeWidth={2} /> {parsed.hasRiddle ? "Answer the riddle to claim" : "Unlock at the shop"}</> :
-               isClose ? `Claim ${formatG$(drop.amount)} G$` :
+               isClose ? (chest ? <><Gift className="w-5 h-5" strokeWidth={2} /> Open your chest</> : `Claim ${formatG$(drop.amount)} G$`) :
                <><Lock className="w-[18px] h-[18px]" strokeWidth={2} /> Get closer to unlock</>}
             </button>
           </div>

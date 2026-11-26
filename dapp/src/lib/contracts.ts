@@ -32,6 +32,10 @@ export const GOOD_DROPS_BADGES_ABI = [
 
 export const CLAIM_RADIUS_M = 100;
 
+// The reward wallet: pays referral and first-drop rewards and hides welcome
+// chests. Not a player, so it stays off the rankings.
+export const REWARD_WALLET_ADDRESS = "0x4412C27Bb9caae546E71Fc3D4cE7F328F11E6605" as const;
+
 export const GOOD_DROPS_ABI = [
   // ── Read ─────────────────────────────────────────────────────────────────
   {

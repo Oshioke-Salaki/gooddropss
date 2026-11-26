@@ -156,6 +156,14 @@ export const keys = {
   firstDrop:         (root: string)          => `gd:fd:root:${root.toLowerCase()}`,   // JSON FirstDropRecord, one per person (SET NX)
   firstDropOwed:     ()                      => `gd:fd:owed`,                          // ZSET root → registered at (sec): waiting to be paid
   firstDropPaidG:    ()                      => `gd:fd:paid:g`,                        // integer whole G$ sent (for G$ circulated)
+  // Welcome chest: a private drop the reward wallet hides near a new verified player (lib/welcome).
+  welcome:           (root: string)          => `gd:wc:root:${root.toLowerCase()}`,   // JSON WelcomeRecord, one per person
+  welcomeDrop:       (dropId: string)        => `gd:wc:drop:${dropId}`,               // JSON WelcomeDropRecord: who may claim it, and where it is
+  welcomeLock:       (root: string)          => `gd:wc:lock:${root.toLowerCase()}`,   // NX, short: one chest request per person at a time
+  welcomeDay:        (day: string)           => `gd:wc:day:${day}`,                   // integer: chests hidden that WAT day (daily cap)
+  welcomeLive:       ()                      => `gd:wc:live`,                         // ZSET dropId → expiry: chests to reclaim once they run out
+  welcomeIssuedG:    ()                      => `gd:wc:issued:g`,                     // integer whole G$ hidden in chests, net of reclaims (budget)
+  welcomeConfig:     ()                      => `gd:wc:config`,                       // JSON Partial<WelcomeConfig> (admin overrides)
   // Drop reports & moderation
   dropReport:        (dropId: string, reporter: string) =>
     `gd:report:${dropId}:${reporter.toLowerCase()}`,     // one report JSON per reporter+drop

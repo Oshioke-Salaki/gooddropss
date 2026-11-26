@@ -18,6 +18,9 @@ import { OnboardingOverlay } from "@/components/OnboardingOverlay";
 import { PushPermissionBanner } from "@/components/PushPermissionBanner";
 import { NearbyLocationReporter } from "@/components/NearbyLocationReporter";
 import { ColdStartCard } from "@/components/ColdStartCard";
+import { WelcomeChestCard } from "@/components/WelcomeChestCard";
+import { useWelcomeChest } from "@/hooks/useWelcomeChest";
+import type { WelcomeView } from "@/lib/welcome";
 import { ShopSheet } from "@/components/ShopSheet";
 import { useDropNotifications } from "@/hooks/useDropNotifications";
 import { useLiveDrops } from "@/hooks/useLiveDrops";
@@ -89,6 +92,18 @@ export default function HomePage() {
   const { address } = useAccount();
   const isAdmin = isAdminAddress(address);
   const { isVerified } = useIdentityStatus();
+  // Welcome chest: a new player's first win, hidden a short walk away.
+  const welcome = useWelcomeChest(address);
+  const [welcomeUp, setWelcomeUp] = useState(false);
+  const [chestHunt, setChestHunt] = useState<Extract<WelcomeView, { state: "live" }> | null>(null);
+  const chestDrop = useMemo<Drop | null>(() => chestHunt ? {
+    id: BigInt(chestHunt.dropId),
+    dropper: "0x0000000000000000000000000000000000000000",
+    claimer: "0x0000000000000000000000000000000000000000",
+    amount: BigInt(chestHunt.amountG) * 10n ** 18n,
+    expiry: chestHunt.expiry, claimedAt: 0, createdAt: 0, status: DROP_STATUS.Active,
+    lat: 0, lng: 0, hint: "",
+  } : null, [chestHunt]);
   // A verified (non-admin) human may SUGGEST a place; it goes to admin review.
   const canSuggest = !isAdmin && isVerified;
   const canPlaceLandmark = isAdmin || canSuggest;
@@ -283,14 +298,37 @@ export default function HomePage() {
 
       {/* Cold-start capture — shows worldwide proof-of-life + notify/seed CTAs
           when the hunter has no drops near them. */}
-      <ColdStartCard
+      <WelcomeChestCard
+        view={welcome.view}
+        userLoc={userLoc}
+        hiding={welcome.hiding}
+        error={welcome.error}
+        onHide={() => { void welcome.hide(userLoc); }}
+        onHunt={(v) => setChestHunt(v)}
+        onVisibleChange={setWelcomeUp}
+      />
+
+      {/* The welcome card takes this slot while it's up; the two never stack. */}
+      {!welcomeUp && <ColdStartCard
         drops={drops}
         userLoc={userLoc}
         loading={loading}
         onDrop={() => setShowCreate(true)}
         onShowNearest={(lat, lng) => setFocusCoord({ lat, lng })}
         nextEvent={eventPins[0] ?? null}
-      />
+      />}
+
+      {/* Welcome chest hunt: the radar, with the amount kept a surprise */}
+      {chestHunt && chestDrop && (
+        <HuntingMode
+          drop={chestDrop}
+          dropCoords={{ lat: chestHunt.lat, lng: chestHunt.lng }}
+          userLocation={userLoc}
+          onClose={() => setChestHunt(null)}
+          onSuccess={() => { welcome.markOpened(); setChestHunt(null); checkBadgesAfterClaim(address); }}
+          chest={{ onPassItOn: () => { welcome.markOpened(); setChestHunt(null); checkBadgesAfterClaim(address); setShowCreate(true); } }}
+        />
+      )}
 
       {/* Hunting mode — full screen immersive overlay */}
       {huntingDrop && (

@@ -20,6 +20,8 @@ type Events = {
   drop_created: { kind: "single" | "multi" | "chain"; count?: number };
   first_drop_nudge: { action: "shown" | "start" | "later" };
   first_drop_bonus: { status: string };
+  welcome_tapped: { action: "signup" | "verify" | "hide" | "hunt" | "pass_on" };
+  welcome_opened: { amountG: number };
   shop_payment_succeeded: { amountG: number };
   invite_link_copied: Record<string, never>;
   invite_qr_opened: Record<string, never>;

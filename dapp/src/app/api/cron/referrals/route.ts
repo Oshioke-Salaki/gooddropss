@@ -4,6 +4,7 @@ import { settleInvite, PENDING_TTL_S } from "@/lib/referralLedger";
 import { ledgerDeps } from "@/lib/referralDeps";
 import { tryRefPayout } from "@/lib/refPayout";
 import { tryFirstDropPayout } from "@/lib/firstDropServer";
+import { reclaimExpiredChests } from "@/lib/welcomeServer";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -61,7 +62,13 @@ export async function GET(req: NextRequest) {
     if (tally.credited) await tryRefPayout();
     // First-drop bonuses still waiting (wallet was short, or a send failed).
     if ((await redis.zrange<string[]>(keys.firstDropOwed(), 0, 0)).length) await tryFirstDropPayout();
-    return NextResponse.json({ ok: true, checked: Object.values(tally).reduce((a, b) => a + b, 0), of: list.length, tally, ms: Date.now() - started });
+    // Welcome chests that ran out unclaimed go back to the reward wallet. One
+    // cheap count when there's nothing to do.
+    let chests: { reclaimed: number; reason?: string } | null = null;
+    if (await redis.zcount(keys.welcomeLive(), 0, nowS - 60)) {
+      chests = await reclaimExpiredChests(redis).catch((e) => { console.error("[cron/referrals] chests", e); return null; });
+    }
+    return NextResponse.json({ ok: true, checked: Object.values(tally).reduce((a, b) => a + b, 0), of: list.length, tally, chests, ms: Date.now() - started });
   } catch (e) {
     console.error("[cron/referrals]", e);
     return NextResponse.json({ ok: false, error: "sweep failed", tally }, { status: 500 });

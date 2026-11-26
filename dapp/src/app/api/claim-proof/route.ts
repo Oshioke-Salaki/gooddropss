@@ -7,7 +7,8 @@ import { eventForHint } from "@/lib/eventStore";
 import { celo } from "viem/chains";
 import { GOOD_DROPS_ADDRESS, GOOD_DROPS_ABI } from "@/lib/contracts";
 import { getRedis, keys } from "@/lib/redis";
-import { parseDropHint } from "@/lib/utils";
+import { parseDropHint, isWelcomeHint } from "@/lib/utils";
+import type { WelcomeDropRecord } from "@/lib/welcome";
 import { normalizePk } from "@/lib/pk";
 import { resolveIdentityRoot } from "@/lib/identityRoot";
 import { antispoofMode, evaluateSpoofSignals, type SpoofFlag } from "@/lib/antispoof";
@@ -118,7 +119,22 @@ export async function POST(req: NextRequest) {
     let dropLng: number;
 
     const isPrivateDrop = drop.lat === 0 && drop.lng === 0;
-    if (isPrivateDrop) {
+    // ── 2a. Welcome chest ────────────────────────────────────────────────────
+    // Hidden by the reward wallet for ONE new player. The [W] tag is on-chain, so
+    // a chest is recognised even with Redis down, and then we refuse (fail closed).
+    if (isWelcomeHint(drop.hint)) {
+      const r = getRedis();
+      if (!r) return NextResponse.json({ error: "Couldn't check this chest right now. Try again in a moment." }, { status: 503 });
+      const chest = await r.get<WelcomeDropRecord>(keys.welcomeDrop(BigInt(dropId).toString()));
+      if (!chest) return NextResponse.json({ error: "This chest can't be opened." }, { status: 409 });
+      const me = claimer.toLowerCase();
+      const meRoot = (await resolveIdentityRoot(me)).toLowerCase();
+      if (me !== chest.wallet && meRoot !== chest.root) {
+        return NextResponse.json({ error: "This chest was hidden for someone else." }, { status: 403 });
+      }
+      dropLat = chest.lat;
+      dropLng = chest.lng;
+    } else if (isPrivateDrop) {
       if (!privateToken || typeof privateToken !== "string") {
         return NextResponse.json({ error: "Private drop token required" }, { status: 403 });
       }

@@ -1,4 +1,5 @@
 import { DROP_STATUS, type Drop } from "@/types";
+import { REWARD_WALLET_ADDRESS } from "@/lib/contracts";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -54,8 +55,13 @@ export function buildBoard(drops: Drop[], roots: Map<string, string>): Board {
     });
   };
 
+  const reward = REWARD_WALLET_ADDRESS.toLowerCase();
   for (const drop of drops) {
-    bump(dropperMap, keyOf(drop.dropper), drop.dropper.toLowerCase(), drop.amount, drop.createdAt || 0);
+    // Welcome chests come from the reward wallet: counted in the totals, but it
+    // isn't a player, so it never ranks as a dropper.
+    if (drop.dropper.toLowerCase() !== reward) {
+      bump(dropperMap, keyOf(drop.dropper), drop.dropper.toLowerCase(), drop.amount, drop.createdAt || 0);
+    }
     droppedWei += drop.amount;
 
     if (drop.status === DROP_STATUS.Claimed && drop.claimer !== ZERO) {

@@ -192,6 +192,8 @@ export function formatDegrees(raw: number): string {
 //                   Composes with any of the above (it's the outermost prefix).
 // [T:merchantId]hint — public MERCHANT TASK drop: hunter must do an IRL task and
 //                   get scanned/approved by the merchant before the claim signs.
+// [P:][W]hint     — WELCOME CHEST: a private drop the reward wallet hides for one
+//                   new player (lib/welcome). Only that person's claim signs.
 //
 // [R] / [T:] are deliberately recorded ON-CHAIN rather than only in Redis. The
 // riddle answer / task record live server-side, but the *existence* of the gate
@@ -205,6 +207,22 @@ const CHAIN_LAST = /^\[CHL\]([\s\S]*)/;
 const RIDDLE_RE = /^\[R\]([\s\S]*)/;
 const TASK_RE = /^\[T:([^\]]+)\]([\s\S]*)/;
 const EVENT_RE = /^\[E:([a-z0-9]{6,20})\]([\s\S]*)/;
+const WELCOME_RE = /^\[W\]([\s\S]*)/;
+const WELCOME_PREFIX = "[P:][W]";
+
+/** A welcome chest's on-chain clue. Private, so it never shows on the public map. */
+export function buildWelcomeHint(hint: string): string {
+  return `${WELCOME_PREFIX}${hint}`;
+}
+
+/**
+ * True for a welcome chest. Read from the chain, so the claim gate can tell a
+ * chest apart (and fail closed) even when Redis is down. Only the exact prefix
+ * the server writes counts: nobody else can make the reward wallet drop.
+ */
+export function isWelcomeHint(raw: string): boolean {
+  return raw.startsWith(WELCOME_PREFIX);
+}
 
 export function parseDropHint(raw: string): {
   isPrivate: boolean;
@@ -243,6 +261,9 @@ export function parseDropHint(raw: string): {
     isPrivate = true;
     target = priv[1] || null;
     rest = priv[2];
+    // A welcome chest's [W] marker is a gate, not clue text.
+    const welcome = rest.match(WELCOME_RE);
+    if (welcome) rest = welcome[1];
   }
 
   takeRiddle();

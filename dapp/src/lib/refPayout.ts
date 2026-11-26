@@ -3,12 +3,12 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { getRedis, keys } from "@/lib/redis";
 import { normalizePk } from "@/lib/pk";
-import { G_TOKEN_ADDRESS } from "@/lib/contracts";
+import { G_TOKEN_ADDRESS, REWARD_WALLET_ADDRESS } from "@/lib/contracts";
 import { getRefCompConfig, type RefCompConfig } from "@/lib/competition";
 import { computeReferralBoard } from "@/lib/competitionReferral";
 
 // The reward wallet — GAS_FAUCET_KEY MUST resolve to this address, or we abort.
-export const REWARD_WALLET = getAddress("0x4412C27Bb9caae546E71Fc3D4cE7F328F11E6605");
+export const REWARD_WALLET = getAddress(REWARD_WALLET_ADDRESS);
 const RPC = "https://forno.celo.org";
 const LOW_GAS = 5n * 10n ** 15n; // ~0.005 CELO — hundreds of transfers of headroom
 
