@@ -292,7 +292,7 @@ export function OwnProfile({ address }: { address: string }) {
 
             {/* Accepted their invite but not counted yet: say so, so a referrer
                 doesn't think the link is broken while a friend is still setting up. */}
-            <WaitingNote count={data?.referralWaiting ?? 0} />
+            <WaitingNote count={data?.referralWaiting ?? 0} address={address} />
 
             {/* Invite link */}
             <div className="flex flex-col lg:flex-row gap-3 mt-6">
